@@ -1,12 +1,11 @@
 #include "applicationthememanager.h"
 #include "documenttemplatemodel.h"
 #include "editorfileidentity.h"
-#include "editorinsertpaletteservice.h"
 #include "mycodeeditor.h"
 #include "simulationcommandplanner.h"
-#include "simulationcommandprefix.h"
 #include "simulationcommandservice.h"
 #include "testuistyle.h"
+#include "templatefixture.h"
 #include "tsdocument.h"
 #include "usertemplateservice.h"
 #include <QtTest>
@@ -87,173 +86,6 @@ void returnToParentCode(MyCodeEditor* editor, const QString& parent) {
   QFAIL("The parent Code input is missing");
 }
 
-class PopupLifecycleObserver : public QObject {
-public:
-  PopupLifecycleObserver(QWidget* owner, GlobalControlPanel* panel)
-      : owner(owner), panel(panel), search(panel->findChild<QLineEdit*>("globalControlSearchEdit")) {
-    clock.start();
-    qApp->installEventFilter(this);
-    record("observe-before-owner-show");
-  }
-  ~PopupLifecycleObserver() override {
-    qApp->removeEventFilter(this);
-    record("scope-exit", {{"testFailed", QTest::currentTestFailed()}});
-    const QJsonObject report{{"platform", QGuiApplication::platformName()},
-        {"dataRow", QString::fromLatin1(QTest::currentDataTag())}, {"events", events},
-        {"shows", shows}, {"hides", hides}, {"activations", activations},
-        {"filterShows", filterShows()}, {"filterHides", filterHides()}, {"filterActivations", filterActivations()}};
-    qInfo().noquote() << "POPUP_FOCUS_TRACE" << QJsonDocument(report).toJson(QJsonDocument::Compact);
-    const auto directory = qEnvironmentVariable("ZEROSLACK_TEST_ARTIFACT_DIR");
-    if (!directory.isEmpty()) {
-      QFile output(QDir(directory).filePath(QString("popup-focus-%1.json").arg(QTest::currentDataTag())));
-      if (output.open(QIODevice::WriteOnly)) output.write(QJsonDocument(report).toJson());
-      else qWarning() << "Popup focus trace could not be written:" << output.errorString();
-    }
-  }
-  void beginFiltering() {
-    startShows=shows; startHides=hides; startActivations=activations; filterStarted=true;
-    record("filter-begin");
-  }
-  void endFiltering() {
-    endShows=shows; endHides=hides; endActivations=activations; filterEnded=true;
-    record("filter-end");
-  }
-  int filterShows() const { return filterStarted ? (filterEnded ? endShows : shows)-startShows : 0; }
-  int filterHides() const { return filterStarted ? (filterEnded ? endHides : hides)-startHides : 0; }
-  int filterActivations() const { return filterStarted ? (filterEnded ? endActivations : activations)-startActivations : 0; }
-  QString diagnostic(const QString& reason) const {
-    return reason + " " + QString::fromUtf8(QJsonDocument(snapshot()).toJson(QJsonDocument::Compact));
-  }
-  void record(const char* boundary, QJsonObject details = {}) {
-    const auto state = snapshot();
-    for (auto it=state.begin();it!=state.end();++it) details.insert(it.key(),it.value());
-    details["boundary"]=QString::fromLatin1(boundary);
-    details["microseconds"]=clock.nsecsElapsed()/1000;
-    details["epochMs"]=QDateTime::currentMSecsSinceEpoch();
-    events.append(details);
-  }
-  int shows=0, hides=0, activations=0;
-protected:
-  bool eventFilter(QObject* object,QEvent* event) override {
-    if (object!=owner && object!=panel && object!=search && object!=qApp
-        && object!=owner->windowHandle() && object!=panel->windowHandle()) return false;
-    const char* name=nullptr;
-    switch(event->type()) {
-    case QEvent::Show: name="Show"; break;
-    case QEvent::Hide: name="Hide"; break;
-    case QEvent::WindowActivate: name="WindowActivate"; break;
-    case QEvent::WindowDeactivate: name="WindowDeactivate"; break;
-    case QEvent::FocusIn: name="FocusIn"; break;
-    case QEvent::FocusOut: name="FocusOut"; break;
-    case QEvent::Close: name="Close"; break;
-    case QEvent::ApplicationStateChange: name="ApplicationStateChange"; break;
-    default:return false;
-    }
-    if (object==panel) {
-      shows+=event->type()==QEvent::Show;
-      hides+=event->type()==QEvent::Hide;
-      activations+=event->type()==QEvent::WindowActivate;
-    }
-    QJsonObject details{{"object",label(object)},{"spontaneous",event->spontaneous()}};
-    if (event->type()==QEvent::FocusIn || event->type()==QEvent::FocusOut)
-      details["focusReason"]=int(static_cast<QFocusEvent*>(event)->reason());
-    record(name,details);
-    return false;
-  }
-private:
-  QString label(QObject* object) const {
-    if (!object) return "none";
-    const QString role=object==owner ? "owner" : object==panel ? "panel" : object==search ? "search"
-        : object==qApp ? "application" : object==owner->windowHandle() ? "ownerWindow"
-        : object==panel->windowHandle() ? "panelWindow" : "other";
-    return role+":"+object->metaObject()->className()+":"+object->objectName();
-  }
-  static QJsonArray rect(const QRect& value) { return {value.x(),value.y(),value.width(),value.height()}; }
-  QJsonObject snapshot() const {
-    return {{"dataRow",QString::fromLatin1(QTest::currentDataTag())},{"query",search ? search->text() : QString()},
-      {"ownerVisible",owner->isVisible()},{"ownerActive",owner->isActiveWindow()},
-      {"ownerMinimized",owner->isMinimized()},{"panelVisible",panel->isVisible()},
-      {"panelFlags",int(panel->windowFlags())},{"searchFocus",search && search->hasFocus()},
-      {"applicationState",int(qApp->applicationState())},{"activeWindow",label(QApplication::activeWindow())},
-      {"activePopup",label(QApplication::activePopupWidget())},{"focusWidget",label(QApplication::focusWidget())},
-      {"focusWindow",label(QGuiApplication::focusWindow())},{"geometry",rect(panel->geometry())},
-      {"availableGeometry",rect(owner->screen() ? owner->screen()->availableGeometry() : QRect())},
-      {"shows",shows},{"hides",hides},{"activations",activations},
-      {"filterShows",filterShows()},{"filterHides",filterHides()},{"filterActivations",filterActivations()}};
-  }
-  QWidget* owner;
-  GlobalControlPanel* panel;
-  QLineEdit* search;
-  QElapsedTimer clock;
-  QJsonArray events;
-  int startShows=0,startHides=0,startActivations=0,endShows=0,endHides=0,endActivations=0;
-  bool filterStarted=false,filterEnded=false;
-};
-class CatalogFixture {
-public:
-  QTemporaryDir root;
-  UserTemplateService *service = UserTemplateService::getInstance();
-  QString global = service->globalTemplateLocation();
-  QString workspace = service->workspaceTemplateLocation();
-  CatalogFixture() {
-    service->setGlobalTemplateFilePath(root.filePath("global.json"));
-    service->setWorkspaceTemplateFilePath(root.filePath("workspace.json"));
-  }
-  ~CatalogFixture() {
-    service->setGlobalTemplateFilePath(global);
-    service->setWorkspaceTemplateFilePath(workspace);
-  }
-  GlobalControlQueryContext context() const {
-    GlobalControlQueryContext result;
-    result.editorAvailable = result.simulationCommands = true;
-    result.fileName = root.filePath("tb.sv");
-    result.moduleName = "tb";
-    result.documentText =
-        "module tb; int hits; initial begin\n  \nend endmodule\n";
-    result.cursorPosition = result.documentText.indexOf("  \n") + 2;
-    result.replacementStart = result.cursorPosition;
-    result.templateContent = "statements";
-    return result;
-  }
-};
-QList<UserTemplateRecord> rankedCatalogRecords(int fillers) {
-  QList<UserTemplateRecord> records;
-  const auto append = [&](const QString &token, int value) {
-    UserTemplateRecord record;
-    record.id = token.mid(1);
-    record.commandToken = record.label = token;
-    record.insertText = QString("hits += %1;\n").arg(value);
-    record.command = {{"kind", "snippet"}, {"content", "statements"},
-                      {"placement", "statement"}};
-    records << record;
-  };
-  for (int i = 0; i < fillers; ++i) {
-    append(QString("@filler_%1").arg(i), 1);
-    records.last().description = "Description mentions @needle";
-  }
-  append("@needle_b", 2);
-  append("@needle_a", 3);
-  append("@needle", 77);
-  records.last().label = "Exact needle template";
-  return records;
-}
-QList<UserTemplateRecord> mixedCatalogRecords(int declarations = 125,
-                                             int statements = 1) {
-  QList<UserTemplateRecord> records;
-  for (int i = 0; i < declarations + statements; ++i) {
-    const bool declaration = i < declarations;
-    UserTemplateRecord record;
-    record.id = declaration ? QString("mix_decl_%1").arg(i, 3, 10, QLatin1Char('0'))
-                            : QString("mix_stmt_%1").arg(i - declarations, 3, 10, QLatin1Char('0'));
-    record.commandToken = record.label = "@" + record.id;
-    record.insertText = declaration ? QString("logic value_%1;\n").arg(i) : QString("hits += 2;\n");
-    record.command = {{"kind", "snippet"},
-                      {"content", declaration ? "declarations" : "statements"},
-                      {"placement", declaration ? "module" : "statement"}};
-    records << record;
-  }
-  return records;
-}
 class Fixture {
 public:
   QTemporaryDir root;
@@ -346,209 +178,10 @@ public:
 
 class TemplateInputTest : public QObject {
   Q_OBJECT
-  void searchTemplates(Fixture& f, const QString& query) {
-    f.window.activateWindow();
-    f.editor->setFocus();
-    QTRY_VERIFY(f.editor->hasFocus());
-    QTest::keyClick(f.editor, Qt::Key_Space, Qt::ControlModifier);
-    auto* panel = f.window.globalControlCoordinator->panel.get();
-    QTRY_VERIFY(panel->isVisible());
-    panel->setCategory(GlobalControlCategory::Templates);
-    panel->resetQuery(query);
-    f.window.globalControlCoordinator->refreshVisibleItems();
-    panel->focusSearch(false);
-    auto* search = panel->findChild<QLineEdit*>("globalControlSearchEdit");
-    QTRY_VERIFY(search && search->hasFocus());
-  }
   void insert(Fixture &f, const QString &token) {
-    auto *editor = f.editor;
-    editor->setFocus();
-    QTRY_VERIFY(editor->hasFocus());
-    const int count = editor->templateModel()->instances().size();
-    searchTemplates(f, token);
-    auto *panel = f.window.globalControlCoordinator->panel.get();
-    if (!panel->isVisible())
-      evidence("missing-" + token + ".json",
-               QJsonDocument(
-                   QJsonObject{
-                       {"text", editor->toPlainText()},
-                       {"model", editor->templateModel()->serialize(f.path)}})
-                   .toJson());
-    QTRY_VERIFY(panel->isVisible());
-    auto *list = panel->findChild<QListWidget *>("globalControlResultList");
-    QVERIFY(list && list->currentItem());
-    if (list->currentItem()->text() != "@" + token)
-      for (int i = 0; i < list->count(); ++i)
-        qInfo() << "candidate" << list->item(i)->text()
-                << list->item(i)->toolTip() << list->item(i)->flags();
-    QCOMPARE(list->currentItem()->text(), "@" + token);
-    QTRY_VERIFY(QApplication::focusWidget() != nullptr);
-    QSignalSpy messages(f.window.simulationCommands.get(),
-                        &SimulationCommandService::message);
-    QTest::keyClick(QApplication::focusWidget(), Qt::Key_Return);
-    QTRY_VERIFY_WITH_TIMEOUT(!messages.isEmpty(), 15000);
-    QVERIFY2(editor->templateModel()->instances().size() == count + 1,
-             qPrintable(messages.last().first().toString()));
-    
-    QTRY_VERIFY(editor->hasFocus());
+    insertTemplateFixture(f.editor, f.window.simulationCommands->currentRequest(), token);
   }
 private slots:
-  void compactPopupGeometry_data() {
-    QTest::addColumn<int>("edge");
-    QTest::addColumn<bool>("largeFont");
-    for (int edge = 0; edge < 3; ++edge)
-      for (bool large : {false, true})
-        QTest::newRow(qPrintable(QString("edge-%1-%2").arg(edge).arg(large ? "large" : "normal"))) << edge << large;
-  }
-  void compactPopupGeometry() {
-    QFETCH(int, edge);
-    QFETCH(bool, largeFont);
-    QWidget owner;
-    owner.resize(900, 600);
-    GlobalControlPanel panel(&owner);
-    PopupLifecycleObserver lifecycle(&owner, &panel);
-    lifecycle.record("before-owner-show");
-    owner.show();
-    owner.activateWindow();
-    lifecycle.record("after-owner-activate-request");
-    panel.ensurePolished();
-    auto *search = panel.findChild<QLineEdit *>("globalControlSearchEdit");
-    auto *list = panel.findChild<QListWidget *>("globalControlResultList");
-    auto *notice = panel.findChild<QLabel *>("globalControlNotice");
-    panel.setSimulationOnly(true);
-    panel.setCategory(GlobalControlCategory::Templates);
-    QList<GlobalControlItem> pool;
-    for (int i = 0; i < 14; ++i) {
-      GlobalControlItem item;
-      item.id = item.title = QString("@choice_%1").arg(i);
-      item.parameterSummary = "signal · value";
-      pool << item;
-    }
-    const QString reason = QString("This template does not match the container content type. ")
-        + "Select a procedural code container or use a declaration template at a module declaration position. "
-          "The current selection remains unchanged.";
-    panel.setQueryChangedHandler([&](const QString &query) {
-      lifecycle.record("query-callback-begin", {{"callbackQuery",query}});
-      if (query == "one") panel.setItems({pool.at(4)});
-      else if (query == "none") panel.setItems({}, reason);
-      else if (query == "few") panel.setItems(pool.mid(0, 3));
-      else panel.setItems(pool);
-      lifecycle.record("query-callback-end", {{"callbackQuery",query}});
-    });
-    panel.setItems(pool);
-    const auto bounds = owner.screen()->availableGeometry();
-    const QPoint anchor(bounds.right() - 20,
-        edge == 0 ? bounds.top() + 12 : edge == 1 ? bounds.bottom() - 12 : bounds.center().y());
-    QElapsedTimer activationTime; activationTime.start();
-    int activationAttempts=0;
-    const auto establishOwnerActivation = [&] {
-      if (!owner.isVisible() || owner.isMinimized()) return false;
-      const auto active = [&] { return owner.isActiveWindow()
-          && qApp->applicationState()==Qt::ApplicationActive
-          && QGuiApplication::focusWindow()==owner.windowHandle(); };
-      if (active()) return true;
-      ++activationAttempts;
-      lifecycle.record("owner-activation-request", {{"attempt",activationAttempts}});
-      owner.raise(); owner.activateWindow();
-      return active();
-    };
-    QTRY_VERIFY2(establishOwnerActivation(), qPrintable(lifecycle.diagnostic("popup owner activation prerequisite failed")));
-    lifecycle.record("owner-activation-complete", {{"attempts",activationAttempts},{"elapsedMs",activationTime.elapsed()}});
-    lifecycle.record("before-first-showAt");
-    QVERIFY2(owner.isVisible() && !owner.isMinimized() && owner.isActiveWindow(),
-             qPrintable(lifecycle.diagnostic("popup owner lost activation before first showAt")));
-    panel.showAt(&owner, anchor);
-    lifecycle.record("after-first-showAt");
-    QTRY_VERIFY2(panel.isVisible() && search->hasFocus()
-        && QApplication::activePopupWidget()==&panel && QApplication::focusWidget()==search
-        && qApp->applicationState()==Qt::ApplicationActive
-        && (QGuiApplication::focusWindow()==panel.windowHandle() || QGuiApplication::focusWindow()==owner.windowHandle()),
-        qPrintable(lifecycle.diagnostic("popup focus ownership prerequisite failed")));
-    lifecycle.record("popup-focus-established");
-    if (largeFont) {
-      list->setStyleSheet("QListWidget { font-size: 24px; }");
-      notice->setStyleSheet("QLabel { font-size: 24px; }");
-      panel.setItems(pool);
-      QCoreApplication::processEvents();
-    }
-    if (largeFont) QVERIFY(list->visualItemRect(list->item(0)).height() > 30);
-    QVERIFY(bounds.contains(panel.geometry()));
-    QVERIFY(panel.rect().contains(search->geometry()));
-    QVERIFY(panel.rect().contains(list->geometry()));
-    QVERIFY(list->verticalScrollBar()->maximum() > 0);
-    int visibleRows = 0;
-    for (int i = 0; i < list->count(); ++i)
-      visibleRows += list->viewport()->rect().contains(list->visualItemRect(list->item(i)));
-    QVERIFY(visibleRows > 0 && visibleRows <= 8);
-    const int fullHeight = panel.height();
-    const int fullWidth = panel.width();
-    qInfo() << "initial popup" << panel.geometry() << "list" << list->geometry()
-            << "viewport" << list->viewport()->geometry() << "visible rows" << visibleRows;
-    const bool above = panel.geometry().bottom() < anchor.y();
-    for (int i = 0; i < 11; ++i) QTest::keyClick(search, Qt::Key_Down);
-    QCOMPARE(list->currentRow(), 11);
-    QTRY_VERIFY(list->viewport()->rect().contains(list->visualItemRect(list->currentItem())));
-    QVERIFY(list->verticalScrollBar()->value() > 0);
-    QTest::keyClick(search, Qt::Key_Up);
-    QCOMPARE(list->currentRow(), 10);
-    lifecycle.beginFiltering();
-    for (const auto &query : {QString("one"), QString("none"), QString("few"), QString("one")}) {
-      lifecycle.record("before-keyClicks", {{"requestedQuery",query}});
-      search->selectAll();
-      QTest::keyClicks(search, query);
-      lifecycle.record("after-keyClicks", {{"requestedQuery",query}});
-      QTRY_VERIFY2(search->hasFocus(), qPrintable(lifecycle.diagnostic("popup search lost focus during filtering")));
-      QCOMPARE(search->text(), query);
-      qInfo() << "filtered popup" << query << panel.geometry() << "list" << list->geometry()
-              << "viewport" << list->viewport()->geometry();
-      QVERIFY2(panel.isVisible(), qPrintable(lifecycle.diagnostic("popup hidden during filtering")));
-      QCOMPARE(panel.width(), fullWidth);
-      QVERIFY(bounds.contains(panel.geometry()));
-      QVERIFY(panel.rect().contains(search->geometry()));
-      QCOMPARE(panel.geometry().bottom() < anchor.y(), above);
-      if (query == "none") {
-        QVERIFY(list->isHidden());
-        QCOMPARE(list->count(), 0);
-        QVERIFY(notice->isVisible());
-        QVERIFY(panel.rect().contains(notice->geometry()));
-        QVERIFY(notice->height() >= notice->heightForWidth(notice->width()));
-        QVERIFY(notice->height() > notice->fontMetrics().height());
-        QTest::keyClick(search, Qt::Key_Return);
-        QVERIFY2(panel.isVisible(), qPrintable(lifecycle.diagnostic("popup hidden during filtering")));
-      } else {
-        QCOMPARE(list->count(), query == "few" ? 3 : 1);
-        QVERIFY(!list->isHidden());
-        QVERIFY(panel.rect().contains(list->geometry()));
-        QVERIFY(notice->isHidden());
-        QCOMPARE(list->currentRow(), 0);
-        QVERIFY(list->viewport()->rect().contains(list->visualItemRect(list->item(list->count() - 1))));
-        QVERIFY(panel.height() < fullHeight);
-        QCOMPARE(list->verticalScrollBar()->maximum(), 0);
-      }
-      const auto tag = QString("popup-%1-%2").arg(QTest::currentDataTag(), query);
-      const auto dir = qEnvironmentVariable("SIMDOCK_TEST_ARTIFACT_DIR");
-      if (!dir.isEmpty()) panel.grab().save(QDir(dir).filePath(tag + ".png"));
-      evidence(tag + ".json", QJsonDocument(QJsonObject{
-          {"query", query}, {"count", list->count()}, {"width", panel.width()}, {"height", panel.height()},
-          {"noticeHeight", notice->height()}, {"noticeRequiredHeight", notice->heightForWidth(notice->width())},
-          {"listHeight", list->height()}, {"viewportHeight", list->viewport()->height()},
-          {"rowHeight", list->count() ? list->visualItemRect(list->item(0)).height() : 0},
-          {"scale", qEnvironmentVariable("QT_SCALE_FACTOR")}, {"devicePixelRatio", panel.devicePixelRatioF()},
-          {"focusPreserved", search->hasFocus()}}).toJson());
-    }
-    lifecycle.endFiltering();
-    QCOMPARE(lifecycle.filterShows(), 0);
-    QCOMPARE(lifecycle.filterHides(), 0);
-    QCOMPARE(lifecycle.filterActivations(), 0);
-    QString selected;
-    panel.setItemActivatedHandler([&](const auto &item) { selected = item.id; });
-    QTest::keyClick(search, Qt::Key_Return);
-    QCOMPARE(selected, pool.at(4).id);
-    QVERIFY(!panel.isVisible());
-    panel.showAt(&owner, anchor);
-    QTest::keyClick(search, Qt::Key_Escape);
-    QVERIFY(!panel.isVisible());
-  }
   void nonTemplatePopupSizing() {
     QWidget owner;
     owner.show();
@@ -561,13 +194,14 @@ private slots:
     panel.showCentered(&owner);
     const int ordinaryHeight = panel.height();
     QCOMPARE(list->minimumHeight(), 260);
-    for (auto category : {GlobalControlCategory::Templates, GlobalControlCategory::Symbols,
-                          GlobalControlCategory::Templates, GlobalControlCategory::Commands}) {
+    for (auto category : {static_cast<GlobalControlCategory>(1), GlobalControlCategory::Symbols,
+                          GlobalControlCategory::Commands}) {
       panel.setCategory(category);
       panel.setItems({item});
       QTRY_VERIFY(search->hasFocus());
-      if (category == GlobalControlCategory::Templates) QVERIFY(panel.height() < ordinaryHeight);
-      else {
+      {
+        QCOMPARE(panel.category(), category == GlobalControlCategory::Commands
+            ? GlobalControlCategory::Commands : GlobalControlCategory::Symbols);
         QCOMPARE(list->minimumHeight(), 260);
         QCOMPARE(panel.height(), ordinaryHeight);
         panel.setItems({});
@@ -764,329 +398,6 @@ private slots:
     QCOMPARE(e->toPlainText(), after);
     QCOMPARE(e->templateModel()->serialize(f.path), afterData);
   }
-  void catalogRanksBeforeLimit_data() {
-    QTest::addColumn<int>("fillers");
-    QTest::addColumn<QString>("query");
-    QTest::newRow("small") << 3 << QString("needle");
-    QTest::newRow("large") << 125 << QString("needle");
-    QTest::newRow("large-case") << 125 << QString(" NeEdLe ");
-    QTest::newRow("large-at") << 125 << QString("@needle");
-  }
-  void catalogRanksBeforeLimit() {
-    QFETCH(int, fillers);
-    QFETCH(QString, query);
-    CatalogFixture catalog;
-    QVERIFY(catalog.service->setRecords(rankedCatalogRecords(fillers)).valid);
-    auto context = catalog.context();
-    context.documentInstance = 23;
-    context.documentTextRevision = 7;
-    const auto revision = catalog.service->catalogRevision();
-    const auto items = EditorInsertPaletteService().query(
-        GlobalControlCategory::Templates, query, context);
-    QCOMPARE(items.size(), qMin(fillers + 3, 120));
-    QCOMPARE(items.at(0).id, QString("@needle"));
-    QCOMPARE(items.at(1).id, QString("@needle_b"));
-    QCOMPARE(items.at(2).id, QString("@needle_a"));
-    QJsonArray ids;
-    for (int i = 0; i < items.size(); ++i) {
-      if (i >= 3)
-        QCOMPARE(items.at(i).id, QString("@filler_%1").arg(i - 3));
-      QVERIFY(items.at(i).disabledReason.isEmpty());
-      QCOMPARE(items.at(i).sourceTemplateCatalogRevision, revision);
-      QCOMPARE(items.at(i).sourceDocumentInstance, context.documentInstance);
-      QCOMPARE(items.at(i).sourceDocumentTextRevision,
-               context.documentTextRevision);
-      ids << items.at(i).id;
-    }
-    evidence(QString("catalog-%1.json").arg(QTest::currentDataTag()),
-             QJsonDocument(QJsonObject{{"query", query}, {"fillers", fillers},
-                                      {"ids", ids}}).toJson());
-  }
-  void catalogOverridesAndGuards() {
-    CatalogFixture catalog;
-    auto records = rankedCatalogRecords(125);
-    records[0].label = "label_only_match";
-    records[1].command.insert("symbol", "pkg::symbol_only_match");
-    records[2].command.insert("aliases", QStringList{"alias_only_match"});
-    QVERIFY(catalog.service->setRecords(records).valid);
-    auto context = catalog.context();
-    auto target = records.last();
-    target.id = "workspace-target";
-    target.insertText = "hits += 70;\n";
-    QVERIFY(catalog.service->saveRecord(target, true).valid);
-    target.id = "file-target";
-    target.command.insert("file", context.fileName);
-    target.insertText = "hits += 88;\n";
-    QVERIFY(catalog.service->saveRecord(target, true).valid);
-    EditorInsertPaletteService palette;
-    auto items = palette.query(GlobalControlCategory::Templates, "needle", context);
-    QCOMPARE(items.first().id, QString("@needle"));
-    QCOMPARE(items.first().insertionText, QString("hits += 88;\n"));
-    QCOMPARE(std::count_if(items.begin(), items.end(), [](const auto &item) {
-      return item.id == "@needle";
-    }), 1);
-    context.fileName = catalog.root.filePath("other.sv");
-    items = palette.query(GlobalControlCategory::Templates, "needle", context);
-    QCOMPARE(items.first().insertionText, QString("hits += 70;\n"));
-    const QStringList filters{"label_only_match", "symbol_only_match", "alias_only_match"};
-    for (int i = 0; i < filters.size(); ++i) {
-      const auto matched = palette.query(GlobalControlCategory::Templates, filters.at(i), context);
-      QCOMPARE(matched.size(), 1);
-      QCOMPARE(matched.first().id, QString("@filler_%1").arg(i));
-    }
-    const auto original = catalog.service->catalogForFile(context.fileName, true);
-    items = palette.query(GlobalControlCategory::Templates, {}, context);
-    QCOMPARE(items.size(), 120);
-    int catalogIndex = 0;
-    for (const auto &item : items) {
-      while (catalogIndex < original.size() && original.at(catalogIndex).commandToken != item.id)
-        ++catalogIndex;
-      QVERIFY(catalogIndex < original.size());
-      ++catalogIndex;
-    }
-    const auto valid = palette.query(GlobalControlCategory::Templates, "needle", context).first();
-    context.templateContent = "declarations";
-    QString notice;
-    items = palette.query(GlobalControlCategory::Templates, "needle", context, &notice);
-    QVERIFY(items.isEmpty());
-    QVERIFY(notice.contains("@needle"));
-    QVERIFY(notice.contains("content type"));
-    SimulationCommandRequest request;
-    request.context = context;
-    request.item = valid;
-    request.item.templateContent = context.templateContent;
-    request.item.disabledReason.clear();
-    const auto rejected = SimulationCommandPlanner::prepare(request);
-    QVERIFY(!rejected.error.isEmpty());
-    QVERIFY(rejected.text.isEmpty());
-    context.templateContent = "statements";
-    context.readOnly = true;
-    items = palette.query(GlobalControlCategory::Templates, "needle", context);
-    QCOMPARE(items.first().disabledReason, QString("This document is read-only."));
-  }
-  void applicableCandidatesBeforeLimit() {
-    CatalogFixture catalog;
-    QVERIFY(catalog.service->setRecords(mixedCatalogRecords()).valid);
-    auto context = catalog.context();
-    EditorInsertPaletteService palette;
-    QString notice;
-    auto items = palette.query(GlobalControlCategory::Templates, "mix", context, &notice);
-    QCOMPARE(items.size(), 1);
-    QCOMPARE(items.first().id, QString("@mix_stmt_000"));
-    QVERIFY(items.first().disabledReason.isEmpty());
-    QVERIFY(notice.isEmpty());
-    for (const auto &query : {QString("mix_decl"), QString("@mix_decl_124")}) {
-      items = palette.query(GlobalControlCategory::Templates, query, context, &notice);
-      QVERIFY(items.isEmpty());
-      QVERIFY(notice.contains("content type"));
-      if (query.startsWith('@')) QVERIFY(notice.startsWith(query));
-      else QVERIFY(notice.startsWith("No applicable"));
-    }
-    items = palette.query(GlobalControlCategory::Templates, "missing_token", context, &notice);
-    QVERIFY(items.isEmpty());
-    QCOMPARE(notice, QString("No matching templates."));
-    context.readOnly = true;
-    items = palette.query(GlobalControlCategory::Templates, "mix", context, &notice);
-    QCOMPARE(items.size(), 1);
-    QCOMPARE(items.first().disabledReason, QString("This document is read-only."));
-    context.readOnly = false;
-    context.templateContent.clear();
-    items = palette.query(GlobalControlCategory::Templates, "mix", context);
-    QCOMPARE(items.size(), 1); // Syntax scope is checked without a container hint.
-    context.documentText = "module other;\n  \nendmodule\n";
-    context.fileName = catalog.root.filePath("other.sv");
-    context.cursorPosition = context.replacementStart = context.documentText.indexOf("  \n") + 2;
-    context.templateContent = "declarations";
-    items = palette.query(GlobalControlCategory::Templates, "mix", context, &notice);
-    QCOMPARE(items.size(), 120);
-    for (int i = 0; i < items.size(); ++i)
-      QCOMPARE(items.at(i).id, QString("@mix_decl_%1").arg(i, 3, 10, QLatin1Char('0')));
-    items = palette.query(GlobalControlCategory::Templates, "mix_decl_124", context);
-    QCOMPARE(items.size(), 1);
-    context = catalog.context();
-    items = palette.query(GlobalControlCategory::Templates, "mix", context);
-    QCOMPARE(items.size(), 1);
-    auto records = mixedCatalogRecords(125, 125);
-    records[0].description = "mentions mix_stmt_124";
-    QVERIFY(catalog.service->setRecords(records).valid);
-    items = palette.query(GlobalControlCategory::Templates, "mix", context);
-    QCOMPARE(items.size(), 120);
-    for (int i = 0; i < items.size(); ++i)
-      QCOMPARE(items.at(i).id, QString("@mix_stmt_%1").arg(i, 3, 10, QLatin1Char('0')));
-    items = palette.query(GlobalControlCategory::Templates, "mix_stmt_124", context);
-    QCOMPARE(items.size(), 1);
-    QCOMPARE(items.first().id, QString("@mix_stmt_124"));
-  }
-  void applicabilityRefreshAndStatus() {
-    CatalogFixture catalog;
-    auto records = mixedCatalogRecords(1, 1);
-    QVERIFY(catalog.service->setRecords(records).valid);
-    auto context = catalog.context();
-    EditorInsertPaletteService palette;
-    auto items = palette.query(GlobalControlCategory::Templates, "mix", context);
-    const auto revision = items.first().sourceTemplateCatalogRevision;
-    auto override = records.first();
-    override.id = "workspace-override";
-    override.command = records.last().command;
-    override.insertText = "hits += 3;\n";
-    QVERIFY(catalog.service->saveRecord(override, true).valid);
-    items = palette.query(GlobalControlCategory::Templates, "mix_decl_000", context);
-    QCOMPARE(items.size(), 1);
-    QCOMPARE(items.first().insertionText, override.insertText);
-    QVERIFY(items.first().sourceTemplateCatalogRevision != revision);
-    override.id = "file-override";
-    override.command = records.first().command;
-    override.command.insert("file", context.fileName);
-    override.insertText = records.first().insertText;
-    QVERIFY(catalog.service->saveRecord(override, true).valid);
-    QString notice;
-    QVERIFY(palette.query(GlobalControlCategory::Templates, "mix_decl_000", context, &notice).isEmpty());
-    QVERIFY(!notice.isEmpty());
-    context.fileName = catalog.root.filePath("second.sv");
-    QCOMPARE(palette.query(GlobalControlCategory::Templates, "mix_decl_000", context).size(), 1);
-    using Status = SimulationPlacementStatus;
-    context = catalog.context();
-    const QVariantMap command{{"kind", "snippet"}, {"content", "statements"}, {"placement", "statement"}};
-    QCOMPARE(SimulationCommandPlanner::placement(context, command, "statements", "hits++;").status,
-             Status::Applicable);
-    context.readOnly = true;
-    QCOMPARE(SimulationCommandPlanner::placement(context, command, "statements", "hits++;").status,
-             Status::Unavailable);
-    QCOMPARE(SimulationCommandPlanner::placement(context, records.first().command, "statements", records.first().insertText).status,
-             Status::Incompatible);
-    context.readOnly = false;
-    context.replacementStart = context.documentText.size() + 1;
-    QCOMPARE(SimulationCommandPlanner::placement(context, command, "statements", "hits++;").status,
-             Status::Unavailable);
-    context = catalog.context();
-    context.templateBoundaryError = "Insert templates only in a code container or an unowned source gap.";
-    QVERIFY(palette.query(GlobalControlCategory::Templates, "mix", context, &notice).isEmpty());
-    QVERIFY(notice.contains("code container"));
-  }
-  void mixedCatalogNestedKeyboard_data() {
-    QTest::addColumn<int>("entry");
-    QTest::newRow("ctrl-space-templates") << 0;
-    QTest::newRow("ctrl-space-at-prefix") << 1;
-  }
-  void mixedCatalogNestedKeyboard() {
-    QFETCH(int, entry);
-    Fixture f;
-    CatalogFixture catalog;
-    auto *e = f.editor;
-    QTRY_VERIFY(e->hasFocus());
-    insert(f, "process");
-    const auto parent = e->selectedTemplateId();
-    const int position = e->textCursor().selectionStart();
-    QVERIFY(catalog.service->setRecords(mixedCatalogRecords()).valid);
-    cursor(e, position);
-    const auto original = e->toPlainText();
-    if (entry == 0) {
-      QTest::keyClick(e, Qt::Key_Space, Qt::ControlModifier);
-      QTest::keyClick(QApplication::focusWidget(), Qt::Key_Tab);
-      type("mix");
-    } else if (entry == 1) {
-      type("@mix");
-      QTest::keyClick(e, Qt::Key_Space, Qt::ControlModifier);
-    }
-    auto *panel = f.window.globalControlCoordinator->panel.get();
-    QTRY_VERIFY(panel->isVisible());
-    auto *list = panel->findChild<QListWidget *>("globalControlResultList");
-    QVERIFY(list && list->currentItem());
-    QCOMPARE(list->count(), 1);
-    QCOMPARE(list->currentItem()->text(), QString("@mix_stmt_000"));
-    QCOMPARE(panel->currentItems.first().templateParentId, parent);
-    QSignalSpy messages(f.window.simulationCommands.get(), &SimulationCommandService::message);
-    QTest::keyClick(QApplication::focusWidget(), Qt::Key_Return);
-    QTRY_VERIFY_WITH_TIMEOUT(!messages.isEmpty(), 15000);
-    QVERIFY2(e->templateModel()->instances().size() == 2, qPrintable(messages.last().first().toString()));
-    const auto child = e->templateModel()->instance(e->selectedTemplateId());
-    QVERIFY(child);
-    QCOMPARE(child->parentId, parent);
-    QCOMPARE(e->toPlainText().count("hits += 2;"), 1);
-    QVERIFY(!e->toPlainText().contains("@mix"));
-    e->undo();
-    QCOMPARE(e->templateModel()->instances().size(), 1);
-    QCOMPARE(e->toPlainText(), entry == 1 ? QString(original).insert(position, "@mix") : original);
-  }
-  void scalarCandidateFeedback() {
-    Fixture f;
-    CatalogFixture catalog;
-    auto *e = f.editor;
-    QTRY_VERIFY(e->hasFocus());
-    insert(f, "process");
-    insert(f, "repeat");
-    QVERIFY(catalog.service->setRecords(mixedCatalogRecords()).valid);
-    const auto source = e->toPlainText();
-    const auto metadata = e->templateModel()->serialize(f.path);
-    searchTemplates(f, "mix");
-    auto *panel = f.window.globalControlCoordinator->panel.get();
-    QTRY_VERIFY(panel->isVisible());
-    auto *list = panel->findChild<QListWidget *>("globalControlResultList");
-    auto *notice = panel->findChild<QLabel *>("globalControlNotice");
-    QVERIFY(list && notice);
-    QCOMPARE(list->count(), 0);
-    QVERIFY(notice->isVisible());
-    const auto boundary = f.window.globalControlCoordinator->currentContext.templateBoundaryError;
-    QVERIFY(!boundary.isEmpty());
-    QCOMPARE(notice->text(), "No applicable templates here. " + boundary);
-    evidence("scalar-notice.txt", notice->text().toUtf8());
-    QTest::keyClick(QApplication::focusWidget(), Qt::Key_Return);
-    QVERIFY(panel->isVisible());
-    QCOMPARE(e->toPlainText(), source);
-    QCOMPARE(e->templateModel()->serialize(f.path), metadata);
-    QTest::keyClick(QApplication::focusWidget(), Qt::Key_Escape);
-  }
-  void dependencyUnavailableRemainsCandidate() {
-    Fixture f;
-    CatalogFixture catalog;
-    auto *e = f.editor;
-    QTRY_VERIFY(e->hasFocus());
-    insert(f, "process");
-    auto records = mixedCatalogRecords();
-    records.last().command.insert("compileOrder", QStringList{f.root.filePath("absent-package.sv")});
-    QVERIFY(catalog.service->setRecords(records).valid);
-    const auto source = e->toPlainText();
-    const auto metadata = e->templateModel()->serialize(f.path);
-    searchTemplates(f, "mix");
-    auto *panel = f.window.globalControlCoordinator->panel.get();
-    QTRY_VERIFY(panel->isVisible());
-    QCOMPARE(panel->currentItems.size(), 1);
-    QVERIFY(panel->currentItems.first().disabledReason.isEmpty());
-    QSignalSpy messages(f.window.simulationCommands.get(), &SimulationCommandService::message);
-    QTest::keyClick(QApplication::focusWidget(), Qt::Key_Return);
-    QTRY_VERIFY(!messages.isEmpty());
-    QVERIFY(messages.last().first().toString().contains("package input is missing"));
-    QCOMPARE(e->toPlainText(), source);
-    QCOMPARE(e->templateModel()->serialize(f.path), metadata);
-  }
-  void largeCatalogKeyboardInsertion() {
-    Fixture f;
-    CatalogFixture catalog;
-    QVERIFY(catalog.service->setRecords(rankedCatalogRecords(125)).valid);
-    auto *editor = f.editor;
-    editor->setPlainText("module tb; int hits = 0; initial begin\n  \nend\nendmodule\n");
-    cursor(editor, editor->toPlainText().indexOf("  \n") + 2);
-    editor->setFocus();
-    QTRY_VERIFY(editor->hasFocus());
-    const auto original = editor->toPlainText();
-    searchTemplates(f, "@needle");
-    auto *panel = f.window.globalControlCoordinator->panel.get();
-    QVERIFY(panel->isVisible());
-    auto *list = panel->findChild<QListWidget *>("globalControlResultList");
-    QVERIFY(list && list->currentItem());
-    QCOMPARE(list->count(), 120);
-    QCOMPARE(list->currentItem()->text(), QString("Exact needle template"));
-    QCOMPARE(editor->toPlainText(), original);
-    QSignalSpy messages(f.window.simulationCommands.get(), &SimulationCommandService::message);
-    QTest::keyClick(QApplication::focusWidget(), Qt::Key_Return);
-    QTRY_VERIFY_WITH_TIMEOUT(!messages.isEmpty(), 15000);
-    QCOMPARE(editor->templateModel()->instances().size(), 1);
-    QCOMPARE(editor->templateModel()->instances().first().label, QString("Exact needle template"));
-    QCOMPARE(editor->toPlainText().count("hits += 77;"), 1);
-    QVERIFY(!editor->toPlainText().contains("hits += 1;"));
-    evidence(QString("catalog-keyboard.sv"),
-             editor->toPlainText().toUtf8());
-  }
   void nativeSyntax_data() {
     QTest::addColumn<QString>("text");
     for (const auto &value :
@@ -1095,7 +406,18 @@ private slots:
   }
   void nativeSyntax() {
     QFETCH(QString, text);
-    QVERIFY(SimulationCommandPrefix::nativeEventInput(text));
+    Fixture f;
+    f.editor->setPlainText("module tb; initial begin " + text + " end endmodule");
+    cursor(f.editor, f.editor->toPlainText().indexOf(text) + text.size());
+    const auto original = f.editor->toPlainText();
+    f.editor->setFocus();
+    QTRY_VERIFY(f.editor->hasFocus());
+    QTest::keyClick(f.editor, Qt::Key_Space, Qt::ControlModifier);
+    auto *panel = f.window.globalControlCoordinator->panel.get();
+    QTRY_VERIFY(panel->isVisible());
+    QCOMPARE(panel->category(), GlobalControlCategory::Symbols);
+    QTest::keyClick(QApplication::focusWidget(), Qt::Key_Escape);
+    QCOMPARE(f.editor->toPlainText(), original);
   }
   void lifecycleAndProtection() {
     Fixture f;
@@ -1103,7 +425,7 @@ private slots:
     QTRY_VERIFY(editor->hasFocus());
     const auto original = editor->toPlainText();
     const int undo = editor->document()->availableUndoSteps();
-    searchTemplates(f, "process");
+    QTest::keyClick(editor, Qt::Key_Space, Qt::ControlModifier);
     QVERIFY(f.window.globalControlCoordinator->panel->isVisible());
     QCOMPARE(editor->toPlainText(), original);
     QTest::keyClick(QApplication::focusWidget(), Qt::Key_Escape);
@@ -1622,32 +944,6 @@ private slots:
     e->redo();
     QCOMPARE(e->toPlainText(), after);
     QVERIFY(e->templateModel()->instances().isEmpty());
-  }
-  void preparationRejectsSharedChange() {
-    Fixture f; auto* e = f.editor;
-    searchTemplates(f, "process");
-    auto* panel = f.window.globalControlCoordinator->panel.get();
-    QVERIFY(!panel->currentItems.isEmpty());
-    const auto selected = panel->currentItems.first();
-    QCOMPARE(selected.parameters.value("kind").toString(), QString("snippet"));
-    auto* shared = f.window.tabManager->sharedDocumentForEditor(e);
-    QVERIFY(shared);
-    MyCodeEditor other; shared->attachView(&other);
-    const auto detach = qScopeGuard([&] { shared->detachView(&other); });
-    QCOMPARE(other.templateModel(), e->templateModel());
-    QSignalSpy feedback(f.window.simulationCommands.get(), &SimulationCommandService::message);
-    f.window.simulationCommands->activate(selected);
-    QVERIFY(feedback.isEmpty());
-    cursor(&other, 0); other.insertPlainText("// changed through shared view\n");
-    const auto changed = e->toPlainText();
-    QVERIFY(changed.startsWith("// changed through shared view\n"));
-    QTRY_VERIFY_WITH_TIMEOUT(!feedback.isEmpty(), 15000);
-    QVERIFY(feedback.last().first().toString().contains("changed", Qt::CaseInsensitive));
-    QCOMPARE(e->toPlainText(), changed);
-    QCOMPARE(other.toPlainText(), changed);
-    QVERIFY(e->templateModel()->instances().isEmpty());
-    QVERIFY(!changed.contains("initial begin"));
-    panel->hide();
   }
   void legacyMetadataKeepsSource() {
     Fixture f;

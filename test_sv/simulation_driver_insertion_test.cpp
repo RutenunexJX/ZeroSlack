@@ -280,15 +280,15 @@ private slots:
     QTRY_VERIFY(panel->isVisible());
     auto *search = panel->findChild<QLineEdit *>("globalControlSearchEdit");
     QTRY_VERIFY(search->hasFocus());
-    QTest::keyClick(search, Qt::Key_Tab);
-    QTest::keyClicks(search, "reset");
+    QCOMPARE(panel->category(), GlobalControlCategory::Symbols);
+    QTest::keyClicks(search, "@reset");
     auto *list = panel->findChild<QListWidget *>("globalControlResultList");
     auto *notice = panel->findChild<QLabel *>("globalControlNotice");
     QVERIFY(list && notice);
     QCOMPARE(list->count(), 0);
-    QVERIFY(notice->isVisible());
+    QVERIFY(notice->isHidden());
     const auto message = notice->text();
-    QVERIFY2(message.contains("position"), qPrintable(message));
+    QVERIFY(message.isEmpty());
     const auto undo = editor->document()->availableUndoSteps();
     QTest::keyClick(search, Qt::Key_Return);
     QVERIFY(messages.isEmpty());
@@ -298,188 +298,7 @@ private slots:
     evidence(QString("rejected/%1-keyboard.txt").arg(QTest::currentDataTag()),
              message.toUtf8());
   }
-  void projectKeyboard_data() {
-    QTest::addColumn<bool>("prefix");
-    QTest::addColumn<bool>("moduleSite");
-    for (bool prefix : {false, true})
-      for (bool module : {true, false})
-        QTest::newRow(qPrintable(QString("%1-%2").arg(
-            prefix ? "prefix" : "templates", module ? "module" : "procedure")))
-            << prefix << module;
-  }
-  void projectKeyboard() {
-    QFETCH(bool, prefix);
-    QFETCH(bool, moduleSite);
-    const auto configPath =
-        qEnvironmentVariable("ZEROSLACK_DRIVER_PROJECT_CASE");
-    if (configPath.isEmpty())
-      QSKIP("Supply an isolated real-project case descriptor.");
-    const auto config = QJsonDocument::fromJson(bytes(configPath)).object();
-    QTemporaryDir root;
-    QJsonObject fixtureHashes;
-    QVERIFY(copyFixture(config.value("source").toString(), root.path(),
-                        &fixtureHashes));
-    const auto projects = simdock::loadProjects(root.path());
-    QVERIFY(!projects.isEmpty());
-    auto project = projects.first();
-    const auto file = root.filePath(project.tbFile);
-    MainWindow window;
-    window.resize(1100, 800);
-    window.show();
-    window.workspaceSessionCoordinator->setRestoreOnActivation(false);
-    window.workspaceManager->setRecentWorkspacePersistenceEnabledForTesting(
-        false);
-    QVERIFY(window.workspaceSessionCoordinator->openWorkspace(root.path()));
-    QString error;
-    QVERIFY2(window.openSimDockTarget(root.path(), project.id, &error),
-             qPrintable(error));
-    for (const auto &opened : config.value("openFiles").toArray())
-      QVERIFY(
-          window.tabManager->openFileInTab(root.filePath(opened.toString())));
-    QVERIFY(window.tabManager->openFileInTab(file));
-    auto *editor = window.tabManager->getCurrentEditor();
-    const auto original = editor->toPlainText();
-    QVariantMap roles;
-    const auto clock = config.value("clock").toString();
-    const auto reset = config.value("reset").toString();
-    SlangManager slang;
-    for (const auto &record : slang.extractSymbolRecords(file, original))
-      if (record.name == clock || record.name == reset)
-        roles.insert(TemplateInputService::roleKey(
-                         record, record.presentation.qualifiedScopePath + '.' +
-                                     record.name),
-                     record.name == clock ? "Clock" : "Reset");
-    QCOMPARE(roles.size(), 2);
-    QVERIFY(
-        UserTemplateService::getInstance()->setSignalRoles(roles).isEmpty());
-    const auto line =
-        config.value(moduleSite ? "moduleLine" : "procedureLine").toInt() - 1;
-    auto cursor = QTextCursor(editor->document()->findBlockByNumber(line));
-    QVERIFY(cursor.block().isValid());
-    QVERIFY(cursor.block().text().trimmed().isEmpty());
-    editor->setTextCursor(cursor);
-    if (prefix)
-      editor->insertPlainText("@reset");
-    const auto before = editor->toPlainText();
-    for (int repeat = 0; repeat < 2; ++repeat) {
-      window.activateWindow();
-      editor->setFocus();
-      QTRY_VERIFY_WITH_TIMEOUT(editor->hasFocus(), 5000);
-      QSignalSpy messages(window.simulationCommands.get(),
-                          &SimulationCommandService::message);
-      QTest::keyClick(editor, Qt::Key_Space, Qt::ControlModifier);
-      auto *panel = window.globalControlCoordinator->panel.get();
-      QTRY_VERIFY(panel->isVisible());
-      auto *search = panel->findChild<QLineEdit *>("globalControlSearchEdit");
-      auto *list = panel->findChild<QListWidget *>("globalControlResultList");
-      QVERIFY(search && list);
-      QTRY_VERIFY(search->hasFocus());
-      if (!prefix) {
-        QTest::keyClick(search, Qt::Key_Tab);
-        QCOMPARE(panel->category(), GlobalControlCategory::Templates);
-        QTest::keyClicks(search, "reset");
-      }
-      QVERIFY(list->currentItem());
-      QCOMPARE(list->currentItem()->text(), QString("@reset"));
-      QTest::keyClick(search, Qt::Key_Return);
-      QTRY_VERIFY_WITH_TIMEOUT(!messages.isEmpty(), 20000);
-      const auto inserted = editor->toPlainText();
-      evidence(
-          QString("project/%1.json").arg(QTest::currentDataTag()),
-          QJsonDocument(
-              QJsonObject{{"fixtureHashes", fixtureHashes},
-                          {"prefix", prefix},
-                          {"moduleSite", moduleSite},
-                          {"message", messages.last().first().toString()},
-                          {"originalHash", digest(original.toUtf8())},
-                          {"before", before},
-                          {"after", inserted},
-                          {"slotCount", editor->templateSlotModeSlotCount()}})
-              .toJson());
-      QVERIFY2(inserted != before,
-               qPrintable(messages.last().first().toString()));
-      QVERIFY(editor->templateSlotModeActive());
-      QCOMPARE(editor->textCursor().selectedText(), QString("__signal__"));
-      if (repeat == 0) {
-        QTest::keyClick(editor, Qt::Key_Escape);
-        QTest::keyClick(editor, Qt::Key_Z, Qt::ControlModifier);
-        QCOMPARE(editor->toPlainText(), before);
-        QTest::keyClick(editor, Qt::Key_Y, Qt::ControlModifier);
-        QCOMPARE(editor->toPlainText(), inserted);
-        QTest::keyClick(editor, Qt::Key_Z, Qt::ControlModifier);
-        QCOMPARE(editor->toPlainText(), before);
-        cursor = QTextCursor(editor->document()->findBlockByNumber(line));
-        if (prefix)
-          cursor.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor, 6);
-        editor->setTextCursor(cursor);
-        continue;
-      }
-      QSignalSpy inputMessages(editor,
-                               &MyCodeEditor::editorStatusMessageRequested);
-      QTest::keyClicks(editor, reset);
-      QTRY_VERIFY(!editor->toPlainText().contains("__signal__"));
-      QTest::keyClick(editor, Qt::Key_Tab);
-      QVERIFY2(editor->templateSlotModeActiveIndex() == 1,
-               qPrintable(inputMessages.isEmpty()
-                              ? QString("No slot feedback")
-                              : inputMessages.last().first().toString()));
-      QCOMPARE(editor->textCursor().selectedText(), QString("__clock__"));
-      QTest::keyClicks(editor, clock);
-      QTRY_VERIFY(!editor->toPlainText().contains("__clock__"));
-      QTest::keyClick(editor, Qt::Key_Tab);
-      QVERIFY2(editor->templateSlotModeActiveIndex() == 2,
-               qPrintable(inputMessages.isEmpty()
-                              ? QString("No slot feedback")
-                              : inputMessages.last().first().toString()));
-      const auto report = qEnvironmentVariable("SIMDOCK_TEST_ARTIFACT_DIR");
-      if (!report.isEmpty())
-        window.grab().save(QDir(report).filePath(
-            QString("project/%1.png").arg(QTest::currentDataTag())));
-      QTest::keyClick(editor, Qt::Key_Escape);
-      QVERIFY(window.tabManager->saveCurrentTab());
-      const auto filled = editor->toPlainText();
-      evidence(QString("project/%1-filled.sv").arg(QTest::currentDataTag()),
-               filled.toUtf8());
-      QCOMPARE(filled.count("initial begin"),
-               original.count("initial begin") + (moduleSite ? 1 : 0));
-      const auto updated = simdock::loadProjects(root.path());
-      QCOMPARE(updated.size(), projects.size());
-      project = updated.first();
-      QCOMPARE(project.sources.size(), projects.first().sources.size() + 4);
-      QCOMPARE(project.sources.mid(4), projects.first().sources);
-      QVERIFY(project.sources.first().endsWith("tb_signal_package.sv"));
-      QJsonObject preserved;
-      for (auto it = fixtureHashes.begin(); it != fixtureHashes.end(); ++it) {
-        if (it.key() == project.tbFile || it.key().endsWith("/project.json"))
-          continue;
-        QCOMPARE(digest(bytes(root.filePath(it.key()))), it.value().toString());
-        preserved.insert(it.key(), true);
-      }
-      evidence(
-          QString("project/%1-dependencies.json").arg(QTest::currentDataTag()),
-          QJsonDocument(
-              QJsonObject{{"project", simdock::projectJson(project)},
-                          {"roles", QJsonObject::fromVariantMap(roles)},
-                          {"originalFilesPreserved", preserved}})
-              .toJson());
-      project.durationNs = 200;
-      simdock::QuestaSession session;
-      QSignalSpy finished(&session, &simdock::QuestaSession::finished);
-      QString log;
-      connect(&session, &simdock::QuestaSession::logText, this,
-              [&](const QString &s) { log += s; });
-      QVERIFY2(session.start(qEnvironmentVariable("SIMDOCK_TEST_QUESTA"),
-                             root.path(), project, &error),
-               qPrintable(error));
-      QTRY_VERIFY_WITH_TIMEOUT(!finished.isEmpty(), 90000);
-      evidence(QString("project/%1-questa.log").arg(QTest::currentDataTag()),
-               log.toUtf8());
-      QVERIFY2(finished.first()[0].toBool(), qPrintable(log));
-      session.stop();
-      QTRY_VERIFY_WITH_TIMEOUT(!session.alive(), 10000);
-    }
-    editor->document()->setModified(false);
-  }
+
 };
 int main(int argc, char **argv) {
   QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs);

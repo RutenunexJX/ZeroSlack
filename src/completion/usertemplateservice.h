@@ -93,6 +93,7 @@ private:
     mutable quint64 revision = 0;
     mutable quint64 fileReads = 0;
     void ensureLoaded() const;
+    void resetScopeCache();
 
     static std::unique_ptr<UserTemplateService> instance;
 };

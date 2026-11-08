@@ -77,8 +77,10 @@ QDateTime DocumentBuffer::savedBaselineModifiedUtc() const
 
 bool DocumentBuffer::dirty() const
 {
-    return document && document->isModified();
+    return textDirty() || associatedDirty;
 }
+bool DocumentBuffer::textDirty() const { return document && document->isModified(); }
+void DocumentBuffer::setAssociatedDirty(bool value) { associatedDirty = value; publishDirtyIfChanged(); }
 
 bool DocumentBuffer::readOnly() const
 {

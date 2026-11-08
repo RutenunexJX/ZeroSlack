@@ -34,6 +34,7 @@ int main()
         EditorModeId::KeywordGhost,
         EditorModeId::SourceNavigation,
         EditorModeId::InsightTargetPick,
+        EditorModeId::SlashSearch,
     };
 
     bool completeDescriptors =

@@ -1,5 +1,6 @@
 #ifndef MYCODEEDITOR_H
 #define MYCODEEDITOR_H
+class DocumentBlockModel;
 
 #include "zeroslackexport.h"
 
@@ -235,7 +236,6 @@ public:
     DocumentTemplateModel* templateModel() const;
     bool editTemplateInstance(const QString& id = {}, const QString& inputName = {}, int position = -1);
     void finishTemplateInput();
-    void setTemplateSearchActive(bool active);
     bool replaceTemplateInput(const QTextCursor& cursor, const QString& text, bool candidateSelection = false);
     QVariantMap templateSignalRoles() const;
     void configureTemplateInputContext(const std::shared_ptr<TemplateInputContext>& inputs,
@@ -263,6 +263,14 @@ public:
     EditorModuleScopeTarget currentModuleScopeTarget() const;
     bool goToFinalEndmodule(QString* message = nullptr);
     bool selectInsideBeginEnd(QString* message = nullptr);
+    bool insertOrdinaryTemplate(const QString& text, const CodeTemplateSlotList& inputs,
+                                int finalCursor, QString* error = nullptr);
+    void cancelSlashSearch();
+    void addBlockAssociationMenu(QMenu* menu);
+    DocumentBlockModel* blockModel() const;
+    void finishBlockEditing();
+    void selectAssociatedBlock(const QString& id, bool edit = false);
+    int associatedBlockViewCount() const;
     void startTemplateSlotMode(int insertionStart,
                                int insertedLength,
                                const CodeTemplateSlotList& slotMetadata);
@@ -447,11 +455,15 @@ private:
     friend class EditorCompletionWorkflow;
     friend class EditorGutter;
     friend class EditorFoldingController;
+    friend class EditorBlockProjection;
+    friend class EditorBlockHost;
     friend class EditorSourceNavigationUi;
     friend struct MyCodeEditorState;
 
     std::unique_ptr<MyCodeEditorState> state;
-    bool templateEditing = false, templateSearching = false;
+    std::unique_ptr<class EditorSlashController> slashSearch;
+    std::unique_ptr<class EditorBlockHost> blockHost;
+    bool templateEditing = false;
     bool templateMutation = false;
     QString activeTemplate;
     QString displayedTemplateInputFeedback;
@@ -468,6 +480,7 @@ private:
     QList<MyCodeEditor*> sharedDocumentViewsForFormatting() const;
 
 signals:
+    void editorBlockInsertRequested(const QVariantMap& preset, const QTextCursor& sourceCursor);
     void userEditStarted(int key, bool repeat);
     void userEditFinished(bool textChanged);
     void editingInteractionEnded();

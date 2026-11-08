@@ -98,7 +98,8 @@ public:
     bool saveDocumentTemplates(const QString& fileName, const QJsonObject& state, QString* error) const;
     bool saveDocumentWithTemplates(const QString& fileName, const QByteArray& bytes,
         const QString& expectedDiskRevision, const QJsonObject& state, QString* error,
-        const std::function<bool(QString*)>& commitGuard = {}, QFileDevice::FileError* fileError = nullptr) const;
+        const std::function<bool(QString*)>& commitGuard = {}, QFileDevice::FileError* fileError = nullptr,
+        const std::function<bool(QString*)>& beforeSourceCommit = {}) const;
     bool sessionExists(
         const QString& workspaceRoot) const;
     WorkspaceSessionSaveResult save(

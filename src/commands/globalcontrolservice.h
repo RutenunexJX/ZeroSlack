@@ -10,27 +10,19 @@
 #include <QVariantMap>
 
 enum class GlobalControlCategory {
-    Symbols,
-    Templates,
-    Commands
+    Symbols = 0,
+    Commands = 2
 };
 
 enum class GlobalControlItemKind {
     Domain,
     Command,
-    Symbol,
-    Template
-};
-
-enum class GlobalControlItemOperation {
-    InsertText,
-    InsertSimulationCommand
+    Symbol
 };
 
 struct GlobalControlQueryContext {
     bool editorAvailable = false;
     bool readOnly = false;
-    bool simulationCommands = false;
     QString templateParentId, templateParentSlot, templateContent;
     QString templateBoundaryError;
     QString fileName;
@@ -60,7 +52,6 @@ struct GlobalControlItem {
     QString title;
     QString subtitle;
     QString typeBadge;
-    QString parameterSummary;
     QString actionId;
     QString executionRoute;
     QVariantMap parameters;
@@ -72,12 +63,8 @@ struct GlobalControlItem {
     int replacementLength = 0;
     int sourceDocumentRevision = -1;
     quint64 sourceDocumentInstance = 0;
-    quint64 sourceDocumentTextRevision = 0;
     QString sourceFileName;
     int sourceCursorPosition = -1;
-    quint64 sourceTemplateCatalogRevision = 0;
-    GlobalControlItemOperation operation =
-        GlobalControlItemOperation::InsertText;
 };
 
 class GlobalControlService

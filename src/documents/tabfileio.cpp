@@ -74,7 +74,8 @@ bool TabFileIo::writeTextFile(
     QByteArray* logicalTextSha256,
     const std::function<bool(QString*)>& revalidateOverwrite,
     const DocumentFileFormat& format,
-    const QJsonObject* templateMetadata) const
+    const QJsonObject* templateMetadata,
+    const std::function<bool(QString*)>& beforeSourceCommit) const
 {
     Q_UNUSED(parent);
     if (failureReason)
@@ -105,7 +106,7 @@ bool TabFileIo::writeTextFile(
         QFileDevice::FileError error = QFileDevice::NoError;
         if (templateMetadata) {
             if (WorkspaceSessionStateService().saveDocumentWithTemplates(fileName, logicalBytes,
-                    expectedDiskRevision, *templateMetadata, failureReason, revalidateOverwrite, &error)) break;
+                    expectedDiskRevision, *templateMetadata, failureReason, revalidateOverwrite, &error, beforeSourceCommit)) break;
         } else {
         QSaveFile file(fileName);
         const auto reportFailure = [&](const char* stage) {
@@ -134,6 +135,7 @@ bool TabFileIo::writeTextFile(
             file.cancelWriting();
             return false;
         }
+        if (beforeSourceCommit && !beforeSourceCommit(failureReason)) { file.cancelWriting(); return false; }
         if (file.commit()) break;
         error = file.error();
         reportFailure("commit");

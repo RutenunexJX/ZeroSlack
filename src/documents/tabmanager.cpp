@@ -1,4 +1,5 @@
 #include "tabmanager.h"
+#include "documentblockstore.h"
 #include "documenttemplatemodel.h"
 #include "workspacesessionstateservice.h"
 
@@ -29,6 +30,12 @@
 #include <utility>
 
 namespace {
+QJsonObject editorRecoveryEnvelope(const QString& text) {
+    if (!text.startsWith(QStringLiteral("{\"association"))) return {};
+    const auto object = QJsonDocument::fromJson(text.toUtf8()).object();
+    return object.value("format") == "zeroslack.editor-recovery" && object.value("version").toInt() == 1
+        && object.value("associations").isObject() && object.value("text").isString() ? object : QJsonObject();
+}
 QString lexicalPath(const QString& path)
 {
     return EditorFileIdentity::normalized(path);
@@ -448,12 +455,14 @@ bool TabManager::writeRecoverySnapshot(SharedDocument* document, bool force)
         return false;
     auto& state = recoveryDocumentStates[document];
     const auto revision = static_cast<quint64>(document->textRevision());
+    auto* associationModel = DocumentBlockModel::get(document->textDocument());
+    const auto associationRevision = associationModel->revision();
     const auto key = recoveryKeyForDocument(document);
     const auto baseline = document->savedBaselineSha256();
-    if (state.discarded && state.snapshotRevision == revision
+    if (state.discarded && state.snapshotRevision == revision && state.snapshotAssociationRevision == associationRevision
         && sameRecoveryDocumentKey(state.key, key) && state.baseline == baseline) return true;
     const bool sameInput = state.hasSnapshot && sameRecoveryDocumentKey(state.key, key) && state.baseline == baseline;
-    if (sameInput && !state.retryNeeded
+    if (sameInput && !state.retryNeeded && state.snapshotAssociationRevision == associationRevision
         && (revision == state.snapshotRevision || (!force && revision < state.snapshotRevision + kCrashRecoveryRevisionInterval)))
         return true;
     if (!recoveryQueue) {
@@ -476,6 +485,12 @@ bool TabManager::writeRecoverySnapshot(SharedDocument* document, bool force)
     QElapsedTimer capture;
     capture.start();
     request.text = document->textDocument()->toPlainText();
+    if (DocumentBlockStore::get(associationModel)->needed()) {
+        QString issue; const auto associations = DocumentBlockStore::get(associationModel)->recoveryState(&issue,crashRecoveryService->recoveryRootPath());
+        if (!issue.isEmpty()) { emit crashRecoveryOperationFailed(document->documentId(),issue); return false; }
+        request.text = QString::fromUtf8(QJsonDocument(QJsonObject{{"format","zeroslack.editor-recovery"},{"version",1},
+            {"text",request.text},{"associations",associations},{"associationRevision",QString::number(associationRevision)}}).toJson(QJsonDocument::Compact));
+    }
     recoveryCaptureNs += capture.nsecsElapsed();
     ++recoveryCaptures;
     recoveryCaptureCharacters += request.text.size();
@@ -485,6 +500,7 @@ bool TabManager::writeRecoverySnapshot(SharedDocument* document, bool force)
     state.key = key;
     state.baseline = baseline;
     state.snapshotRevision = revision;
+    state.snapshotAssociationRevision = associationRevision;
     state.hasSnapshot = true;
     state.retryNeeded = false;
     state.discarded = false;
@@ -501,10 +517,11 @@ void TabManager::completeRecoverySnapshot(QObject* owner, const CrashRecoverySna
     }
     auto* document = qobject_cast<SharedDocument*>(owner);
     auto found = recoveryDocumentStates.find(document);
+    const auto associationRevision = editorRecoveryEnvelope(request.text).value("associationRevision").toString().toULongLong();
     if (!document || found == recoveryDocumentStates.end()
         || !sameRecoveryDocumentKey(found->key, request.document)) return;
     if (result.status == CrashRecoveryStatus::Success) {
-        if (found->snapshotRevision == request.documentRevision) found->retryNeeded = false;
+        if (found->snapshotRevision == request.documentRevision && found->snapshotAssociationRevision == associationRevision) found->retryNeeded = false;
         QList<CrashRecoveryDocumentKey> failed;
         for (const auto& key : std::as_const(found->obsoleteKeys)) {
             if (sameRecoveryDocumentKey(key, request.document)) continue;
@@ -527,12 +544,13 @@ void TabManager::completeRecoverySnapshot(QObject* owner, const CrashRecoverySna
         return;
     }
     if (result.status == CrashRecoveryStatus::StaleRecord
+        && DocumentBlockModel::get(document->textDocument())->revision() == associationRevision
         && document->textRevision() == request.documentRevision
         && document->savedBaselineSha256() == request.savedBaselineSha256) {
         clearRecoverySnapshot(document, true);
         return;
     }
-    if (found->snapshotRevision == request.documentRevision) found->retryNeeded = true;
+    if (found->snapshotRevision == request.documentRevision && found->snapshotAssociationRevision == associationRevision) found->retryNeeded = true;
     emit crashRecoveryOperationFailed(document->documentId(), result.reason);
 }
 
@@ -647,6 +665,8 @@ TabManager::compareCrashRecoveryCandidate(
         const auto record = QJsonDocument::fromJson(result.recoveredText.toUtf8()).object();
         if (record.value("format") == QStringLiteral("zeroslack.web-recovery")) result.recoveredText = record.value("content").toString();
     }
+    const auto envelope = editorRecoveryEnvelope(result.recoveredText);
+    if (!envelope.isEmpty()) result.recoveredText = envelope.value("text").toString();
     return result;
 }
 
@@ -821,8 +841,9 @@ TabManager::applyCrashRecoveryCandidate(
             .savedBaselineSha256,
         comparison.candidate
             .savedBaselineModifiedUtc);
+    const auto envelope = editorRecoveryEnvelope(comparison.recoveredText);
     if (!document->restoreUnsavedText(
-            comparison.recoveredText,
+            envelope.isEmpty() ? comparison.recoveredText : envelope.value("text").toString(),
             recoveredRevision)) {
         result.status =
             CrashRecoveryStatus::IoError;
@@ -830,6 +851,10 @@ TabManager::applyCrashRecoveryCandidate(
             QStringLiteral(
                 "The recovered text could not be applied in memory.");
         return result;
+    }
+    if (!envelope.isEmpty() && !DocumentBlockStore::get(DocumentBlockModel::get(document->textDocument()))
+        ->restoreRecovery(envelope.value("associations").toObject(), &result.reason)) {
+        result.status = CrashRecoveryStatus::CorruptRecord; return result;
     }
     document->setExternalState(
         comparison.candidate.sourceState
@@ -900,6 +925,7 @@ TabManager::discardCrashRecoveryCandidate(
                 state.retryNeeded = false;
                 state.discarded = true;
                 state.snapshotRevision = document->textRevision();
+                state.snapshotAssociationRevision = DocumentBlockModel::get(document->textDocument())->revision();
             }
             state.obsoleteKeys.removeIf([&](const auto& key) {
                 return crashRecoveryService->recoveryIdForDocument(key) == recoveryId;
@@ -1500,6 +1526,10 @@ bool TabManager::reopenClosedTab()
         createView(document, group, state.viewState);
     if (!editor)
         return false;
+    if (state.fileName.isEmpty() && !state.associations.isEmpty()) {
+        QString issue;
+        if (!DocumentBlockStore::get(editor->blockModel())->restoreRecovery(state.associations,&issue)) emit fileSaveFailed({},issue);
+    }
     if (state.locked)
         setTabLocked(editor, true);
     return true;
@@ -1901,6 +1931,7 @@ bool TabManager::closeTabsInWorkspace(
 bool TabManager::hasUnsavedChanges() const
 {
     for (auto* page : webDocuments()) if (page->dirty()) return true;
+    for (auto* document : sharedDocuments->documents()) if (document->dirty()) return true;
     return documentQueries.hasUnsavedChanges();
 }
 
@@ -2599,6 +2630,7 @@ bool TabManager::bindEditorToDocument(
     editor->setHierarchyInstanceContext(
         unboundTabInstanceContext(workspaceForFile(document->fileName())));
     editor->setProperty("standaloneDocument", workspaceForFile(document->fileName()).isEmpty());
+    DocumentBlockStore::get(editor->blockModel())->bind(document->fileName(), workspaceForFile(document->fileName()));
     documentModel->registerEditor(
         editor, document->fileName());
     observeDocument(document);
@@ -2650,6 +2682,9 @@ bool TabManager::saveEditor(
         sharedDocumentForEditor(editor);
     if (!editor || !document)
         return false;
+    editor->cancelSlashSearch();
+    editor->finishBlockEditing();
+    auto* blocks = DocumentBlockStore::get(editor->blockModel());
     if (!forceSaveAs && !document->fileName().isEmpty()
         && (explicitFileName.isEmpty() || sameLexicalPath(explicitFileName, document->fileName()))) {
         QString reason;
@@ -2737,14 +2772,34 @@ bool TabManager::saveEditor(
     const auto storedMetadata = WorkspaceSessionStateService().loadDocumentTemplates(writePath, &metadataReadIssue);
     const bool needsTemplateCommit = !templates->instances().isEmpty()
         || !storedMetadata.isEmpty() || !metadataReadIssue.isEmpty();
-    if (!fileIo.writeTextFile(
+    bool sourceWritten = false;
+    const auto sourceWriter = [&](const DocumentBlockStore::Guard& publish, QString* failure) {
+        sourceWritten = fileIo.writeTextFile(
             qobject_cast<QWidget*>(parent()),
             writePath,
             savedText,
-            &saveFailure,
+            failure,
             &savedRawFingerprint,
             nullptr,
-            revalidateOverwrite, document->fileFormat(), needsTemplateCommit ? &templateMetadata : nullptr)) {
+            revalidateOverwrite, document->fileFormat(), needsTemplateCommit ? &templateMetadata : nullptr, publish);
+        return sourceWritten;
+    };
+    bool saved = false;
+    if (blocks->needed()) {
+        const bool writeSource = !overwritesCurrentSource || document->textDirty()
+            || document->textRevision() != document->savedTextRevision() || !QFileInfo::exists(writePath);
+        QString revisionIssue;
+        const auto expected = DocumentBlockStore::fileRevision(writePath, &revisionIssue);
+        const auto next = writeSource ? QCryptographicHash::hash(encodeDocumentText(savedText, document->fileFormat()), QCryptographicHash::Sha256) : expected;
+        if (revisionIssue.isEmpty()) {
+            saved = blocks->save(writePath, workspaceForFile(fileName), expected, next,
+                !overwritesCurrentSource && !document->fileName().isEmpty(),
+                writeSource ? DocumentBlockStore::SourceWriter(sourceWriter) : DocumentBlockStore::SourceWriter(),
+                revalidateOverwrite, &saveFailure);
+            if (saved) savedRawFingerprint = next;
+        } else saveFailure = revisionIssue;
+    } else saved = sourceWriter({}, &saveFailure);
+    if (!saved) {
         writeRecoverySnapshot(document, true);
         emit fileSaveFailed(
             fileName,
@@ -2783,7 +2838,7 @@ bool TabManager::saveEditor(
             documentModel->refreshEditorState(view);
         }
     }
-    documentModel->markSaved(editor);
+    if (sourceWritten) documentModel->markSaved(editor);
     document->setReadOnly(
         !QFileInfo(fileName).isWritable());
     document->setExternalState(
@@ -2792,13 +2847,14 @@ bool TabManager::saveEditor(
         QFileInfo(fileName).lastModified().toUTC();
     document->markSaved(savedRawFingerprint,
                         savedModifiedUtc);
-    if (externalDocumentSync)
+    if (sourceWritten && externalDocumentSync)
         externalDocumentSync->noteDocumentSaved(document, savedRawFingerprint);
     clearRecoverySnapshot(document, true);
     updateTitlesForDocument(document);
     if (renamedDocument)
         applyWorkspaceScope();
-    emit fileSaved(document->fileName());
+    if (sourceWritten) emit fileSaved(document->fileName());
+    else emit editor->editorStatusMessageRequested("Block associations saved.");
     return true;
 }
 
@@ -2876,6 +2932,10 @@ bool TabManager::closeEditor(
         closed.fileName = document->fileName();
         closed.text =
             document->textDocument()->toPlainText();
+        if (closed.fileName.isEmpty()) {
+            QString issue; closed.associations = DocumentBlockStore::get(editor->blockModel())->recoveryState(&issue,crashRecoveryService->recoveryRootPath());
+            if (!issue.isEmpty()) emit crashRecoveryOperationFailed(document->documentId(),issue);
+        }
         closed.viewState =
             document->viewState(editor);
         closed.groupIndex =
@@ -2943,6 +3003,11 @@ void TabManager::observeDocument(
     if (!document || observedDocuments.contains(document))
         return;
     observedDocuments.insert(document);
+    auto* associationTimer = new QTimer(document); associationTimer->setSingleShot(true); associationTimer->setInterval(500);
+    connect(DocumentBlockModel::get(document->textDocument()), &DocumentBlockModel::changed, associationTimer, [associationTimer,document] {
+        if (document->dirty()) associationTimer->start();
+    });
+    connect(associationTimer,&QTimer::timeout,this,[this,document] { if (document->dirty()) writeRecoverySnapshot(document,false); });
     if (externalDocumentSync)
         externalDocumentSync->trackDocument(document, initialFile);
     connect(document,

@@ -247,7 +247,7 @@ void productCases(const QString& root) {
     }
     // The built-in asynchronous always_ff template has two linked reset slots.
     editor->setPlainText("module shared;\n\nendmodule\n"); position(15);
-    items=palette->itemProvider(GlobalControlCategory::Templates,"always_ff",palette->contextProvider(),nullptr);
+    items=palette->itemProvider(static_cast<GlobalControlCategory>(1),"always_ff",palette->contextProvider(),nullptr);
     check(items.isEmpty(),"template palette does not restore removed code-template entries");
     const auto templates=CodeTemplateService::getInstance()->matchingTemplates(";;af");
     const auto templateItem=std::find_if(templates.cbegin(),templates.cend(),[](const auto& item){

@@ -354,6 +354,13 @@ set(ZEROSLACK_CORE_SOURCES
     src/editor/editorsignalselectioncontroller.cpp
     src/editor/editorstructuralinputcontroller.cpp
     src/editor/editortemplateslotcontroller.cpp
+    src/editor/editorslashcontroller.cpp
+    src/completion/ordinarytemplateplan.cpp
+    src/documents/documentblockmodel.cpp
+    src/documents/documentblockstore.cpp
+    src/editor/editorblockprojection.cpp
+    src/editor/editorblockhost.cpp
+    src/editor/editorblockpreview.cpp
     src/editor/editoractioncontextservice.cpp
     src/editor/editorcontextmenumodel.cpp
     src/editor/editorradialmenu.cpp
@@ -1082,6 +1089,21 @@ if(BUILD_TESTING)
     add_executable(simulation_driver_insertion_test test_sv/simulation_driver_insertion_test.cpp)
     target_link_libraries(simulation_driver_insertion_test PRIVATE zeroslack_core Qt6::Test)
     add_executable(template_authoring_test test_sv/template_authoring_test.cpp)
+    add_executable(slash_template_test test_sv/slash_template_test.cpp)
+    target_link_libraries(slash_template_test PRIVATE zeroslack_core Qt6::Test)
+    zeroslack_qt_test_command(slash_template_test_command slash_template_test slash_template_test)
+    add_test(NAME slash_template_test COMMAND ${slash_template_test_command})
+    set_tests_properties(slash_template_test PROPERTIES TIMEOUT 120)
+    add_executable(editor_block_test test_sv/editor_block_test.cpp)
+    target_link_libraries(editor_block_test PRIVATE zeroslack_core Qt6::Test)
+    zeroslack_qt_test_command(editor_block_test_command editor_block_test editor_block_test)
+    add_test(NAME editor_block_test COMMAND ${editor_block_test_command})
+    set_tests_properties(editor_block_test PROPERTIES TIMEOUT 120)
+    add_executable(editor_block_store_test test_sv/editor_block_store_test.cpp)
+    target_link_libraries(editor_block_store_test PRIVATE zeroslack_core Qt6::Test)
+    zeroslack_qt_test_command(editor_block_store_test_command editor_block_store_test editor_block_store_test)
+    add_test(NAME editor_block_store_test COMMAND ${editor_block_store_test_command})
+    set_tests_properties(editor_block_store_test PROPERTIES TIMEOUT 120)
     add_executable(automation_service_test test_sv/automation_service_test.cpp)
     add_executable(build_inputs_contract_test test_sv/build_inputs_contract_test.cpp)
     target_link_libraries(build_inputs_contract_test PRIVATE zeroslack_core Qt6::Test)

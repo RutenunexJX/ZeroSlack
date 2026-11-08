@@ -6,13 +6,11 @@
 
 #include <QObject>
 #include <QPoint>
-#include <QPointer>
 #include <functional>
 #include <memory>
 
 class GlobalControlPanel;
 class QWidget;
-class MyCodeEditor;
 
 class ZEROSLACK_API GlobalControlCoordinator : public QObject
 {
@@ -57,8 +55,6 @@ private:
     std::function<QPoint()> anchorPositionProvider;
     bool installed = false;
     GlobalControlQueryContext currentContext;
-    GlobalControlQueryContext templateContext;
-    QPointer<MyCodeEditor> templateEditor;
 
     void refresh(const QString& queryText = QString());
     void dispatch(const GlobalControlItem& item);

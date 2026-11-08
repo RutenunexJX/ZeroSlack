@@ -77,7 +77,6 @@
 #include "temporaryeditorcontextprovider.h"
 #include "temporaryeditorsearchprovider.h"
 #include "usertemplateservice.h"
-#include "simulationcommandprefix.h"
 #include "activitylogpanelcoordinator.h"
 #include "activitylogservice.h"
 #include "problemspanelcoordinator.h"
@@ -1628,7 +1627,6 @@ void MainWindow::setupGlobalControl()
                 tabManager ? tabManager->getCurrentEditor() : nullptr) {
             editor->exitInteractionModes(
                 EditorModeExitReason::ExternalControl);
-            if (simulationCommands) simulationCommands->prepare();
         }
     });
     globalControlCoordinator->setContextProvider([this]() {
@@ -1663,28 +1661,16 @@ void MainWindow::setupGlobalControl()
         }
         context.memberAccess = paletteContext.memberAccess;
         context.readOnly = editor->documentReadOnly();
-        editor->templateInsertionContext(&context.templateParentId, &context.templateParentSlot);
-        context.templateContent = editor->templateContainerContent();
-        SimulationCommandPrefix::capture(context);
-        if (!context.readOnly)
-            context.templateBoundaryError = editor->simulationTemplateInsertionError(
-                context.replacementStart >= 0 ? context.replacementStart : context.cursorPosition,
-                context.replacementLength, {}, context.templateParentId, context.templateParentSlot);
         return context;
     });
     globalControlCoordinator->setItemProvider(
-        [this, insertPalette](GlobalControlCategory category,
+        [insertPalette](GlobalControlCategory category,
            const QString& text,
            const GlobalControlQueryContext& context, QString* notice) {
-            auto result = insertPalette->query(category, text, context, notice);
-            return result;
+            return insertPalette->query(category, text, context, notice);
         });
     globalControlCoordinator->setActionHandler(
         [this](const GlobalControlItem& item) {
-            if (item.operation == GlobalControlItemOperation::InsertSimulationCommand) {
-                if (simulationCommands) simulationCommands->activate(item);
-                return;
-            }
             if (item.kind == GlobalControlItemKind::Symbol) {
                 MyCodeEditor* editor =
                     tabManager ? tabManager->getCurrentEditor() : nullptr;
@@ -1697,7 +1683,7 @@ void MainWindow::setupGlobalControl()
                         || editor->textCursor().position() != item.sourceCursorPosition
                         || !shared || shared->instanceSerial() != item.sourceDocumentInstance
                         || !EditorFileIdentity::same(shared->fileName(), item.sourceFileName)) {
-                        postActivityMessage(QStringLiteral("The document, cursor, or template catalog changed. Reopen the insertion palette."), 5000);
+                        postActivityMessage(QStringLiteral("The document or cursor changed. Reopen the insertion palette."), 5000);
                         return;
                     }
                 }
@@ -1713,20 +1699,16 @@ void MainWindow::setupGlobalControl()
                             return;
                         }
                     }
-                    switch (item.operation) {
-                    case GlobalControlItemOperation::InsertText:
+                    if (item.replacementStart >= 0
+                        && editor->document()->revision() != item.sourceDocumentRevision) {
+                        failureReason = QStringLiteral(
+                            "The document changed while completion was open.");
+                    } else {
                         if (item.replacementStart >= 0) {
-                            if (editor->document()->revision()
-                                != item.sourceDocumentRevision) {
-                                failureReason = QStringLiteral(
-                                    "The document changed while completion was open.");
-                                break;
-                            }
                             QTextCursor replacement(editor->document());
                             replacement.setPosition(item.replacementStart);
                             replacement.setPosition(
-                                item.replacementStart
-                                    + item.replacementLength,
+                                item.replacementStart + item.replacementLength,
                                 QTextCursor::KeepAnchor);
                             editor->setTextCursor(replacement);
                         }
@@ -1736,9 +1718,6 @@ void MainWindow::setupGlobalControl()
                             item.selectionLength,
                             item.templateSlots,
                             &failureReason);
-                        break;
-                    case GlobalControlItemOperation::InsertSimulationCommand:
-                        break;
                     }
                 }
                 if (!inserted) {
@@ -1806,8 +1785,6 @@ void MainWindow::setupGlobalControl()
                 }
             }
         });
-    if (simulationCommands) connect(simulationCommands.get(), &SimulationCommandService::catalogChanged,
-        globalControlCoordinator.get(), &GlobalControlCoordinator::refreshVisibleItems);
     globalControlCoordinator->install();
 }
 

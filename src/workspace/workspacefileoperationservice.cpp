@@ -1,4 +1,5 @@
 #include "workspacefileoperationservice.h"
+#include "documentblockstore.h"
 #include "filecreation.h"
 
 #include "editorfileidentity.h"
@@ -419,12 +420,17 @@ WorkspaceFileOperationService::apply(const WorkspaceFileOperationPlan& plan) con
     case WorkspaceFileOperationKind::Rename: {
         const QFileInfo sourceInfo(plan.sourcePath);
         QDir parent(sourceInfo.dir());
-        if (!parent.rename(
-                sourceInfo.fileName(),
-                QFileInfo(plan.targetPath).fileName())) {
-            return failed(QStringLiteral(
-                "The path could not be renamed atomically."));
+        QMap<QString,QPair<QString,QByteArray>> files;
+        for (auto it = plan.sourceEntries.cbegin(); it != plan.sourceEntries.cend(); ++it) if (!it->directory) {
+            const auto oldPath = it.key().isEmpty() ? plan.sourcePath : QDir(plan.sourcePath).filePath(it.key());
+            const auto newPath = it.key().isEmpty() ? plan.targetPath : QDir(plan.targetPath).filePath(it.key());
+            files.insert(oldPath,{newPath,it->contentDigest});
         }
+        QString issue;
+        if (!DocumentBlockStore::renameWithAssociations(plan.workspaceRoot,files,[&](QString* error) {
+                if (parent.rename(sourceInfo.fileName(),QFileInfo(plan.targetPath).fileName())) return true;
+                if (error) *error = "The path could not be renamed atomically."; return false;
+            },&issue)) return failed(issue);
         result.path = plan.targetPath;
         break;
     }

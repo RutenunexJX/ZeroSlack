@@ -48,8 +48,9 @@ class ZEROSLACK_API TemplateManagerDialog final : public UiDialog
     quint64 operation = 0;
     QFileSystemWatcher *assetWatcher;
     QListWidget *list;
-    QLineEdit *name, *description, *symbol, *aliases;
-    QComboBox *scope, *kind, *level;
+    QLineEdit *name, *description, *symbol, *aliases, *extensions;
+    QCheckBox* acceptsBody;
+    QComboBox *scope, *kind, *level, *location;
     QPlainTextEdit *body, *packages;
     QTableWidget *inputTable, *fieldTable;
     QLineEdit *tag, *eventMessage, *condition;

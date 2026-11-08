@@ -500,6 +500,7 @@ void EditorSourceNavigationUi::handleContextMenu(
         menu.get(),
         contextProvider(sourceSymbolContextPositionForMenu(editor, cursorAtPos),
                         true));
+    editor->addBlockAssociationMenu(menu.get());
     EditorRadialMenu::exec(menu.get(), event->globalPos());
     event->accept();
 }

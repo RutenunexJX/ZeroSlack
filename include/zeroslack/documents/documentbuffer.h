@@ -31,6 +31,8 @@ public:
     QByteArray savedBaselineSha256() const;
     QDateTime savedBaselineModifiedUtc() const;
     bool dirty() const;
+    bool textDirty() const;
+    void setAssociatedDirty(bool dirty);
     bool readOnly() const;
     DocumentFileFormat fileFormat() const { return format; }
     SharedDocumentExternalState externalState() const;
@@ -72,6 +74,7 @@ protected:
     DocumentFileFormat format;
     bool readOnlyState = false;
     bool lastDirtyState = false;
+    bool associatedDirty = false;
     SharedDocumentExternalState externalFileState =
         SharedDocumentExternalState::Current;
     void handleContentsChange();

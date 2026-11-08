@@ -20,7 +20,6 @@ public:
     explicit GlobalControlPanel(QWidget* parent = nullptr);
 
     void setItems(const QList<GlobalControlItem>& items, const QString& notice = {});
-    void setSimulationOnly(bool enabled);
     void setCategory(GlobalControlCategory category);
     GlobalControlCategory category() const;
     QString queryText() const;
@@ -46,7 +45,6 @@ private:
     QPointer<QWidget> positioningWidget;
     QPoint popupAnchor;
     bool opensAbove = false;
-    bool compactLayout = false;
     bool closeOnActivation = true;
     QLineEdit* searchEdit = nullptr;
     QTabBar* categoryTabs = nullptr;

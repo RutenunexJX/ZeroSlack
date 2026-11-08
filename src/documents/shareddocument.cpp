@@ -3,6 +3,8 @@
 #include "editorfileidentity.h"
 #include "mycodeeditor.h"
 #include "documenttemplatemodel.h"
+#include "documentblockmodel.h"
+#include "documentblockstore.h"
 #include "workspacesessionstateservice.h"
 
 #include <QCryptographicHash>
@@ -58,6 +60,8 @@ SharedDocument::SharedDocument(const QString& documentId, const QString& fileNam
     const auto metadata = WorkspaceSessionStateService().loadDocumentTemplates(fileName, &error);
     templates->restore(metadata, fileName);
     if (!error.isEmpty()) templates->invalidate(error);
+    connect(DocumentBlockModel::get(document), &DocumentBlockModel::dirtyChanged,
+            this, &DocumentBuffer::setAssociatedDirty);
 }
 
 SharedDocument::~SharedDocument()
@@ -97,6 +101,10 @@ bool SharedDocument::reloadCleanText(const QString& text,
             restoreSavedBaseline(*source);
         else
             captureSavedBaseline();
+    }
+    if (DocumentBlockStore::get(DocumentBlockModel::get(document))->needed()) {
+        document->clearUndoRedoStacks();
+        DocumentBlockStore::get(DocumentBlockModel::get(document))->reload();
     }
 
     for (auto it = states.cbegin(); it != states.cend(); ++it) {
@@ -147,9 +155,13 @@ bool SharedDocument::acceptExternalText(const QString& text,
     else
         captureSavedBaseline();
     loadingText = false;
-    lastDirtyState = false;
+    if (DocumentBlockStore::get(DocumentBlockModel::get(document))->needed()) {
+        document->clearUndoRedoStacks();
+        DocumentBlockStore::get(DocumentBlockModel::get(document))->reload();
+    }
+    lastDirtyState = dirty();
     if (wasDirty)
-        emit dirtyChanged(false);
+        emit dirtyChanged(lastDirtyState);
     if (textChanged)
         emit textRevisionChanged(revision);
 

@@ -197,7 +197,7 @@ SimulationPlacement SimulationCommandPlanner::placement(const GlobalControlQuery
     if (start < 0) return {Status::Unavailable, QStringLiteral("Select an insertion position.")};
     if (context.replacementLength < 0 || start > context.documentText.size()
         || context.replacementLength > context.documentText.size() - start)
-        return {Status::Unavailable, QStringLiteral("The insertion position changed. Reopen the template search.")};
+        return {Status::Unavailable, QStringLiteral("The insertion position changed. Select a new insertion position.")};
     if (!context.templateBoundaryError.isEmpty())
         return {Status::Incompatible, context.templateBoundaryError};
     const auto kind = command.value("kind", "snippet").toString();

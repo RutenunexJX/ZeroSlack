@@ -1,5 +1,6 @@
 <RCC>
   <qresource prefix="/templates">
     <file alias="tb-dut.json">tb-dut.json</file>
+    <file alias="editor.json">editor.json</file>
   </qresource>
 </RCC>

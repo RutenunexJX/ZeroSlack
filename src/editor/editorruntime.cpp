@@ -3,6 +3,7 @@
 #include "editorgutter.h"
 #include <QMenu>
 #include "editorruntime.h"
+#include "documentblockmodel.h"
 
 #include "mycodeeditor.h"
 #include "documenttemplatemodel.h"
@@ -2855,6 +2856,10 @@ void MyCodeEditorState::beginSynchronousEditTransaction(
         synchronousEditIsUndoRedo = false;
         synchronousEditFormatting = false;
         undoRedoViewportCaptured = false;
+        if (editor && DocumentBlockModel::get(editor->document())->takeTextBarrier()) {
+            associationEditBlock = QTextCursor(editor->document());
+            associationEditBlock.beginEditBlock();
+        }
     }
     ++synchronousEditTransactionDepth;
 }
@@ -2864,6 +2869,12 @@ void MyCodeEditorState::endSynchronousEditTransaction(MyCodeEditor* editor)
     lifecycleTrace("transaction.end-enter");
     if (synchronousEditTransactionDepth <= 0)
         return;
+    if (synchronousEditTransactionDepth == 1 && !associationEditBlock.isNull()) {
+        auto group = associationEditBlock; associationEditBlock = QTextCursor();
+        group.endEditBlock();
+        if (editor->document()->revision() == synchronousEditStartRevision)
+            DocumentBlockModel::get(editor->document())->requireTextBarrier();
+    }
     if (synchronousEditTransactionDepth == 1)
         templateSlots.flushPendingLinkedEdits(editor);
     --synchronousEditTransactionDepth;
@@ -3356,7 +3367,8 @@ void MyCodeEditorState::paintGutterDecorations(
         }
 
         block = editor->nextVisibleBlock(block);
-        top = bottom;
+        top = static_cast<int>(editor->blockBoundingGeometry(block)
+                                  .translated(editor->contentOffset()).top());
         bottom =
             top + static_cast<int>(editor->blockBoundingRect(block).height());
     }

@@ -501,10 +501,13 @@ endforeach()
 set(PHASE_L_REVIEWED_REGEX_SOURCE_REVISION "ff75d747110ea9cef6339abf5442c0b8b1e2fe42")
 set(PHASE_L_REVIEWED_REGEX_EXTRACTION_VERSION "cmake-file-strings-strip-v1")
 set(PHASE_L_REVIEWED_SOURCE_NORMALIZATION "utf8-crlf-to-lf-v1")
+# 2026-11-08 review: preserve retired Ctrl+Space routing; add ordinary editor resources.
+# Only the retired prefix usage is now empty; other reviewed regex patterns are unchanged.
+# Provenance: build/coordination/20261108-slash-template-block/implementation/REGEX-REVIEW.json.
 set(PHASE_L_REVIEWED_REGEX_USAGE
-    "src/completion/simulationcommandprefix.cpp|89a216881e14bf981e64039b2ae2984be5a5b7cd5ab0a8fb1bcd6f5390a8b428|57c7598233bd8350fda5d03f74d5830be336409089d638424bf732d21fdc860b"
+    "src/completion/simulationcommandprefix.cpp|e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855|987c024b13a27e010517a6fc8b2905fa427aff71bc5086a59cf6ddcd509e64fe"
     "src/completion/templatecapabilities.cpp|2c44206dc8be8af7887134525d2aa91cf7a6621ed7c761c0ccaaa1bfcf2cdb4f|73417fc560e907e70e006231ea6bd869b1f5680052e1893c192c1ca3ef888664"
-    "src/completion/usertemplateservice.cpp|d8f9a2e3fb7bd43796d6ec0f40025ec9e7405bf9214adb1ba5e622b21b2076b0|8b650c0d2e4be9049422fd803572430fa55ea670b4028fb535c717b9233e1778"
+    "src/completion/usertemplateservice.cpp|d8f9a2e3fb7bd43796d6ec0f40025ec9e7405bf9214adb1ba5e622b21b2076b0|3d326a726cc9e36ac1bf07f3ec6cb6e927580303b7ebfbebcc289ad1e2d10ebe"
     "src/editor/tbinputassist.cpp|692ce60c6209858c8c3bef0412990d80a81b5c530af200e9f361bc695674081f|743e724100edbd98bafb8ca068b7d4c32df96468c1a229142c188877306b7a66"
     "src/integrations/xips/xipsassetsync.cpp|ebbffbf2fbd193b9d6fb14df17c662aa9c11399bee4a16ace7a712949234e203|494b643ed8808b47df2f64f8122e7ce5757793e0abe638c69db3e9f0dad72786"
     "src/integrations/xips/xipscontextprovider.cpp|85fde73909049adc944c53d777aa32858f23c1666c5ee6cd98073e7940cac896|f309ec69a2989f82793e33ac57195ff7c235ee2c8089f1b1e6d3a616a33d7959"
@@ -522,7 +525,7 @@ set(PHASE_L_REVIEWED_REGEX_USAGE
     # Stage 4 review (2026-11-06): native default/persistence and linked Web retirement.
     # Provenance: build/coordination/20261106-web-retire/implementation/REGEX-REVIEW.json.
     "src/ui/linkedcontextcontroller.cpp|37e0c01114dfdb1d91a57785f9a699dc85ed5510795ad189e2b99902cb63e213|b97e3a1c9ce9962becb3a95ca47b7f3842b37fd35618f69f72a1387b80ca905b"
-    "src/ui/templatemanagerdialog.cpp|9b6e26960cb1535017135d00fd49807feb213d838e3a24063380eeea7b09923c|10766319b9fc1c22d1d530a99235ffb9267ef0b8ae290ead6979edb6a25f7a3e"
+    "src/ui/templatemanagerdialog.cpp|9b6e26960cb1535017135d00fd49807feb213d838e3a24063380eeea7b09923c|5182b21c9fd822d3fc97df6befcdc87f9f1728f1b1b921ba18af2af20db3735a"
     "src/ui/welcomeanimation.cpp|3bb1f59db5ab492fc78b96466e83f175e69fa44fda0c8d23fe21045d44dd9e5a|cff975616d667eadcf0dbbd07a1ef1a77400baf93cc226f0011b3bd66cf09f0d"
 )
 zeroslack_verify_reviewed_regex_contract("${ZEROSLACK_SOURCE_DIR}"

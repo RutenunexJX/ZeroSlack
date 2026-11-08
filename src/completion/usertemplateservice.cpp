@@ -1,4 +1,5 @@
 #include "usertemplateservice.h"
+#include "ordinarytemplateplan.h"
 #include "templatecapabilities.h"
 #include <QSaveFile>
 #include <QLockFile>
@@ -303,7 +304,7 @@ UserTemplateRecord recordFromJsonObject(const QJsonObject& object,
 {
     UserTemplateRecord record;
     record.extraFields = object.toVariantMap();
-    record.command = object.value(QStringLiteral("simulation")).toObject().toVariantMap();
+    record.command = object.value(object.contains("editor") ? QStringLiteral("editor") : QStringLiteral("simulation")).toObject().toVariantMap();
     record.storageSource = source;
     record.id = object.value(QStringLiteral("id")).toString();
     record.commandToken =
@@ -476,13 +477,14 @@ bool appendValidRecord(UserTemplateLoadReport* report,
     }
 
     const bool simulation = QRegularExpression(QStringLiteral("^@[A-Za-z_][A-Za-z0-9_.:-]*$")).match(record.commandToken).hasMatch();
-    if ((!simulation && (!record.commandToken.startsWith(QStringLiteral(";;")) || record.commandToken.size() <= 2))
+    const bool ordinary = record.commandToken.startsWith('/') && record.commandToken.size() > 1;
+    if ((!simulation && !ordinary && (!record.commandToken.startsWith(QStringLiteral(";;")) || record.commandToken.size() <= 2))
         || commandTokenHasWhitespace(record.commandToken)) {
         appendIssue(report,
                     source,
                     issueCommand,
                     QStringLiteral("command"),
-                    QStringLiteral("Use an @name simulation command or a compact legacy ;; token."));
+                    QStringLiteral("Use /name for an editor resource, @name for a simulation command, or a compact legacy ;; token."));
     }
     if (record.commandToken.startsWith(QStringLiteral(";:"))) {
         appendIssue(report,
@@ -514,6 +516,7 @@ bool appendValidRecord(UserTemplateLoadReport* report,
                     QStringLiteral("Template command token must be unique."));
     }
     if (record.insertText.isEmpty() && record.command.value(QStringLiteral("symbol")).toString().isEmpty()
+        && record.command.value(QStringLiteral("kind")).toString() != QStringLiteral("block")
         && record.command.value(QStringLiteral("kind")).toString() != QStringLiteral("print")
         && !record.command.value(QStringLiteral("disabled")).toBool()) {
         appendIssue(report,
@@ -664,8 +667,9 @@ QJsonObject recordToJsonObject(const UserTemplateRecord& record)
     object.insert(QStringLiteral("label"), record.label);
     object.insert(QStringLiteral("selectionStart"), record.selectionStart);
     object.insert(QStringLiteral("selectionLength"), record.selectionLength);
-    if (!record.command.isEmpty()) object.insert(QStringLiteral("simulation"), QJsonObject::fromVariantMap(record.command));
-    else object.remove(QStringLiteral("simulation"));
+    object.remove(QStringLiteral("simulation"));
+    object.remove(QStringLiteral("editor"));
+    if (!record.command.isEmpty()) object.insert(record.commandToken.startsWith('/') ? QStringLiteral("editor") : QStringLiteral("simulation"), QJsonObject::fromVariantMap(record.command));
     object.insert(QString::fromLatin1(kUserTemplateCommand), record.commandToken);
     object.insert(QString::fromLatin1(kUserTemplateDescription),
                   record.description);
@@ -676,6 +680,19 @@ QJsonObject recordToJsonObject(const UserTemplateRecord& record)
                       slotsToJson(record.templateSlots));
     }
     return object;
+}
+
+void validateOrdinaryWrite(UserTemplateSaveReport* report, bool workspace, const QString& globalPath, const QString& workspacePath) {
+    if (!report->valid) return;
+    UserTemplateLoadReport merged;
+    const auto global = workspace ? readTemplateFile(globalPath,UserTemplateScope::Global,&merged) : report->records;
+    const auto local = workspace ? report->records : readTemplateFile(workspacePath,UserTemplateScope::Workspace,&merged);
+    mergeLoadedRecords(&merged,global,globalPath,UserTemplateScope::Global);
+    mergeLoadedRecords(&merged,local,workspacePath,UserTemplateScope::Workspace);
+    auto resources = OrdinaryTemplatePlanner::builtins(); resources.append(merged.records);
+    const auto issue = OrdinaryTemplatePlanner::validate(resources);
+    if (!merged.issues.isEmpty()) { report->issues.append(merged.issues); report->failureReason = merged.failureReason; report->valid = false; }
+    if (!issue.isEmpty()) { appendIssue(report,workspace ? workspacePath : globalPath,{},"editor",issue); report->valid = false; }
 }
 
 bool writeRecordsToJsonFile(const QString& filePath,
@@ -709,7 +726,7 @@ bool writeRecordsToJsonFile(const QString& filePath,
     file.setDirectWriteFallback(false);
     if (!file.open(QIODevice::WriteOnly)) {
         if (failureReason)
-            *failureReason = QStringLiteral("Failed to write user template file.");
+            *failureReason = QStringLiteral("Failed to write user template file: %1 (%2)").arg(file.errorString(), filePath);
         return false;
     }
     const auto bytes = QJsonDocument(root).toJson(QJsonDocument::Indented);
@@ -759,22 +776,26 @@ QString UserTemplateService::workspaceTemplateLocation() const
 
 void UserTemplateService::setGlobalTemplateFilePath(const QString& filePath)
 {
-    globalTemplateFilePath = filePath.trimmed().isEmpty()
+    const auto next = filePath.trimmed().isEmpty()
         ? defaultGlobalTemplatePath()
         : normalizePath(filePath);
-    cacheValid = false;
+    if (next == globalTemplateFilePath) return;
+    globalTemplateFilePath = next; resetScopeCache();
 }
 
 void UserTemplateService::setWorkspaceRoot(const QString& workspaceRoot)
 {
-    workspaceTemplateFilePath = workspaceTemplatePathForRoot(workspaceRoot);
-    cacheValid = false;
+    setWorkspaceTemplateFilePath(workspaceTemplatePathForRoot(workspaceRoot));
 }
 
 void UserTemplateService::setWorkspaceTemplateFilePath(const QString& filePath)
 {
-    workspaceTemplateFilePath = normalizePath(filePath);
-    cacheValid = false;
+    const auto next = normalizePath(filePath); if (next == workspaceTemplateFilePath) return;
+    workspaceTemplateFilePath = next; resetScopeCache();
+}
+
+void UserTemplateService::resetScopeCache() {
+    cacheValid = false; cachedFileVersion.clear(); cachedReport = {}; cachedCatalog.clear(); ++revision;
 }
 
 UserTemplateLoadReport UserTemplateService::reload() const
@@ -795,12 +816,22 @@ UserTemplateLoadReport UserTemplateService::reload() const
                        workspaceTemplateFilePath,
                        UserTemplateScope::Workspace);
     report.valid = report.issues.isEmpty();
-    cachedReport = report;
-    cachedCatalog.clear();
-    for (const auto& record : report.records) cachedCatalog.append(itemFromRecord(record));
+    if (report.valid) {
+        auto ordinary = OrdinaryTemplatePlanner::builtins();
+        ordinary.append(report.records);
+        const auto issue = OrdinaryTemplatePlanner::validate(ordinary);
+        if (!issue.isEmpty()) { appendIssue(&report, storageLocation(), {}, "editor", issue); report.valid = false; }
+    }
     cachedFileVersion = before;
     cacheValid = before == templateFileVersion(globalTemplateFilePath) + QLatin1Char('\n') + templateFileVersion(workspaceTemplateFilePath);
-    ++revision;
+    // Do not publish a partial read or an invalid generation. Callers of
+    // reload still receive the failure; active readers keep the last good data.
+    if (report.valid && cacheValid) {
+        cachedReport = report;
+        cachedCatalog.clear();
+        for (const auto& record : report.records) cachedCatalog.append(itemFromRecord(record));
+        ++revision;
+    }
     return report;
 }
 
@@ -855,6 +886,7 @@ UserTemplateSaveReport UserTemplateService::setRecords(
     const QList<UserTemplateRecord>& inputRecords) const
 {
     UserTemplateSaveReport report = validateRecords(inputRecords);
+    validateOrdinaryWrite(&report,false,globalTemplateFilePath,workspaceTemplateFilePath);
     if (!report.valid)
         return report;
 
@@ -997,6 +1029,7 @@ UserTemplateSaveReport UserTemplateService::saveRecord(const UserTemplateRecord&
     auto found = std::find_if(next.begin(), next.end(), [&](const auto& previous) { return previous.id == id; });
     if (found == next.end()) next << record; else *found = record;
     auto report = validateRecordsForSave(next, path);
+    validateOrdinaryWrite(&report,workspace,globalTemplateFilePath,workspaceTemplateFilePath);
     if (report.valid && !writeRecordsToJsonFile(path, report.records, &report.failureReason)) report.valid = false;
     if (report.valid) cacheValid = false;
     return report;
@@ -1020,6 +1053,7 @@ UserTemplateSaveReport UserTemplateService::deleteRecord(const QString& id, bool
     if (!loaded.issues.isEmpty()) return loaded;
     next.erase(std::remove_if(next.begin(), next.end(), [&](const auto& record) { return record.id == id; }), next.end());
     auto report = validateRecordsForSave(next, path);
+    validateOrdinaryWrite(&report,workspace,globalTemplateFilePath,workspaceTemplateFilePath);
     if (report.valid && !writeRecordsToJsonFile(path, report.records, &report.failureReason)) report.valid = false;
     if (report.valid) cacheValid = false;
     return report;

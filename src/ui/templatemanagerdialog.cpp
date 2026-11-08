@@ -1,4 +1,5 @@
 #include "templatemanagerdialog.h"
+#include "ordinarytemplateplan.h"
 #include "../integrations/xips/xipscontextprovider.h"
 #include "editorfileidentity.h"
 #include "slangmanager.h"
@@ -65,6 +66,9 @@ TemplateManagerDialog::TemplateManagerDialog(UserTemplateService *s, const Simul
     buttons->addWidget(erase);
     auto *import = UiControls::pushButton("Import legacy mappings…", left);
     leftLayout->addWidget(import);
+    auto* importResource = UiControls::pushButton("Import resource…", left);
+    auto* exportResource = UiControls::pushButton("Export selected resource…", left);
+    leftLayout->addWidget(importResource); leftLayout->addWidget(exportResource);
     auto *roles = UiControls::pushButton("Signal roles…", left);
     leftLayout->addWidget(roles);
     auto *right = new QWidget(split);
@@ -73,10 +77,10 @@ TemplateManagerDialog::TemplateManagerDialog(UserTemplateService *s, const Simul
     edit->addLayout(form);
     name = UiControls::lineEdit(right);
     name->setObjectName("templateName");
-    name->setPlaceholderText("@q1");
+    name->setPlaceholderText("/name");
     scope = choices({"This file", "Workspace", "User global"}, right);
     scope->setObjectName("templateScope");
-    kind = choices({"snippet", "operations", "task", "function", "call", "print", "driver"}, right);
+    kind = choices({"snippet", "block:text", "block:image", "block:reference", "operations", "task", "function", "call", "print", "driver"}, right);
     kind->setObjectName("templateKind");
     description = UiControls::lineEdit(right);
     aliases = UiControls::lineEdit(right);
@@ -86,6 +90,14 @@ TemplateManagerDialog::TemplateManagerDialog(UserTemplateService *s, const Simul
     form->addRow("Scope", scope);
     form->addRow("Kind", kind);
     form->addRow("Description", description);
+    extensions = UiControls::lineEdit(right);
+    extensions->setPlaceholderText("All code files, or comma-separated suffixes: sv, v");
+    acceptsBody = UiControls::checkBox("Accept selected code as body", right);
+    form->addRow("File types", extensions); form->addRow(acceptsBody);
+    location = choices({"Any position","Code","Empty code line","Module body"},right);
+    const QStringList locations{"any","code","codeLine","module"};
+    for (int i = 0; i < locations.size(); ++i) location->setItemData(i,locations[i]);
+    form->addRow("Location",location);
     auto *tabs = UiControls::tabWidget(right);
     edit->addWidget(tabs, 1);
     body = new QPlainTextEdit(tabs);
@@ -239,6 +251,31 @@ TemplateManagerDialog::TemplateManagerDialog(UserTemplateService *s, const Simul
                 else
                     status(reportText(report));
             });
+    connect(importResource, &QPushButton::clicked, this, [this] {
+        const auto path = QFileDialog::getOpenFileName(this, "Import one resource", {}, "Resource (*.json)");
+        if (path.isEmpty()) return;
+        QFile input(path);
+        if (!input.open(QIODevice::ReadOnly)) { status(input.errorString()); return; }
+        QJsonParseError error;
+        const auto json = QJsonDocument::fromJson(input.readAll(), &error);
+        if (error.error != QJsonParseError::NoError || !json.isObject()) { status("Choose an exported resource object."); return; }
+        auto parsed = UserTemplateService::fromJson(json.object());
+        if (!parsed.valid || parsed.records.size() != 1) { status(reportText(parsed)); return; }
+        auto resource = parsed.records.first();
+        resource.id = QUuid::createUuid().toString(QUuid::WithoutBraces); resource.storageSource.clear();
+        records.append(resource); list->addItem(resource.commandToken + "   Imported draft");
+        list->setCurrentRow(records.size() - 1);
+        status("Imported draft. Choose a scope and Save to publish it.");
+    });
+    connect(exportResource, &QPushButton::clicked, this, [this] {
+        if (selected.id.isEmpty()) { status("Select a saved resource to export."); return; }
+        const auto path = QFileDialog::getSaveFileName(this, "Export resource", {}, "Resource (*.json)");
+        if (path.isEmpty()) return;
+        QSaveFile output(path);
+        if (!output.open(QIODevice::WriteOnly) || output.write(QJsonDocument(UserTemplateService::toJson(selected)).toJson()) < 0 || !output.commit())
+            status(output.errorString());
+        else status("Resource exported.");
+    });
     split->setSizes({240, 640});
     reload();
     load(-1);
@@ -295,7 +332,8 @@ void TemplateManagerDialog::reload()
 {
     const QSignalBlocker block(list);
     list->clear();
-    records = service->recordsForFile(request.context.fileName, true);
+    records = OrdinaryTemplatePlanner::catalog(service, request.context.fileName);
+    records.append(service->recordsForFile(request.context.fileName, true));
     for (const auto &record : records)
         list->addItem(record.commandToken + (record.command.value("disabled").toBool() ? " [hidden]" : "") +
                       (record.storageSource == "builtin"                              ? "   Built-in"
@@ -311,7 +349,10 @@ void TemplateManagerDialog::load(int row)
     name->setText(selected.commandToken);
     description->setText(selected.description);
     const auto type = selected.command.value("kind", "snippet").toString();
-    kind->setCurrentText(type);
+    kind->setCurrentText(type == "block" ? "block:" + selected.command.value("blockType").toString() : type);
+    extensions->setText(selected.command.value("extensions").toStringList().join(", "));
+    acceptsBody->setChecked(selected.command.value("acceptsBody").toBool());
+    location->setCurrentIndex(qMax(0,location->findData(selected.command.value("context","any"))));
     scope->setCurrentIndex(selected.id.isEmpty() || !selected.command.value("file").toString().isEmpty() ? 0
                            : selected.storageSource == service->workspaceTemplateLocation()              ? 1
                                                                                                          : 2);
@@ -373,7 +414,7 @@ void TemplateManagerDialog::addInput(const QString &inputName, const QVariantMap
     put(inputTable, row, 0, inputName);
     inputTable->item(row, 0)->setData(Qt::UserRole, input);
     auto *combo =
-        choices({"Instance", "Port", "Internal", "Signal", "Parameter", "Choice", "Value", "Code"}, inputTable);
+        choices({"Module", "Instance", "Port", "Internal", "Signal", "Parameter", "Choice", "Value", "Text", "Code"}, inputTable);
     combo->setCurrentText(input.value("kind", "Value").toString());
     inputTable->setCellWidget(row, 1, combo);
     put(inputTable, row, 2, input.value("default").toString());
@@ -504,8 +545,8 @@ void TemplateManagerDialog::save()
     if (record.id.isEmpty() || record.storageSource == "builtin")
         record.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     record.commandToken = name->text().trimmed();
-    if (!record.commandToken.startsWith('@'))
-        record.commandToken.prepend('@');
+    if (!record.commandToken.startsWith('@') && !record.commandToken.startsWith('/') && !record.commandToken.startsWith(";;"))
+        record.commandToken.prepend('/');
     if (record.label.isEmpty() || record.label == selected.commandToken)
         record.label = record.commandToken;
     record.description = description->text();
@@ -550,11 +591,24 @@ void TemplateManagerDialog::save()
     }
     record.command.insert("kind", kind->currentText());
     record.command.insert("inputs", inputConfig);
+    QStringList suffixes;
+    for (const auto& value : extensions->text().split(',', Qt::SkipEmptyParts)) suffixes << value.trimmed().toLower();
+    record.command.insert("extensions", suffixes);
+    record.command.insert("acceptsBody", acceptsBody->isChecked());
+    if (record.commandToken.startsWith('/')) record.command.insert("context",location->currentData());
     record.command.insert("summary", inputConfig.keys().mid(0, 3).join(" · "));
     record.command.insert("compileOrder", packages->toPlainText().split('\n', Qt::SkipEmptyParts));
     record.templateSlots.clear();
     record.insertText.clear();
-    if (kind->currentText() == "snippet")
+    if (record.commandToken.startsWith('/') && (kind->currentText() == "snippet" || kind->currentText().startsWith("block:"))) {
+        record.insertText = body->toPlainText();
+        record.command.remove("symbol"); record.command.remove("sourceFile");
+        if (kind->currentText().startsWith("block:")) {
+            record.command.insert("kind", "block"); record.command.insert("blockType", kind->currentText().mid(6));
+            record.command.insert("text", record.insertText);
+        }
+    }
+    else if (kind->currentText() == "snippet")
     {
         const auto source = body->toPlainText();
         QRegularExpression marker("\\$\\{([A-Za-z_][A-Za-z0-9_]*)\\}");

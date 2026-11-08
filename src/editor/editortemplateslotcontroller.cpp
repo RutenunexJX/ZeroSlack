@@ -225,7 +225,7 @@ void EditorTemplateSlotController::publishVisibleAnnotations(
             const int position = editor->textCursor().position();
             if (position < slot.start || position > slot.end) continue;
             const auto* model = editor->templateModel();
-            if (model->inputAt(editor->selectedTemplateId(), position, position) < 0) continue;
+            if (editor->templateInputEditing() && model->inputAt(editor->selectedTemplateId(), position, position) < 0) continue;
             // A container is not one writable rectangle: children own their
             // fixed text. Mark only the active handwriting caret.
             slot.start = slot.end = position;
@@ -576,6 +576,7 @@ void EditorTemplateSlotController::clear(
     currentIndex = -1;
     sessionStart = -1;
     sessionEnd = -1;
+    finalCursorPosition = -1;
     currentBlinkOn = true;
     ignoreNextCursorCheck = false;
     presentationPending = false;
@@ -662,6 +663,14 @@ bool EditorTemplateSlotController::handleKeyPress(
         // not infer it again from a shared endpoint immediately before
         // navigation; adjacent empty slots can occupy the same cursor
         // position and would turn Shift+Tab into a forward step.
+        if (forward && currentIndex == count - 1 && finalCursorPosition >= 0) {
+            const int position = finalCursorPosition;
+            clear(editor);
+            QTextCursor cursor(editor->document());
+            cursor.setPosition(qBound(0, position, editor->document()->characterCount() - 1));
+            editor->setTextCursor(cursor);
+            event->accept(); return true;
+        }
         select(
             editor,
             backward
@@ -675,7 +684,7 @@ bool EditorTemplateSlotController::handleKeyPress(
     if ((event->key() == Qt::Key_Up || event->key() == Qt::Key_Down)
         && modifiers == Qt::NoModifier && activePhysical >= 0 && cursorInsideActiveRange(editor)) {
         const auto slot = ranges.at(activePhysical);
-        if (!slot.input.isEmpty() && slot.input.value("kind").toString() != "Value" && slot.input.value("kind").toString() != "Code") {
+        if (!slot.input.isEmpty() && slot.input.value("kind").toString() != "Value" && slot.input.value("kind").toString() != "Text" && slot.input.value("kind").toString() != "Code") {
             const TemplateInputContext empty;
             const auto choices = TemplateInputService::candidates(slot.input,
                 slot.inputContext ? *slot.inputContext : empty, bindings(editor));
@@ -932,6 +941,7 @@ void EditorTemplateSlotController::applyRangeChange(
         }
     }
     sessionEnd += delta;
+    if (finalCursorPosition >= changeEnd) finalCursorPosition += delta;
     Q_UNUSED(changeStart)
 }
 
@@ -980,7 +990,8 @@ void EditorTemplateSlotController::mirrorLinkedEdit(
 
     applyingLinkedEdit = true;
     QTextCursor mirror(editor->document());
-    mirror.joinPreviousEditBlock();
+    if (editor->property("ordinaryTemplateEditBlock").toBool()) mirror.beginEditBlock();
+    else mirror.joinPreviousEditBlock();
     for (const int targetIndex : std::as_const(targets)) {
         const int mirrorStart =
             ranges.at(targetIndex).start + relativeStart;

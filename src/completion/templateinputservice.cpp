@@ -66,9 +66,9 @@ QString TemplateInputService::specificationError(const QVariantMap &input)
 {
     if (input.isEmpty())
         return {};
-    const QStringList kinds{"Instance", "Port", "Internal", "Signal", "Parameter", "Choice", "Value", "Code"};
+    const QStringList kinds{"Module", "Instance", "Port", "Internal", "Signal", "Parameter", "Choice", "Value", "Text", "Code"};
     if (!kinds.contains(input.value("kind").toString()))
-        return QStringLiteral("Choose Instance, Port, Internal, Signal, Parameter, Choice, Value or Code.");
+        return QStringLiteral("Choose Module, Instance, Port, Internal, Signal, Parameter, Choice, Value, Text or Code.");
     if (input.value("kind").toString() == "Code" && !QStringList{"statements", "declarations"}.contains(input.value("content", "statements").toString()))
         return QStringLiteral("Unknown Code container content.");
     const auto role = input.value("role").toString();
@@ -143,7 +143,7 @@ TemplateInputCandidates TemplateInputService::candidates(const QVariantMap &inpu
                                                          const TemplateInputContext &context,
                                                          const QHash<QString, QString> &bindings)
 {
-    if (input.value("closedChoice").toBool() && context.liveSnapshot) {
+    if ((input.value("closedChoice").toBool() || context.refreshSnapshot) && context.liveSnapshot) {
         auto live = context;
         live.snapshot = context.liveSnapshot();
         if (context.liveRoles) live.roles = context.liveRoles();
@@ -156,7 +156,7 @@ TemplateInputCandidates TemplateInputService::candidates(const QVariantMap &inpu
     if (!result.reason.isEmpty())
         return result;
     const auto kind = input.value("kind").toString();
-    if (kind == "Value" || kind.isEmpty())
+    if (kind == "Value" || kind == "Text" || kind.isEmpty())
         return result;
     if (context.current && !context.current())
     {
@@ -205,6 +205,10 @@ TemplateInputCandidates TemplateInputService::candidates(const QVariantMap &inpu
     const auto scope = input.value("scope", dependency.isEmpty() ? "visible" : "instance").toString();
     for (const auto &record : all)
     {
+        if (kind == "Module") {
+            if (record.declarationKind == Kind::Module) result.values << record.name;
+            continue;
+        }
         if (input.value("variableOnly").toBool() && record.collectorKind == SymbolTaxonomy::CollectorKind::Wire) continue;
         if (input.value("moduleVariable").toBool() && !record.presentation.directModuleVariable)
             continue;
@@ -354,6 +358,7 @@ QString TemplateInputService::validate(const QVariantMap &input, const QString &
     if (text.trimmed().isEmpty())
         return input.value("allowEmpty").toBool() ? QString()
                                                   : QStringLiteral("Required input is empty.");
+    if (input.value("kind").toString() == "Text") return {};
     if (input.value("kind").toString() != "Value")
     {
         const auto result = candidates(input, context, bindings);

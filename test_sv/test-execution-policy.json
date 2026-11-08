@@ -5048,6 +5048,57 @@
       "timeout": 120,
       "timeoutBasis": "Initial 120-second budget fixed before registered validation; reported full-target durations 18.6/19.7 seconds and the existing sidebar_mainwindow_test budget provide headroom. Never extend on failure.",
       "target": "template_authoring_test"
+    },
+    {
+      "name": "slash_template_test",
+      "role": "compiled",
+      "managedSince": "2026-11-08",
+      "reviewBy": "2026-12-07",
+      "reviewOwner": "AppSuite部署统筹",
+      "source": "test_sv/slash_template_test.cpp; build/coordination/20261108-slash-template-block/TASK.md §4",
+      "when": {},
+      "execution": "run",
+      "reason": {
+        "category": "self_contained",
+        "detail": "Synthetic editor resource input, composition, cancellation, IME and isolated resource persistence; no external fixtures."
+      },
+      "timeout": 120,
+      "timeoutBasis": "Initial 120-second budget fixed before runtime validation; same native editor workflow budget as template_authoring_test.",
+      "target": "slash_template_test"
+    },
+    {
+      "name": "editor_block_test",
+      "role": "compiled",
+      "managedSince": "2026-11-08",
+      "reviewBy": "2026-12-07",
+      "reviewOwner": "AppSuite部署统筹",
+      "source": "test_sv/editor_block_test.cpp; build/coordination/20261108-slash-template-block/TASK.md §4",
+      "when": {},
+      "execution": "run",
+      "reason": {
+        "category": "self_contained",
+        "detail": "Own synthetic source and blocks; shared-document association undo, native projection, keyboard focus and isolated persistence."
+      },
+      "timeout": 120,
+      "timeoutBasis": "Initial fixed 120-second budget for the native editor workflow.",
+      "target": "editor_block_test"
+    },
+    {
+      "name": "editor_block_store_test",
+      "role": "compiled",
+      "managedSince": "2026-11-08",
+      "reviewBy": "2026-12-07",
+      "reviewOwner": "AppSuite部署统筹",
+      "source": "test_sv/editor_block_store_test.cpp; build/coordination/20261108-slash-template-block/TASK.md §4",
+      "when": {},
+      "execution": "run",
+      "reason": {
+        "category": "self_contained",
+        "detail": "Own temporary files only; portable association save, conflicts, recovery, rename, previews and actual TabManager save flow."
+      },
+      "timeout": 120,
+      "timeoutBasis": "Initial fixed 120-second budget for the native editor workflow.",
+      "target": "editor_block_store_test"
     }
   ],
   "resources": [

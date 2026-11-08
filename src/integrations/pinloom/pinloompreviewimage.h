@@ -42,6 +42,8 @@ public:
     explicit PinloomPreviewImageLoader(QObject* parent = nullptr);
     ~PinloomPreviewImageLoader() override;
     void load(const PinloomHostPreview& preview, Handler handler);
+    void loadLocalImage(QByteArray bytes, Handler handler);
+    void loadLocalImageFile(const QString& path, const QByteArray& expectedSha256, Handler handler);
     bool cancel();
 
 private:

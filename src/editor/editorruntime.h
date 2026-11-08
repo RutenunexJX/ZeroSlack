@@ -238,6 +238,7 @@ struct MyCodeEditorState
     bool rebindingDocument = false;
     int lifecycleDiagnosticRank = -1;
     int synchronousEditTransactionDepth = 0;
+    QTextCursor associationEditBlock;
     std::uint64_t completedSynchronousEditTransactions = 0;
     int synchronousEditStartRevision = -1;
     int synchronousEditStartUndoSteps = 0;

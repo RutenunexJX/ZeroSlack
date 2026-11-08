@@ -2,7 +2,6 @@
 #include "../integrations/native/nativecontextview.h"
 #include "../integrations/xips/xipscontextprovider.h"
 #include "../simulation/simdock/ui/workbench.h"
-#include "editorfileidentity.h"
 #include "editorsemanticcontextservice.h"
 #include "mycodeeditor.h"
 #include "shareddocument.h"
@@ -14,12 +13,9 @@
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
-#include <QFutureWatcher>
 #include <QJsonDocument>
 #include <QSaveFile>
-#include <QSet>
 #include <QTemporaryDir>
-#include <QtConcurrent/QtConcurrentRun>
 
 SimulationCommandService::SimulationCommandService(TabManager *t, WorkspaceManager *w, simdock::Workbench *b,
                                                    QWidget *parent)
@@ -27,22 +23,11 @@ SimulationCommandService::SimulationCommandService(TabManager *t, WorkspaceManag
 {
     const auto changed = [this]
     {
-        cancel();
         if (nativeView && !nativeView->property("nativeComponentRetired").toBool())
             nativeView->setWorkspace(workspaces->getWorkspacePath());
     };
     connect(w, &WorkspaceManager::workspaceActivated, this, changed);
     connect(w, &WorkspaceManager::workspaceClosed, this, changed);
-}
-SimulationCommandService::~SimulationCommandService()
-{
-    cancel();
-}
-void SimulationCommandService::cancel()
-{
-    if (pending)
-        pending->store(true);
-    pending.reset();
 }
 NativeContextView *SimulationCommandService::view(QWidget *parent)
 {
@@ -71,28 +56,6 @@ bool SimulationCommandService::canClose(QString *error) const
                 return false;
             }
     return !nativeView || nativeView->canClose(error);
-}
-void SimulationCommandService::prepare()
-{
-    cancel();
-    if (!workspaces || workspaces->getWorkspacePath().isEmpty())
-        return;
-    const auto entries = XipsHostBridge::workspaceReferences(workspaces->getWorkspacePath());
-    for (const auto &value : entries)
-    {
-        const auto entry = value.toMap();
-        const auto root =
-            QDir(workspaces->getWorkspacePath()).absoluteFilePath(entry.value("path").toString());
-        const auto metadata = QDir(root).filePath("xips-commands.json");
-        if (!QFileInfo::exists(metadata))
-            continue;
-        const auto result = UserTemplateService::getInstance()->migrateXipsCommands(metadata, entry);
-        if (!result.valid)
-            emit message(result.failureReason.isEmpty()
-                             ? QStringLiteral("Legacy command mappings conflict with existing Templates; "
-                                              "both originals were retained.")
-                             : result.failureReason);
-    }
 }
 SimulationCommandRequest SimulationCommandService::currentRequest() const
 {
@@ -133,18 +96,6 @@ SimulationCommandRequest SimulationCommandService::currentRequest() const
             request.contents.insert(open->documentFileName(), open->cachedDocumentText());
     request.roles = editor->templateSignalRoles();
     return request;
-}
-bool SimulationCommandService::current(const GlobalControlItem &item, MyCodeEditor *editor) const
-{
-    if (!tabs || !editor || editor->documentReadOnly() || tabs->getCurrentEditor() != editor)
-        return false;
-    const auto *document = tabs->sharedDocumentForEditor(editor);
-    return document && document->instanceSerial() == item.sourceDocumentInstance &&
-           (EditorFileIdentity::same(editor->documentFileName(), item.sourceFileName) ||
-            (editor->documentFileName().isEmpty() && item.sourceFileName.isEmpty())) &&
-           document->textRevision() == item.sourceDocumentTextRevision &&
-           editor->textCursor().position() == item.sourceCursorPosition &&
-           UserTemplateService::getInstance()->catalogRevision() == item.sourceTemplateCatalogRevision;
 }
 QString SimulationCommandService::materializeSupport(const QString &workspace, const QString &kind,
                                                      QStringList *files)
@@ -207,167 +158,6 @@ QString SimulationCommandService::materializeSupport(const QString &workspace, c
             files->append(path);
     }
     return {};
-}
-void SimulationCommandService::activate(const GlobalControlItem &selected)
-{
-    QPointer<MyCodeEditor> editor = tabs ? tabs->getCurrentEditor() : nullptr;
-    if (editor && editor->documentReadOnly())
-    {
-        emit message(QStringLiteral("This document is read-only."));
-        return;
-    }
-    if (!current(selected, editor))
-    {
-        emit message(QStringLiteral(
-            "The document, cursor or template catalog changed. Reopen the insertion palette."));
-        return;
-    }
-    if (pending)
-    {
-        emit message(QStringLiteral("A command is being prepared. Reopen the palette to cancel it."));
-        return;
-    }
-    auto request = currentRequest();
-    request.item = selected;
-    request.context.replacementStart = selected.replacementStart;
-    request.context.replacementLength = selected.replacementLength;
-    const auto workspace = workspaces ? workspaces->getWorkspacePath() : QString();
-    const auto project = buildInputs ? buildInputs->activeProjectId() : QString();
-    const auto compilation = buildInputs ? buildInputs->activeCompilationInputs() : QStringList();
-    QStringList dependencies = selected.parameters.value("compileOrder").toStringList();
-    const auto kind = selected.parameters.value("kind").toString();
-    if ((kind == "driver" || kind == "print") && dependencies.isEmpty())
-    {
-        QStringList support;
-        const auto error = materializeSupport(workspace, kind, &support);
-        if (!error.isEmpty())
-        {
-            emit message(error);
-            return;
-        }
-        dependencies = support + dependencies;
-        dependencies.removeDuplicates();
-    }
-    for (const auto &file : std::as_const(dependencies))
-        if (!QFileInfo(file).isFile())
-        {
-            emit message(QStringLiteral("A package input is missing: %1").arg(file));
-            return;
-        }
-    request.orderedFiles = dependencies + request.orderedFiles;
-    request.orderedFiles.removeDuplicates();
-    const auto projectIncludes = std::make_shared<QStringList>(request.includeDirectories);
-    const auto packageIncludes = selected.parameters.value("includeDirectories").toStringList();
-    request.includeDirectories = packageIncludes + request.includeDirectories;
-    request.includeDirectories.removeDuplicates();
-    pending = request.cancelled = std::make_shared<std::atomic_bool>(false);
-    auto *watcher = new QFutureWatcher<SimulationCommandPlan>(this);
-    connect(watcher, &QFutureWatcher<SimulationCommandPlan>::finished, this,
-            [=, this]
-            {
-                auto result = watcher->result();
-                watcher->deleteLater();
-                if (pending != request.cancelled || request.cancelled->load())
-                    return;
-                cancel();
-                const auto unchanged = [=, this]() -> QString
-                {
-                    if (!editor || editor->documentReadOnly() || !tabs || tabs->getCurrentEditor() != editor ||
-                        !workspaces || workspaces->getWorkspacePath() != workspace ||
-                        (buildInputs && buildInputs->activeProjectId() != project))
-                        return QStringLiteral("The active document or project changed.");
-                    const auto latest = workspaces->projectSnapshot();
-                    if (latest.includeDirs != *projectIncludes || latest.defines != request.defines)
-                        return QStringLiteral("The compilation settings changed.");
-                    if (UserTemplateService::getInstance()->catalogRevision() !=
-                        selected.sourceTemplateCatalogRevision)
-                        return QStringLiteral("The template catalog changed.");
-                    if (editor->templateSignalRoles() != request.roles)
-                        return QStringLiteral("The signal roles changed.");
-                    QSet<QString> openFiles;
-                    for (auto *open : tabs->openEditors())
-                    {
-                        openFiles.insert(open->documentFileName());
-                        if (open != editor && !open->documentFileName().isEmpty() &&
-                            (!request.contents.contains(open->documentFileName()) ||
-                             request.contents.value(open->documentFileName()) != open->cachedDocumentText()))
-                            return QStringLiteral("An open source dependency changed.");
-                    }
-                    for (auto it = request.contents.cbegin(); it != request.contents.cend(); ++it)
-                    {
-                        if (openFiles.contains(it.key()) ||
-                            EditorFileIdentity::same(it.key(), request.context.fileName))
-                            continue;
-                        QFile file(it.key());
-                        if (!file.open(QIODevice::ReadOnly) ||
-                            QString::fromUtf8(file.readAll()) != it.value())
-                            return QStringLiteral("A closed source dependency changed.");
-                    }
-                    return {};
-                };
-                if (!result.error.isEmpty())
-                {
-                    emit message(result.error);
-                    return;
-                }
-                const auto contextChange = unchanged();
-                const auto issue = !current(selected, editor)
-                                       ? QStringLiteral("The document, cursor or template catalog changed.")
-                                   : !contextChange.isEmpty() ? contextChange
-                                   : buildInputs && buildInputs->activeCompilationInputs() != compilation
-                                       ? QStringLiteral("The compilation input order changed.")
-                                   : !SimulationCommandPlanner::sourcesCurrent(result.captured)
-                                       ? QStringLiteral("A source or include changed on disk.")
-                                       : QString();
-                if (!issue.isEmpty())
-                {
-                    emit message(issue + QStringLiteral(" Reopen the insertion palette."));
-                    return;
-                }
-                const auto boundaryIssue = editor->simulationTemplateInsertionError(result.start, result.length,
-                    result.instance, selected.templateParentId, selected.templateParentSlot);
-                if (!boundaryIssue.isEmpty()) { emit message(boundaryIssue); return; }
-                if (!dependencies.isEmpty() && buildInputs)
-                {
-                    const auto error = buildInputs->adoptHdlInputs(project, dependencies, packageIncludes);
-                    if (!error.isEmpty())
-                    {
-                        emit message(error);
-                        return;
-                    }
-                }
-                *projectIncludes = workspaces->projectSnapshot().includeDirs;
-                const auto expectedCompilation =
-                    buildInputs ? buildInputs->activeCompilationInputs() : QStringList();
-                const QPointer<SimulationCommandService> self(this);
-                const auto captured = result.captured;
-                result.inputs->current = [self, unchanged, captured, expectedCompilation]
-                {
-                    return self && unchanged().isEmpty() &&
-                           (!self->buildInputs ||
-                            self->buildInputs->activeCompilationInputs() == expectedCompilation) &&
-                           SimulationCommandPlanner::sourcesCurrent(captured);
-                };
-                QTextCursor cursor(editor->document());
-                editor->configureTemplateInputContext(result.inputs);
-                cursor.setPosition(result.start);
-                cursor.setPosition(result.start + result.length, QTextCursor::KeepAnchor);
-                editor->setTextCursor(cursor);
-                QString error;
-                if (!editor->insertSimulationTemplate(result.text, result.placeholders, result.instance,
-                                                       selected.templateParentId, selected.templateParentSlot, &error))
-                    emit message(error);
-                else
-                {
-                    editor->configureTemplateInputContext(result.inputs, editor->selectedTemplateId(), true);
-                    editor->setFocus();
-                    emit message(result.placeholders.isEmpty()
-                                     ? QStringLiteral("Inserted template.")
-                                     : QStringLiteral("Use Tab to move between inputs; Up/Down selects "
-                                                      "candidates. Value inputs are typed directly."));
-                }
-            });
-    watcher->setFuture(QtConcurrent::run([request] { return SimulationCommandPlanner::prepare(request); }));
 }
 void SimulationCommandService::manage()
 {
@@ -441,6 +231,5 @@ void SimulationCommandService::manage()
         connect(workspaces, &WorkspaceManager::workspaceActivated, dialog, &QDialog::reject);
         connect(workspaces, &WorkspaceManager::workspaceClosed, dialog, &QDialog::reject);
     }
-    connect(dialog, &QDialog::finished, this, [this] { emit catalogChanged(); });
     dialog->show();
 }

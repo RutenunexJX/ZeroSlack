@@ -2,8 +2,6 @@
 
 #include "completioncommandkindadapter.h"
 #include "completionservice.h"
-#include "usertemplateservice.h"
-#include "simulationcommandplanner.h"
 
 #include <QHash>
 #include <QSet>
@@ -274,104 +272,6 @@ QList<GlobalControlItem> symbolItems(
     return result;
 }
 
-bool matchesTemplate(const CodeTemplateItem& item,
-                     const QString& filter)
-{
-    const QString needle = filter.trimmed();
-    return needle.isEmpty()
-        || item.label.contains(needle, Qt::CaseInsensitive)
-        || item.commandToken.contains(needle, Qt::CaseInsensitive)
-        || item.description.contains(needle, Qt::CaseInsensitive)
-        || item.command.value(QStringLiteral("symbol")).toString().contains(needle, Qt::CaseInsensitive)
-        || item.command.value(QStringLiteral("aliases")).toStringList().join(QLatin1Char(' ')).contains(needle, Qt::CaseInsensitive);
-}
-
-QList<GlobalControlItem> simulationItems(
-    const QString& text, const GlobalControlQueryContext& context, QString* notice)
-{
-    if (!context.editorAvailable) {
-        if (notice) *notice = QStringLiteral("Open an editable document to insert templates.");
-        return {};
-    }
-    auto* service = UserTemplateService::getInstance();
-    const auto templates = service->catalogForFile(context.fileName, true);
-    const auto catalogRevision = service->catalogRevision();
-    struct Match {
-        const CodeTemplateItem* item;
-        int rank;
-    };
-    QList<Match> matches;
-    auto needle = text.trimmed();
-    if (needle.startsWith('@')) needle.remove(0, 1);
-    needle = needle.toCaseFolded();
-    for (const auto& templateItem : templates) {
-        if (!matchesTemplate(templateItem, text))
-            continue;
-        const auto token = templateItem.commandToken.mid(
-            templateItem.commandToken.startsWith('@') ? 1 : 0).toCaseFolded();
-        matches.append({&templateItem,
-                        token == needle ? 0 : token.startsWith(needle) ? 1 : 2});
-    }
-    std::stable_sort(matches.begin(), matches.end(), [](const Match& a, const Match& b) {
-        return a.rank < b.rank;
-    });
-    QList<GlobalControlItem> result;
-    QString firstRejection, exactRejection;
-    for (const auto& match : matches) {
-        const auto& templateItem = *match.item;
-        const auto insertionText = templateItem.insertText.isEmpty()
-            ? templateItem.defaultValue : templateItem.insertText;
-        const auto placement = SimulationCommandPlanner::placement(
-            context, templateItem.command, context.templateContent, insertionText);
-        if (placement.status == SimulationPlacementStatus::Incompatible) {
-            if (firstRejection.isEmpty()) firstRejection = placement.reason;
-            if (match.rank == 0)
-                exactRejection = templateItem.commandToken + QStringLiteral(": ") + placement.reason;
-            continue;
-        }
-        GlobalControlItem item;
-        item.kind = GlobalControlItemKind::Template;
-        item.operation = GlobalControlItemOperation::InsertSimulationCommand;
-        item.id = templateItem.commandToken;
-        item.title = templateItem.label;
-        item.subtitle = templateItem.description;
-        item.insertionText = insertionText;
-        item.selectionStart = templateItem.selectionStart;
-        item.selectionLength = templateItem.selectionLength;
-        item.templateSlots = templateItem.templateSlots;
-        item.parameters = templateItem.command;
-        item.templateParentId = context.templateParentId;
-        item.templateParentSlot = context.templateParentSlot;
-        item.templateContent = context.templateContent;
-        item.disabledReason = placement.reason;
-        item.parameterSummary = templateItem.command.value(QStringLiteral("summary")).toString();
-        if (item.parameterSummary.isEmpty()) {
-            QStringList names;
-            for (const auto& slot : item.templateSlots)
-                if (!names.contains(slot.name)) names << slot.name;
-            item.parameterSummary = names.mid(0, 3).join(QStringLiteral(" · "));
-        }
-        item.replacementStart = context.replacementStart;
-        item.replacementLength = context.replacementLength;
-        item.sourceDocumentRevision = context.documentRevision;
-        item.sourceDocumentInstance = context.documentInstance;
-        item.sourceDocumentTextRevision = context.documentTextRevision;
-        item.sourceFileName = context.fileName;
-        item.sourceCursorPosition = context.cursorPosition;
-        item.sourceTemplateCatalogRevision = catalogRevision;
-        result.append(item);
-        if (result.size() >= 120)
-            break;
-    }
-    if (notice) {
-        if (!exactRejection.isEmpty()) *notice = exactRejection;
-        else if (result.isEmpty())
-            *notice = firstRejection.isEmpty() ? QStringLiteral("No matching templates.")
-                : QStringLiteral("No applicable templates here. ") + firstRejection;
-    }
-    return result;
-}
-
 } // namespace
 
 QList<GlobalControlItem> EditorInsertPaletteService::query(
@@ -380,8 +280,6 @@ QList<GlobalControlItem> EditorInsertPaletteService::query(
     const GlobalControlQueryContext& context, QString* availabilityNotice) const
 {
     if (availabilityNotice) availabilityNotice->clear();
-    if (context.simulationCommands || category == GlobalControlCategory::Templates)
-        return simulationItems(text, context, availabilityNotice);
     return category == GlobalControlCategory::Symbols ? symbolItems(text, context)
                                                       : QList<GlobalControlItem>();
 }

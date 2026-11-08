@@ -8,6 +8,7 @@
 #include "formatterservice.h"
 #include "mycodeeditor.h"
 #include "documenttemplatemodel.h"
+#include "documentblockmodel.h"
 #include "tsdocument.h"
 
 #include <QApplication>
@@ -862,7 +863,7 @@ void MyCodeEditorState::executeEditorActionCommand(
     const QString& command)
 {
     if (command == QStringLiteral("format_document"))
-        formatDocument(editor);
+        editor->formatDocument();
 }
 
 FormatterReport MyCodeEditorState::formatDocument(
@@ -902,6 +903,8 @@ FormatterReport MyCodeEditorState::formatDocument(
         report.formattedText);
     QList<QPair<MyCodeEditor*, FormatterCursorAnchor>> anchors;
     QHash<MyCodeEditor*, EditorLogicalCursorState> templateStates;
+    editor->blockModel()->beginFormatting();
+    beginSynchronousEditTransaction(editor);
     for (MyCodeEditor* view :
          editor->sharedDocumentViewsForFormatting()) {
         FormatterCursorAnchor anchor;
@@ -933,6 +936,8 @@ FormatterReport MyCodeEditorState::formatDocument(
         }
         view->state->endSynchronousEditTransaction(view);
     }
+    endSynchronousEditTransaction(editor);
+    editor->blockModel()->endFormatting(positionMapper, applied);
     if (!applied) {
         report.changed = false;
         report.outcome = FormatterOutcome::Rejected;

@@ -1,5 +1,6 @@
 """Exercise reviewed regex inventories through the production CMake checker."""
 from pathlib import Path
+from hashlib import sha256
 import os
 import re
 
@@ -93,13 +94,21 @@ def verify_frozen_regex(config, root, env, check):
         reviewed_probe('changed-body-'+Path(path).stem, 'complete source changed',
                        changed_source={path: data+b'\n// isolated non-API source mutation\n'})
     multiline = 'src/completion/simulationcommandprefix.cpp'
-    data = phase_contents[multiline]
-    original = next(line for line in data.splitlines() if b'QStringLiteral("(?:^|' in line)
-    mutated = original.replace(b'_.:-', b'_.:+-')
+    # The production @ capture was retired. Keep its multiline blind-spot
+    # regression as an isolated fixture, using the unchanged production checker.
+    data = (b'static const QRegularExpression isolatedPattern(\n'
+            b'    QStringLiteral("^[A-Za-z_][A-Za-z0-9_]*$"));\n')
+    original = data.splitlines()[1]
+    mutated = original.replace(b'A-Za-z0-9_', b'A-Za-z0-9_$')
+    fixture_entry = '|'.join([multiline, sha256(data.splitlines()[0]+b'\n').hexdigest(),
+                             sha256(data).hexdigest()])
+    fixture_entries = [fixture_entry if entry.split('|')[0] == multiline else entry
+                       for entry in phase_entries]
+    reviewed_probe('multiline-fixture', declared=fixture_entries, changed_source={multiline: data})
     check(mutated != original and b'QRegularExpression' not in original,
           'multi-line pattern control changes an actual literal outside API matching lines')
     reviewed_probe('changed-multiline-pattern', 'complete source changed',
-                   changed_source={multiline: data.replace(original, mutated)})
+                   declared=fixture_entries, changed_source={multiline: data.replace(original, mutated)})
     reviewed_probe('wrong-source', 'source revision mismatch', source_revision='0'*40)
     reviewed_probe('wrong-extractor', 'extraction version mismatch', extraction_version='unreviewed-extractor')
     reviewed_probe('wrong-normalizer', 'source normalization mismatch', extra_args=('unreviewed-normalizer',))

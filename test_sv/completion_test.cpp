@@ -1561,24 +1561,9 @@ int main(int argc, char** argv) {
     paletteContext.cursorPosition = paletteContext.documentText.indexOf(
         QStringLiteral("  \n")) + 2;
     const EditorInsertPaletteService insertPalette;
-    const QList<GlobalControlItem> paletteTemplates =
-        insertPalette.query(GlobalControlCategory::Templates,
-                            QStringLiteral("process"),
-                            paletteContext);
-    expectBool("Ctrl+Space template category uses template catalog",
-               std::any_of(
-                   paletteTemplates.cbegin(),
-                   paletteTemplates.cend(),
-                   [](const GlobalControlItem& item) {
-                       return item.kind
-                                  == GlobalControlItemKind::Template
-                           && item.id == QStringLiteral("@process")
-                           && item.operation == GlobalControlItemOperation::InsertSimulationCommand
-                           && item.disabledReason.isEmpty()
-                           && item.insertionText.contains(
-                               QStringLiteral("initial begin"));
-                   }),
-               true);
+    expectBool("Ctrl+Space retired template category is empty",
+               insertPalette.query(static_cast<GlobalControlCategory>(1),
+                                   QStringLiteral("process"), paletteContext).isEmpty(), true);
 
     {
         const QString completionContextSource =

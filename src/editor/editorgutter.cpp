@@ -194,7 +194,8 @@ void EditorGutter::paint(MyCodeEditor* editor, QPaintEvent* event) const
             QString::number(blockNumber + 1));
 
         block = editor->nextVisibleBlock(block);
-        top = bottom;
+        top = editor->blockBoundingGeometry(block).translated(
+            editor->contentOffset()).top();
         bottom = top + editor->blockBoundingRect(block).height();
         blockNumber = block.blockNumber();
     }

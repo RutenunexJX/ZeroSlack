@@ -11,6 +11,12 @@ using Input = EditorModeInput;
 const QList<EditorModeDescriptor>& descriptors()
 {
     static const QList<EditorModeDescriptor> value = {
+        {EditorModeId::SlashSearch, EditorModeOwner::TemplateInsertion,
+         QStringLiteral("slash-search"), QStringLiteral("Insert resource"),
+         QStringLiteral("Type to filter; Enter inserts; Esc cancels"), 110,
+         Input::Escape | Input::Tab | Input::Backtab | Input::Enter | Input::Text
+             | Input::Backspace | Input::Navigation | Input::Clipboard,
+         EditorModeEscapeBehavior::Cancel},
         {
             EditorModeId::CommandMode,
             EditorModeOwner::Command,

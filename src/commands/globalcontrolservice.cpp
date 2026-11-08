@@ -250,7 +250,6 @@ QList<GlobalControlItem> GlobalControlService::query(
 {
     switch (category) {
     case GlobalControlCategory::Symbols:
-    case GlobalControlCategory::Templates:
         Q_UNUSED(text);
         Q_UNUSED(context);
         return {};

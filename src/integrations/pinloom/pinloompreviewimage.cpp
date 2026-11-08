@@ -2,6 +2,8 @@
 #include "uicontrols.h"
 #include "uidialogs.h"
 #include <QDialog>
+#include <QBuffer>
+#include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -219,7 +221,7 @@ PinloomPreviewImageResult loadPreviewImage(const PinloomHostPreview& preview, co
 }
 
 struct PinloomPreviewImageLoader::State {
-    struct Request { PinloomHostPreview preview; Handler handler; };
+    struct Request { PinloomHostPreview preview; Handler handler; QByteArray localImage; bool local = false; QString localPath; QByteArray expectedSha256; };
     std::optional<Request> pending;
     QFutureWatcher<PinloomPreviewImageResult>* watcher = nullptr;
     std::shared_ptr<std::atomic_bool> cancelled;
@@ -262,9 +264,39 @@ void PinloomPreviewImageLoader::startPending()
     static QThreadPool pool;
     static const bool configured = [] { pool.setMaxThreadCount(2); return true; }();
     Q_UNUSED(configured)
-    watcher->setFuture(QtConcurrent::run(&pool, [preview = request.preview, cancelled] {
+    watcher->setFuture(QtConcurrent::run(&pool, [preview = request.preview, bytes = request.localImage, local = request.local,
+        path = request.localPath, expected = request.expectedSha256, cancelled] () mutable -> PinloomPreviewImageResult {
+        if (local) {
+            if (cancelled->load()) return {};
+            if (!path.isEmpty()) {
+                QFile file(path);
+                if (!file.open(QIODevice::ReadOnly) || file.size() > kMaximumPreviewFileBytes) return {{}, "Image resource is missing, unreadable or exceeds the size limit."};
+                bytes = file.readAll();
+                if (QCryptographicHash::hash(bytes,QCryptographicHash::Sha256) != expected) return {{}, "Image resource changed; the external file was preserved."};
+                if (cancelled->load()) return {};
+            }
+            if (bytes.isEmpty() || bytes.size() > kMaximumPreviewFileBytes) return {{}, "Image resource is missing or exceeds the size limit."};
+            QBuffer buffer(&bytes); buffer.open(QIODevice::ReadOnly); QImageReader reader(&buffer);
+            const auto size = reader.size();
+            if (!reader.canRead() || !size.isValid() || qint64(size.width()) * size.height() > kMaximumPreviewPixels)
+                return {{}, "Unsupported image or image dimensions exceed the limit."};
+            reader.setAutoTransform(true);
+            if (size.width() > 1600 || size.height() > 1200) reader.setScaledSize(size.scaled(1600, 1200, Qt::KeepAspectRatio));
+            const auto decoded = reader.read();
+            if (cancelled->load()) return {};
+            return {decoded, decoded.isNull() ? reader.errorString() : QString()};
+        }
         return loadPreviewImage(preview, cancelled);
     }));
+}
+
+void PinloomPreviewImageLoader::loadLocalImage(QByteArray bytes, Handler handler)
+{
+    cancel(); state->pending = State::Request{{}, std::move(handler), std::move(bytes), true}; startPending();
+}
+void PinloomPreviewImageLoader::loadLocalImageFile(const QString& path, const QByteArray& expectedSha256, Handler handler)
+{
+    cancel(); state->pending = State::Request{{},std::move(handler),{},true,path,expectedSha256}; startPending();
 }
 
 QDialog* openPinloomImagePreview(QWidget* owner, const QPixmap& pixmap, const QString& title, const QString& accessibleText)

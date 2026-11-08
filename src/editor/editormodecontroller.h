@@ -23,6 +23,7 @@ enum class EditorModeId
     KeywordGhost,
     SourceNavigation,
     InsightTargetPick,
+    SlashSearch,
 };
 
 enum class EditorModeOwner

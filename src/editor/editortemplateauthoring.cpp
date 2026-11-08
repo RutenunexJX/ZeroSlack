@@ -66,8 +66,6 @@ void MyCodeEditor::bindTemplateModel() {
   updateTemplatePresentation();
 }
 QString MyCodeEditor::templateInputFeedback() const {
-  if (templateSearching)
-    return {};
   const auto issue = templateModel()->validationIssue(activeTemplate);
   QString hint = templateInputEditing() ? "Tab / Shift+Tab: inputs · Ctrl+Enter: finish · Esc: cancel local action" : QString();
   if (templateInputEditing()) {
@@ -94,10 +92,6 @@ void MyCodeEditor::updateTemplatePresentation() {
   emit templateInputFeedbackChanged(feedback);
 }
 
-void MyCodeEditor::setTemplateSearchActive(bool active) {
-  templateSearching = active;
-  updateTemplatePresentation();
-}
 bool MyCodeEditor::editTemplateInstance(const QString &requested,
                                         const QString &inputName,
                                         int position) {

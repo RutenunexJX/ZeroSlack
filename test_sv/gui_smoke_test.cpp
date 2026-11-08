@@ -14337,7 +14337,7 @@ int main(int argc, char** argv)
             QTest::keyClick(positionedPalette->searchEdit, Qt::Key_Tab);
             expectBool("Ctrl+Space Tab switches category",
                        positionedPalette->category()
-                               == GlobalControlCategory::Templates,
+                               == GlobalControlCategory::Commands,
                        true);
             QTest::keyClick(positionedPalette->searchEdit,
                             Qt::Key_Tab,
@@ -14355,7 +14355,7 @@ int main(int argc, char** argv)
         editor->setTextCursor(
             QTextCursor(editor->document()->findBlockByNumber(1)));
         GlobalControlPanel* palette =
-            openInsertPalette(GlobalControlCategory::Templates,
+            openInsertPalette(GlobalControlCategory::Symbols,
                               QStringLiteral("guiut"));
         expectBool("Ctrl+Space hides legacy general user templates",
                    palette && palette->currentItems.isEmpty(), true);
@@ -14366,9 +14366,9 @@ int main(int argc, char** argv)
                                             "endmodule\n"));
         editor->setTextCursor(
             QTextCursor(editor->document()->findBlockByNumber(1)));
-        palette = openInsertPalette(GlobalControlCategory::Templates,
+        palette = openInsertPalette(GlobalControlCategory::Symbols,
                                     QStringLiteral("import gui"));
-        expectBool("Ctrl+Space Templates has no package import entry",
+        expectBool("Ctrl+Space Symbols has no package import entry",
                    palette && palette->currentItems.isEmpty(), true);
         if (palette) palette->hide();
 
@@ -14412,17 +14412,16 @@ int main(int argc, char** argv)
                                             "endmodule\n"));
         editor->setTextCursor(
             QTextCursor(editor->document()->findBlockByNumber(1)));
-        palette = openInsertPalette(GlobalControlCategory::Templates,
-                                    QStringLiteral("module gui_target"));
+        palette = openInsertPalette(GlobalControlCategory::Symbols,
+                                    QStringLiteral("m gui_target"));
         expectBool("Ctrl+Space module item inserts full semantic template",
                    activatePaletteItem(
                        palette,
                        [](const GlobalControlItem& item) {
-                           return item.operation
-                                      == GlobalControlItemOperation::InsertText
+                           return item.kind
+                                      == GlobalControlItemKind::Symbol
                                && item.title
-                                      == QStringLiteral(
-                                             "Instantiate gui_target");
+                                      == QStringLiteral("gui_target");
                        }),
                    true);
         CompletionService::getInstance()->setSemanticIndex(

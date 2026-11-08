@@ -273,6 +273,7 @@ private:
     struct ClosedTabState {
         QString fileName;
         QString text;
+        QJsonObject associations;
         SharedDocumentViewState viewState;
         int groupIndex = 0;
         bool locked = false;
@@ -286,6 +287,7 @@ private:
         QList<CrashRecoveryCandidate> claimedRecords;
         QByteArray baseline;
         quint64 snapshotRevision = 0;
+        quint64 snapshotAssociationRevision = 0;
         bool hasSnapshot = false;
         bool retryNeeded = false;
         bool discarded = false;

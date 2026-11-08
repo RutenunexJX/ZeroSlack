@@ -1005,7 +1005,8 @@ bool WorkspaceSessionStateService::saveDocumentTemplates(const QString& fileName
 
 bool WorkspaceSessionStateService::saveDocumentWithTemplates(const QString& fileName, const QByteArray& bytes,
     const QString& expectedDiskRevision, const QJsonObject& state, QString* error,
-    const std::function<bool(QString*)>& commitGuard, QFileDevice::FileError* fileError) const
+    const std::function<bool(QString*)>& commitGuard, QFileDevice::FileError* fileError,
+    const std::function<bool(QString*)>& beforeSourceCommit) const
 {
     QString localError;
     if (!error) error = &localError;
@@ -1047,7 +1048,8 @@ bool WorkspaceSessionStateService::saveDocumentWithTemplates(const QString& file
     // Publish hash-bound metadata first, so a source watcher can only observe
     // a generation with its matching metadata already available.
     if (!storage.commit(error)) return false;
-    if (currentRevision() == expectedDiskRevision && (!commitGuard || commitGuard(error)) && source.commit()) return true;
+    if (currentRevision() == expectedDiskRevision && (!commitGuard || commitGuard(error))
+        && (!beforeSourceCommit || beforeSourceCommit(error)) && source.commit()) return true;
     if (fileError) *fileError = source.error();
     *error = QStringLiteral("Source commit failed or conflicted; previous metadata restored. ") + source.errorString();
     QSaveFile rollback(path);

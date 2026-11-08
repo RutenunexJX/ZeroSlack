@@ -38,6 +38,7 @@ public:
     bool containsPosition(int position) const;
     void selectIndex(MyCodeEditor* editor, int index) { select(editor, index); }
     void syncPersistentRanges(MyCodeEditor* editor, const CodeTemplateSlotList& inputs);
+    void finishAt(int position) { finalCursorPosition = position; }
     QString currentValidationError(MyCodeEditor* editor) const { return validationError(editor, firstPhysicalIndexForGroup(currentIndex)); }
     QString allValidationError(MyCodeEditor* editor) const;
 
@@ -75,6 +76,7 @@ private:
     int currentIndex = -1;
     int sessionStart = -1;
     int sessionEnd = -1;
+    int finalCursorPosition = -1;
     QTimer* blinkTimer = nullptr;
     QMetaObject::Connection blinkConnection;
     bool currentBlinkOn = true;

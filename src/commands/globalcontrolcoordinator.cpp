@@ -1,9 +1,7 @@
 #include "globalcontrolcoordinator.h"
 
 #include "actionregistry.h"
-#include "documenttemplatemodel.h"
 #include "globalcontrolpanel.h"
-#include "mycodeeditor.h"
 
 #include <QApplication>
 #include <QEvent>
@@ -21,10 +19,7 @@ GlobalControlCoordinator::GlobalControlCoordinator(QWidget* anchorWidget,
     panel->setQueryChangedHandler(
         [this](const QString& text) { refresh(text); });
     panel->setCategoryChangedHandler(
-        [this](GlobalControlCategory category) {
-            if (templateEditor)
-                templateEditor->setTemplateSearchActive(
-                    currentContext.simulationCommands || category == GlobalControlCategory::Templates);
+        [this](GlobalControlCategory) {
             refresh(panel ? panel->queryText() : QString());
         });
     panel->setItemActivatedHandler(
@@ -86,8 +81,7 @@ void GlobalControlCoordinator::install()
 
 bool GlobalControlCoordinator::eventFilter(QObject* watched, QEvent* event)
 {
-    if (watched == panel.get() && event && event->type() == QEvent::Hide && templateEditor)
-        templateEditor->setTemplateSearchActive(false);
+    Q_UNUSED(watched);
     return handleKeyEvent(event);
 }
 
@@ -137,30 +131,11 @@ void GlobalControlCoordinator::open()
         : QPoint();
     currentContext = contextProvider
         ? contextProvider() : GlobalControlQueryContext();
-    templateEditor = nullptr;
-    if (currentContext.editorAvailable)
-        for (auto* focus = QApplication::focusWidget(); focus && !templateEditor; focus = focus->parentWidget())
-            templateEditor = qobject_cast<MyCodeEditor*>(focus);
-    templateContext = currentContext;
-    if (templateEditor && !currentContext.simulationCommands) {
-        // Template insertion uses the captured selection, not the symbol token.
-        const auto cursor = templateEditor->textCursor();
-        templateContext.replacementStart = cursor.selectionStart();
-        templateContext.replacementLength = cursor.selectionEnd() - cursor.selectionStart();
-        templateContext.templateBoundaryError = templateContext.readOnly ? QString()
-            : templateEditor->simulationTemplateInsertionError(
-                templateContext.replacementStart, templateContext.replacementLength, {},
-                templateContext.templateParentId, templateContext.templateParentSlot);
-    }
-    panel->setSimulationOnly(currentContext.simulationCommands);
     panel->setCategory(currentContext.editorAvailable
                            ? GlobalControlCategory::Symbols
                            : GlobalControlCategory::Commands);
     if (openingHandler)
         openingHandler();
-    if (templateEditor)
-        templateEditor->setTemplateSearchActive(
-            currentContext.simulationCommands || panel->category() == GlobalControlCategory::Templates);
     panel->resetQuery(currentContext.initialQuery);
     refresh(currentContext.initialQuery);
     if (!popupAnchor.isNull())
@@ -173,22 +148,19 @@ void GlobalControlCoordinator::refresh(const QString& queryText)
 {
     if (!panel)
         return;
-    const GlobalControlCategory category = currentContext.simulationCommands ? GlobalControlCategory::Templates : panel->category();
-    const auto& context = category == GlobalControlCategory::Templates
-        ? templateContext : currentContext;
+    const GlobalControlCategory category = panel->category();
     QString notice;
     const auto items =
         category == GlobalControlCategory::Commands
             ? service.query(category, queryText, currentContext)
             : (itemProvider
-                   ? itemProvider(category, queryText.startsWith('@') ? queryText.mid(1) : queryText, context, &notice)
+                   ? itemProvider(category, queryText, currentContext, &notice)
                    : QList<GlobalControlItem>());
     panel->setItems(items, notice);
 }
 
 void GlobalControlCoordinator::dispatch(const GlobalControlItem& item)
 {
-    if (templateEditor) templateEditor->setTemplateSearchActive(false);
     if (actionHandler)
         actionHandler(item);
 }

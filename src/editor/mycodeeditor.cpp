@@ -5,6 +5,8 @@
 #include "applicationthememanager.h"
 #include "actionregistry.h"
 #include "editorruntime.h"
+#include "editorslashcontroller.h"
+#include "editorblockhost.h"
 #include "editortextpaint.h"
 #include "editorlexicalboundary.h"
 #include "editorsemanticcontextservice.h"
@@ -36,6 +38,7 @@
 #include <QPainter>
 #include <QPushButton>
 #include <QScrollBar>
+#include <QScopeGuard>
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QTextDocument>
@@ -391,6 +394,8 @@ MyCodeEditor::MyCodeEditor(QWidget *parent)
     viewport()->setAutoFillBackground(false);
     state->attachToEditor(this);
     bindTemplateModel();
+    slashSearch = std::make_unique<EditorSlashController>(this, &state->modes);
+    blockHost = std::make_unique<EditorBlockHost>(this);
 }
 
 MyCodeEditor::SynchronousEditTransaction::SynchronousEditTransaction(
@@ -438,6 +443,8 @@ MyCodeEditor::UserEditScope MyCodeEditor::beginUserEdit(int key, bool repeat)
 
 MyCodeEditor::~MyCodeEditor()
 {
+    blockHost.reset();
+    slashSearch.reset();
     emit editingInteractionEnded();
     state->shutdown(this);
 }
@@ -446,13 +453,16 @@ void MyCodeEditor::attachSharedDocument(
     QTextDocument* sharedDocument,
     std::uint64_t textRevision)
 {
+    cancelSlashSearch();
     emit editingInteractionEnded();
     state->rebindDocument(this, sharedDocument, textRevision);
     bindTemplateModel();
+    if (blockHost) blockHost->rebind();
 }
 
 void MyCodeEditor::setPlainText(const QString& text)
 {
+    cancelSlashSearch();
     emit editingInteractionEnded();
     {
         auto edit = beginSynchronousEditTransaction();
@@ -461,6 +471,7 @@ void MyCodeEditor::setPlainText(const QString& text)
     }
     emit insightScopeChanged();
     bindTemplateModel();
+    if (blockModel()->hasAssociationHistory()) blockModel()->resetHistory("The source was replaced; previous association undo history is no longer available.");
 }
 
 void MyCodeEditor::insertPlainText(const QString& text)
@@ -527,17 +538,24 @@ void MyCodeEditor::insertFromMimeData(const QMimeData* source)
 
 void MyCodeEditor::undo()
 {
+    if (documentReadOnly()) return;
+    cancelSlashSearch(); finishBlockEditing();
+    if (blockModel()->undoAssociation(false)) return;
     replayDocumentUndo(false);
 }
 
 void MyCodeEditor::redo()
 {
+    if (documentReadOnly()) return;
+    cancelSlashSearch(); finishBlockEditing();
+    if (blockModel()->undoAssociation(true)) return;
     replayDocumentUndo(true);
 }
 
 void MyCodeEditor::replayDocumentUndo(bool redo)
 {
     if (documentReadOnly()) return;
+    blockModel()->beginTextReplay();
     const int beforeUndoSteps = document()->availableUndoSteps();
     const bool formatting = std::any_of(state->undoCursorEntries.cbegin(), state->undoCursorEntries.cend(),
         [&](const auto& entry) { return entry.formatting && (redo ? entry.beforeUndoSteps : entry.afterUndoSteps) == beforeUndoSteps; });
@@ -555,6 +573,7 @@ void MyCodeEditor::replayDocumentUndo(bool redo)
         QPlainTextEdit::undo();
     }
     templateModel()->endReplay();
+    blockModel()->endTextReplay();
     const int afterUndoSteps = document()->availableUndoSteps();
     for (auto* view : views) {
         view->state->restoreCursorAfterUndoRedo(view, redo, beforeUndoSteps, afterUndoSteps);
@@ -1017,6 +1036,8 @@ void MyCodeEditor::contextMenuEvent(QContextMenuEvent *event)
     state->handleContextMenu(this, event);
 }
 
+void MyCodeEditor::addBlockAssociationMenu(QMenu* menu) { if (blockHost && menu) blockHost->addAssociationActions(menu); }
+
 EditorSemanticContext MyCodeEditor::editorSemanticContextForPosition(
     int cursorPosition,
     bool includeDocumentText) const
@@ -1119,6 +1140,32 @@ bool MyCodeEditor::goToFinalEndmodule(QString* message)
 bool MyCodeEditor::selectInsideBeginEnd(QString* message)
 {
     return state->selectInsideBeginEnd(this, message);
+}
+
+void MyCodeEditor::cancelSlashSearch()
+{
+    if (slashSearch) slashSearch->cancel();
+}
+
+DocumentBlockModel* MyCodeEditor::blockModel() const { return DocumentBlockModel::get(document()); }
+void MyCodeEditor::finishBlockEditing() { if (blockHost) blockHost->finishEditing(); }
+void MyCodeEditor::selectAssociatedBlock(const QString& id, bool edit) { if (blockHost) blockHost->select(id, edit); }
+int MyCodeEditor::associatedBlockViewCount() const { return blockHost ? blockHost->viewCount() : 0; }
+
+bool MyCodeEditor::insertOrdinaryTemplate(const QString& text,
+    const CodeTemplateSlotList& inputs, int finalCursor, QString* error)
+{
+    const int start = textCursor().selectionStart();
+    QTextCursor position(document()); position.setPosition(start);
+    const auto prefix = position.block().text().left(position.positionInBlock());
+    const auto indent = prefix.trimmed().isEmpty() ? prefix : QString();
+    finalCursor = qBound(0, finalCursor, int(text.size()));
+    int mapped = finalCursor;
+    for (int i = 0; i < finalCursor; ++i)
+        if (text[i] == '\n' && i + 1 < text.size()) mapped += indent.size();
+    if (!insertCompletionText(text, finalCursor, 0, inputs, error)) return false;
+    if (!inputs.isEmpty()) state->templateSlots.finishAt(start + mapped);
+    return true;
 }
 
 void MyCodeEditor::startTemplateSlotMode(
@@ -1405,7 +1452,7 @@ MyCodeEditor::sharedDocumentViewsForFormatting() const
 
 FormatterReport MyCodeEditor::formatDocument()
 {
-    auto edit = beginSynchronousEditTransaction();
+    cancelSlashSearch();
     return state->formatDocument(this);
 }
 
@@ -2018,6 +2065,7 @@ bool MyCodeEditor::editorModeActiveForTest(EditorModeId id) const
 
 void MyCodeEditor::exitInteractionModes(EditorModeExitReason reason)
 {
+    cancelSlashSearch();
     state->exitInteractionModes(reason);
     updateTemplatePresentation();
 }
@@ -2060,10 +2108,24 @@ void MyCodeEditor::setEditorBackground(const QString& preset, const QString& cus
 
 void MyCodeEditor::keyPressEvent(QKeyEvent *event)
 {
+    if (slashSearch && slashSearch->trigger(event)) { event->accept(); return; }
+    if (blockHost && blockHost->navigateFromCode(event)) { event->accept(); return; }
+    if (blockModel()->hasAssociationHistory() && (event->matches(QKeySequence::Undo) || event->matches(QKeySequence::Redo))) {
+        if (event->matches(QKeySequence::Undo)) undo(); else redo(); event->accept(); return;
+    }
     auto input = beginUserEdit(event->key(), event->isAutoRepeat());
     if (handleTemplateInputKey(event)) { event->accept(); return; }
-    lifecycleTrace("key.enter");
     auto edit = beginSynchronousEditTransaction();
+    QTextCursor linkedInput;
+    if (state->templateSlots.active() && !templateInputEditing()
+        && !event->matches(QKeySequence::Undo) && !event->matches(QKeySequence::Redo)) {
+        linkedInput = textCursor(); linkedInput.beginEditBlock();
+        setProperty("ordinaryTemplateEditBlock", true);
+    }
+    const auto endLinkedInput = qScopeGuard([&] {
+        if (!linkedInput.isNull()) { linkedInput.endEditBlock(); setProperty("ordinaryTemplateEditBlock", false); }
+    });
+    lifecycleTrace("key.enter");
     lifecycleTrace("key.transaction");
     lifecycleTrace("key.before-dispatch");
     if (state->handleKeyPress(this, event)) {
@@ -2084,10 +2146,21 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
             || event->key() == Qt::Key_PageDown)) {
         const QTextCursor current = textCursor();
         const QTextBlock currentBlock = current.block();
+        if (event->key() == Qt::Key_Up || event->key() == Qt::Key_Down) {
+            auto* layout = currentBlock.layout();
+            const auto line = layout ? layout->lineForTextPosition(current.positionInBlock()) : QTextLine();
+            const int next = line.isValid() ? line.lineNumber() + (event->key() == Qt::Key_Down ? 1 : -1) : -1;
+            if (layout && next >= 0 && next < layout->lineCount()) {
+                auto target = current;
+                target.setPosition(currentBlock.position() + layout->lineAt(next).xToCursor(line.cursorToX(current.positionInBlock())),
+                    event->modifiers().testFlag(Qt::ShiftModifier) ? QTextCursor::KeepAnchor : QTextCursor::MoveAnchor);
+                QPlainTextEdit::setTextCursor(target); state->projection.ensureCursorVisible(this,false); viewport()->update(); event->accept(); return;
+            }
+        }
         const int row = state->projection.visibleRowForSourceLine(
             currentBlock.blockNumber());
         if (row >= 0) {
-            const int page = qMax(1, verticalScrollBar()->pageStep());
+            const int page = qMax(1, viewport()->height() / qMax(1, fontMetrics().height()));
             const int delta = event->key() == Qt::Key_Up
                 ? -1
                 : (event->key() == Qt::Key_Down
@@ -2178,6 +2251,14 @@ void MyCodeEditor::inputMethodEvent(QInputMethodEvent* event)
 {
     UserEditScope input((!event->commitString().isEmpty() || event->replacementLength() != 0)
                            ? this : nullptr, -1, false);
+    auto edit = beginSynchronousEditTransaction();
+    QTextCursor linkedInput;
+    if (state->templateSlots.active() && !templateInputEditing()) {
+        linkedInput = textCursor(); linkedInput.beginEditBlock(); setProperty("ordinaryTemplateEditBlock", true);
+    }
+    const auto endLinkedInput = qScopeGuard([&] {
+        if (!linkedInput.isNull()) { linkedInput.endEditBlock(); setProperty("ordinaryTemplateEditBlock", false); }
+    });
     if (templateInputEditing()) {
         clearTemplatePreedit();
         QTextCursor edit = textCursor();
@@ -2207,7 +2288,6 @@ void MyCodeEditor::inputMethodEvent(QInputMethodEvent* event)
             event->ignore();
         return;
     }
-    auto edit = beginSynchronousEditTransaction();
     state->projection.ensure(this, state->folding.collapsedLineRanges());
     const int previousProjectedScroll = state->projection.active()
         ? verticalScrollBar()->value() : -1;
@@ -2535,7 +2615,7 @@ void MyCodeEditor::wheelEvent(QWheelEvent* event)
         } else if (!event->pixelDelta().isNull()) {
             QScrollBar* bar = verticalScrollBar();
             const int lineHeight = qMax(1, fontMetrics().height());
-            const int rows = event->pixelDelta().y() / lineHeight;
+            const int rows = blockModel()->items().isEmpty() ? event->pixelDelta().y() / lineHeight : event->pixelDelta().y();
             bar->setValue(bar->value() - rows);
         }
         viewport()->update();

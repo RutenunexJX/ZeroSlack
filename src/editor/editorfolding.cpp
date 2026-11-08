@@ -516,7 +516,8 @@ void EditorFoldingController::paintGutter(
         }
 
         block = editor->nextVisibleBlock(block);
-        top = bottom;
+        top = static_cast<int>(editor->blockBoundingGeometry(block)
+                                   .translated(editor->contentOffset()).top());
         bottom = top + static_cast<int>(editor->blockBoundingRect(block).height());
     }
     painter.restore();

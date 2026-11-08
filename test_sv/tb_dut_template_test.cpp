@@ -2,6 +2,7 @@
 #include "editorinsertpaletteservice.h"
 #include "mycodeeditor.h"
 #include "testuistyle.h"
+#include "templatefixture.h"
 #include "usertemplateservice.h"
 #include "slangmanager.h"
 #include "templatecapabilities.h"
@@ -137,13 +138,13 @@ void compileTimingSources(MainWindow& window, const QString& directory) {
     QTRY_VERIFY_WITH_TIMEOUT(build->activeCompilationInputs().contains(source)
         && build->activeCompilationInputs().contains(top), 15000);
 }
-void searchTemplates(MainWindow& window, MyCodeEditor* editor, const QString& query) {
+void searchSymbols(MainWindow& window, MyCodeEditor* editor, const QString& query) {
     editor->setFocus();
     QTRY_VERIFY(editor->hasFocus());
     window.globalControlCoordinator->open();
     auto* panel = window.globalControlCoordinator->panel.get();
     QTRY_VERIFY(panel->isVisible());
-    panel->setCategory(GlobalControlCategory::Templates);
+    panel->setCategory(GlobalControlCategory::Symbols);
     panel->resetQuery(query);
     window.globalControlCoordinator->refreshVisibleItems();
     panel->focusSearch(false);
@@ -186,7 +187,7 @@ private slots:
         editor->setFocus(); QTRY_VERIFY(editor->hasFocus());
         
         place(*editor, editor->toPlainText().indexOf("endmodule"));
-        searchTemplates(window, editor, token); enter();
+        insertTemplateFixture(editor, window.simulationCommands->currentRequest(), token);
         QTRY_COMPARE_WITH_TIMEOUT(editor->templateModel()->instances().size(), 1, 15000);
         const auto child = editor->selectedTemplateId();
         const QString signalName = token == "clk_init" ? "clk_name" : "reset_name";
@@ -342,7 +343,7 @@ private slots:
         place(*editor, editor->toPlainText().indexOf("endmodule"));
         QStringList messages;
         connect(editor, &MyCodeEditor::editorStatusMessageRequested, &window, [&](const QString& text) { messages << text; });
-        searchTemplates(window, editor, token); enter();
+        insertTemplateFixture(editor, window.simulationCommands->currentRequest(), token);
         QTRY_COMPARE_WITH_TIMEOUT(editor->templateModel()->instances().size(), 1, 15000);
         const auto child = editor->selectedTemplateId();
         const auto activeVisuals = [&] {
@@ -573,7 +574,7 @@ private slots:
         const int repeats = scenario == "repeat" ? 3 : 1;
         for (int i = 0; i < repeats; ++i) {
             observe("before-search");
-            searchTemplates(window, editor, {}); QTRY_VERIFY(panel->isVisible()); observe("search-open");
+            searchSymbols(window, editor, {}); QTRY_VERIFY(panel->isVisible()); observe("search-open");
             QCOMPARE(editor->toPlainText(), expected);
             QCOMPARE(editor->textCursor().position(), expectedCursor.position());
             QCOMPARE(editor->textCursor().anchor(), expectedCursor.anchor());
@@ -895,7 +896,7 @@ endmodule
         const QVariantMap polarity{{"kind","Choice"},{"choices",QStringList{"0","1"}}};
         QVERIFY(!TemplateInputService::validate(polarity,"2",{},{}).isEmpty());
     }
-    void capabilitiesAndStalePreparation() {
+    void capabilityValidation() {
         UserTemplateService catalog(QString::fromUtf8(TB_TEMPLATE_FILE), {});
         UserTemplateRecord clock;
         for (const auto& record : catalog.records()) {
@@ -920,32 +921,6 @@ endmodule
         auto inputs = clock.templateSlots;
         for (auto& slot : inputs) if (slot.input.value("role") == "Clock") slot.input["closedChoice"] = false;
         QVERIFY(!TemplateCapabilities::render(clock.command, clock.insertText, inputs).error.isEmpty());
-        QTemporaryDir dir; const auto path = dir.filePath("tb.sv");
-        put(path, "module tb;\n\nendmodule\n");
-        MainWindow window; SaveObserver saveObserver(window); window.show();
-        window.workspaceSessionCoordinator->setRestoreOnActivation(false);
-        window.workspaceManager->setRecentWorkspacePersistenceEnabledForTesting(false);
-        window.workspaceSessionCoordinator->openWorkspace(dir.path());
-        QVERIFY(window.tabManager->openFileInTab(path));
-        auto* editor = window.tabManager->getCurrentEditor();
-        const auto discard = qScopeGuard([&] { for (auto* view : window.tabManager->openEditors()) view->document()->setModified(false); });
-        window.activateWindow(); editor->setFocus(); QTRY_VERIFY(editor->hasFocus());
-        place(*editor, editor->toPlainText().indexOf("endmodule"));
-        searchTemplates(window, editor, "process");
-        auto* panel = window.globalControlCoordinator->panel.get();
-        QTRY_VERIFY(!panel->currentItems.isEmpty());
-        const auto selected = panel->currentItems.first();
-        QCOMPARE(selected.parameters.value("kind").toString(), QString("snippet"));
-        QSignalSpy feedback(window.simulationCommands.get(), &SimulationCommandService::message);
-        window.simulationCommands->activate(selected);
-        QVERIFY(feedback.isEmpty());
-        editor->insertPlainText("// changed during preparation\n");
-        const auto changed = editor->toPlainText();
-        QTRY_VERIFY_WITH_TIMEOUT(!feedback.isEmpty(), 15000);
-        QVERIFY(feedback.last().first().toString().contains("changed", Qt::CaseInsensitive));
-        QCOMPARE(editor->toPlainText(), changed); QCOMPARE(editor->templateModel()->instances().size(), 0);
-        QVERIFY(!editor->toPlainText().contains("initial begin"));
-        panel->hide();
     }
     void confirmationAndModeFeedback() {
         QTemporaryDir dir;
@@ -961,13 +936,13 @@ endmodule
         place(*editor, editor->toPlainText().indexOf("endmodule"));
         const auto original = editor->toPlainText();
         auto* panel = window.globalControlCoordinator->panel.get();
-        searchTemplates(window, editor, "process");
-        QCOMPARE(panel->currentItems.size(), 1);
+        searchSymbols(window, editor, "@process");
+        QVERIFY(panel->currentItems.isEmpty());
         QCOMPARE(editor->toPlainText(), original);
         QTest::keyClick(QApplication::focusWidget(), Qt::Key_Escape);
         QTRY_VERIFY(!panel->isVisible());
         QCOMPARE(editor->toPlainText(), original);
-        searchTemplates(window, editor, "process"); enter();
+        insertTemplateFixture(editor, window.simulationCommands->currentRequest(), "process");
         QTRY_COMPARE(editor->templateModel()->instances().size(), 1);
         QVERIFY(editor->templateInputEditing());
         auto* feedback = window.findChild<QLabel*>("templateInputStatus");
@@ -984,9 +959,9 @@ endmodule
         place(*editor, body.start + body.length);
         QVERIFY(editor->replaceTemplateInput(editor->textCursor(), "\n  "));
         const auto before = editor->toPlainText();
-        searchTemplates(window, editor, "definitions");
+        searchSymbols(window, editor, "@definitions");
         QVERIFY(panel->isVisible());
-        QVERIFY(panel->availabilityNotice->text().contains("container", Qt::CaseInsensitive));
+        QVERIFY(panel->currentItems.isEmpty());
         QCOMPARE(editor->toPlainText(), before);
         QTest::keyClick(QApplication::focusWidget(), Qt::Key_Escape);
         QTRY_VERIFY(editor->hasFocus());
@@ -1016,9 +991,8 @@ endmodule
         
         place(*editor, editor->toPlainText().indexOf("endmodule"));
         const auto initial = editor->toPlainText();
-        searchTemplates(window, editor, clockCommand);
-        QVERIFY(window.globalControlCoordinator->panel->isVisible());
-        QCOMPARE(editor->toPlainText(), initial); enter();
+        insertTemplateFixture(editor, window.simulationCommands->currentRequest(), clockCommand);
+        QVERIFY(editor->toPlainText() != initial);
         QTRY_COMPARE_WITH_TIMEOUT(editor->templateModel()->instances().size(), 1, 20000);
         QVERIFY(editor->templateInputEditing());
         const auto clockId = editor->selectedTemplateId();
@@ -1038,7 +1012,7 @@ endmodule
         QTest::keyClick(editor, Qt::Key_Return, Qt::ControlModifier);
         QVERIFY(!editor->templateInputEditing());
         place(*editor, editor->toPlainText().indexOf("endmodule"));
-        searchTemplates(window, editor, resetCommand); enter();
+        insertTemplateFixture(editor, window.simulationCommands->currentRequest(), resetCommand);
         QTRY_COMPARE_WITH_TIMEOUT(editor->templateModel()->instances().size(), 2, 20000);
         QTest::keyClick(editor, Qt::Key_Down); QTest::keyClick(editor, Qt::Key_Tab); keys("12.5");
         QTest::keyClick(editor, Qt::Key_Tab); keys("0");

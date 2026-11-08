@@ -11,6 +11,7 @@ struct TemplateInputContext
     std::function<bool()> current;
     std::function<std::shared_ptr<const SemanticIndexSnapshot>()> liveSnapshot;
     std::function<QVariantMap()> liveRoles;
+    bool refreshSnapshot = false;
 };
 struct TemplateInputCandidates
 {

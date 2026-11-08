@@ -107,7 +107,7 @@ QJsonArray payload(const QList<GlobalControlItem>& items)
                 {"visibleWhenEmpty", slot.visibleWhenEmpty}});
         }
         result.append(QJsonObject{
-            {"kind", int(item.kind)}, {"operation", int(item.operation)},
+            {"kind", int(item.kind)},
             {"id", item.id}, {"title", item.title},
             {"subtitle", item.subtitle}, {"actionId", item.actionId},
             {"executionRoute", item.executionRoute},
@@ -412,33 +412,23 @@ void runTemplateCacheAndWriterRegression()
     expect("retained template writer commits valid input", service->setRecords({record}).valid);
     auto context = queryContext(temp.filePath("fixture.sv"), fixtureText());
     EditorInsertPaletteService palette;
-    const auto first = palette.query(GlobalControlCategory::Templates, "cache", context);
+    const auto first = service->catalogForFile(context.fileName, true);
     const auto reads = service->fileReadsForTesting();
-    for (int i = 0; i < 25; ++i) palette.query(GlobalControlCategory::Templates, "cache", context);
-    expect("repeated template filters reuse context and file contents",
+    for (int i = 0; i < 25; ++i) service->catalogForFile(context.fileName, true);
+    expect("repeated template catalog reads reuse file contents",
         !first.isEmpty() && service->fileReadsForTesting() == reads);
     const auto revision = service->catalogRevision();
     expect("external same-size template update writes",
         writeText(global, QStringLiteral("{\"templates\":[{\"command\":\"@cache\",\"body\":\"logic cached_b;\"}]}")));
-    const auto updated = palette.query(GlobalControlCategory::Templates, "cache", context);
+    const auto updated = service->catalogForFile(context.fileName, true);
     expect("external file version invalidates catalog without reparsing unchanged document",
         service->catalogRevision() > revision
-        && std::any_of(updated.cbegin(), updated.cend(), [](const auto& item) { return item.insertionText == "logic cached_b;"; }));
+        && std::any_of(updated.cbegin(), updated.cend(), [](const auto& item) { return item.insertText == "logic cached_b;"; }));
     const auto beforeReload = service->fileReadsForTesting();
     service->reload();
     expect("manual Reload rereads the catalog", service->fileReadsForTesting() > beforeReload);
-    ++context.documentRevision;
-    ++context.documentTextRevision;
-    --context.cursorPosition;
-    context.fileName = temp.filePath("renamed.sv");
-    ++context.documentInstance;
-    const auto refreshed = palette.query(GlobalControlCategory::Templates, "cache", context);
-    expect("template candidates capture current document text cursor and identity",
-        refreshed.size() == 1 && refreshed.first().sourceDocumentRevision == context.documentRevision
-        && refreshed.first().sourceDocumentTextRevision == context.documentTextRevision
-        && refreshed.first().sourceDocumentInstance == context.documentInstance
-        && refreshed.first().sourceFileName == context.fileName
-        && refreshed.first().sourceCursorPosition == context.cursorPosition);
+    expect("retired template category returns no candidates",
+        palette.query(static_cast<GlobalControlCategory>(1), "@cache", context).isEmpty());
     expect("workspace templates can be added externally",
         writeText(workspace, "[{\"command\":\";;workspace\",\"body\":\"logic workspace;\"}]"));
     expect("new workspace file invalidates absence cache", service->matchingTemplates(";;workspace").size() == 1);
@@ -460,7 +450,7 @@ void runTemplateCacheAndWriterRegression()
     service->setGlobalTemplateFilePath(previousGlobal);
     service->setWorkspaceTemplateFilePath(previousWorkspace);
 }
-void runTemplateInsertionVersionGuards(const QString& path)
+void runTemplateEntryRemovalRegression(const QString& path)
 {
     QTemporaryDir templates;
     auto* service = UserTemplateService::getInstance();
@@ -469,50 +459,94 @@ void runTemplateInsertionVersionGuards(const QString& path)
     MainWindow window;
     window.workspaceSessionCoordinator->setRestoreOnActivation(false);
     window.workspaceManager->setRecentWorkspacePersistenceEnabledForTesting(false);
-    expect("template guard source is writable", writeText(path, "module guarded;\n\nendmodule\n"));
-    expect("template guard source opens", window.tabManager->openFileInTab(path));
+    expect("entry removal source is writable", writeText(path, "module guarded;\n\nendmodule\n"));
+    expect("entry removal source opens", window.tabManager->openFileInTab(path));
     service->setGlobalTemplateFilePath(templates.filePath("global.json"));
     service->setWorkspaceTemplateFilePath(templates.filePath("workspace.json"));
+    UserTemplateRecord record;
+    record.id = "guard"; record.commandToken = record.label = "@guard";
+    record.insertText = "logic template_must_not_be_inserted;";
+    record.command = {{"kind", "snippet"}};
+    expect("user template fixture is retained", service->saveRecord(record, false).valid);
+    QFile catalog(service->globalTemplateLocation());
+    expect("user template bytes readable", catalog.open(QIODevice::ReadOnly));
+    const auto originalCatalog = catalog.readAll(); catalog.close();
     auto* editor = window.tabManager->getCurrentEditor();
-    UserTemplateRecord simulation;
-    simulation.id = "guard"; simulation.commandToken = simulation.label = "@guard";
-    simulation.insertText = "logic guard;"; simulation.command = {{"kind", "snippet"}};
-    expect("simulation guard fixture is retained", service->saveRecord(simulation, false).valid);
-    QTextCursor cursor(editor->document()); cursor.setPosition(16); editor->setTextCursor(cursor);
-    window.show();
-    window.activateWindow();
     auto* coordinator = window.globalControlCoordinator.get();
-    auto capture = [&] {
+    auto* panel = coordinator->panel.get();
+    window.show(); window.activateWindow();
+    const auto open = [&] {
         editor->setFocus();
-        QApplication::processEvents();
-        const auto context = coordinator->contextProvider();
-        expect("production insertion context belongs to the focused document", context.editorAvailable
-            && context.documentInstance == window.tabManager->sharedDocumentForEditor(editor)->instanceSerial());
-        const auto items = coordinator->itemProvider(GlobalControlCategory::Templates, "", context, nullptr);
-        const auto found = std::find_if(items.begin(), items.end(), [](const auto& item) {
-            return item.kind == GlobalControlItemKind::Template
-                && item.operation == GlobalControlItemOperation::InsertSimulationCommand && item.id == "@guard";
-        });
-        expect("production template provider returns an insertion", found != items.end());
-        return found != items.end() ? *found : GlobalControlItem{};
+        expect("editor has focus before Ctrl+Space", waitUntil([&] { return editor->hasFocus(); }));
+        QTest::keyClick(editor, Qt::Key_Space, Qt::ControlModifier);
+        expect("Ctrl+Space opens panel", waitUntil([&] { return panel->isVisible(); }));
+        expect("only Symbols and Commands tabs remain", panel->categoryTabs->count() == 2
+            && panel->categoryTabs->tabText(0) == "Symbols" && panel->categoryTabs->tabText(1) == "Commands");
+        expect("editor defaults to Symbols", panel->category() == GlobalControlCategory::Symbols);
     };
-    auto item = capture();
-    auto before = editor->toPlainText();
-    service->reload();
-    coordinator->dispatch(item);
-    expect("manual template reload invalidates a captured insertion", editor->toPlainText() == before);
-    item = capture();
-    cursor = editor->textCursor(); cursor.movePosition(QTextCursor::NextCharacter); editor->setTextCursor(cursor);
-    coordinator->dispatch(item);
-    expect("cursor movement invalidates a captured template insertion", editor->toPlainText() == before);
-    item = capture();
-    editor->insertPlainText(" ");
-    before = editor->toPlainText();
-    coordinator->dispatch(item);
-    expect("document edit invalidates a captured template insertion", editor->toPlainText() == before);
-    item = capture();
-    coordinator->dispatch(item);
-    expect("fresh production template insertion still succeeds", waitUntil([&] { return editor->toPlainText() != before; }));
+    for (const auto &token : QStringList{"@guard", "@process", "@reset", "@", "@(posedge clk)", "@ (negedge clk)", "@*", "@(*)", "@event_name;"}) {
+        const QString source = "module guarded; initial begin " + token + "\nend endmodule\n";
+        editor->setPlainText(source);
+        QTextCursor cursor(editor->document()); cursor.setPosition(source.indexOf(token) + token.size());
+        editor->setTextCursor(cursor);
+        open();
+        panel->setProperty("simulationOnly", true);
+        panel->setCategory(static_cast<GlobalControlCategory>(1));
+        coordinator->refreshVisibleItems();
+        expect("legacy category cannot restore Templates or hide tabs", panel->category() == GlobalControlCategory::Symbols
+            && panel->categoryTabs->isVisible() && panel->categoryTabs->count() == 2);
+        panel->resetQuery(token);
+        coordinator->refreshVisibleItems();
+        expect("at-prefixed search does not return template candidates", panel->currentItems.isEmpty());
+        QTest::keyClick(panel->searchEdit, Qt::Key_Return);
+        expect("confirm without a candidate preserves source", editor->toPlainText() == source);
+        QTest::keyClick(panel->searchEdit, Qt::Key_Escape);
+        expect("cancel preserves source", editor->toPlainText() == source && !panel->isVisible());
+        open();
+        QTest::keyClick(panel->searchEdit, Qt::Key_Tab);
+        expect("Tab switches directly to Commands", panel->category() == GlobalControlCategory::Commands);
+        QTest::keyClick(panel->searchEdit, Qt::Key_Tab);
+        expect("second Tab returns to Symbols", panel->category() == GlobalControlCategory::Symbols);
+        QTest::keyClick(panel->searchEdit, Qt::Key_Backtab);
+        expect("Shift+Tab switches directly to Commands", panel->category() == GlobalControlCategory::Commands);
+        QTest::keyClick(panel->searchEdit, Qt::Key_Escape);
+        expect("reopen and category cycling preserve source", editor->toPlainText() == source);
+    }
+    const auto beforeSelection = editor->toPlainText();
+    QTextCursor selected(editor->document()); selected.select(QTextCursor::Document); editor->setTextCursor(selected);
+    open();
+    panel->resetQuery("@guard");
+    coordinator->refreshVisibleItems();
+    QTest::keyClick(panel->searchEdit, Qt::Key_Return);
+    QTest::keyClick(panel->searchEdit, Qt::Key_Escape);
+    expect("selection confirmation and cancellation preserve existing text", editor->toPlainText() == beforeSelection);
+    GlobalControlItem retired;
+    retired.kind = static_cast<GlobalControlItemKind>(3);
+    retired.insertionText = record.insertText;
+    coordinator->dispatch(retired);
+    expect("retired item kind cannot insert a template", editor->toPlainText() == beforeSelection);
+    editor->setPlainText("module guarded;\nlogic value;\nendmodule\n");
+    installSource(path, editor->toPlainText());
+    QTextCursor start(editor->document()); start.setPosition(editor->toPlainText().indexOf("value")); editor->setTextCursor(start);
+    expect("line command starts inside a current module", editor->currentModuleName() == "guarded");
+    open();
+    panel->setCategory(GlobalControlCategory::Commands);
+    panel->resetQuery("go 1");
+    coordinator->refreshVisibleItems();
+    expect("normal line command remains available", !panel->currentItems.isEmpty());
+    QSignalSpy commandFeedback(editor, &MyCodeEditor::editorStatusMessageRequested);
+    QTest::keyClick(panel->searchEdit, Qt::Key_Return);
+    const bool navigated = waitUntil([&] { return editor->textCursor().blockNumber() == 0; });
+    if (!navigated) {
+        const auto message = commandFeedback.isEmpty() ? QString("no feedback")
+                                                       : commandFeedback.last().first().toString();
+        std::printf("Line command diagnostic: action=%s line=%d row=%d visible=%d feedback=%s\n",
+            qPrintable(panel->currentItems.first().actionId), editor->textCursor().blockNumber(),
+            panel->resultList->currentRow(), panel->isVisible(), qPrintable(message));
+    }
+    expect("normal line command executes", navigated);
+    expect("Ctrl+Space did not rewrite user template file", catalog.open(QIODevice::ReadOnly) && catalog.readAll() == originalCatalog);
+    editor->document()->setModified(false);
     window.tabManager->clearCrashRecoveryAfterNormalClose();
     service->setGlobalTemplateFilePath(previousGlobal);
     service->setWorkspaceTemplateFilePath(previousWorkspace);
@@ -540,7 +574,7 @@ int main(int argc, char** argv)
     runPaletteRegression(path);
     runTemplateCacheAndWriterRegression();
     runCatalogAndPanelRegression(path);
-    runTemplateInsertionVersionGuards(settings.filePath("guarded.sv"));
+    runTemplateEntryRemovalRegression(settings.filePath("guarded.sv"));
     std::printf("%d checks, %d failures\n", checks, failures);
     return failures == 0 ? 0 : 1;
 }

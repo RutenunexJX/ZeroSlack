@@ -33,7 +33,8 @@ public:
         QByteArray* logicalTextSha256 = nullptr,
         const std::function<bool(QString*)>& revalidateOverwrite = {},
         const DocumentFileFormat& format = {},
-        const QJsonObject* templateMetadata = nullptr) const;
+        const QJsonObject* templateMetadata = nullptr,
+        const std::function<bool(QString*)>& beforeSourceCommit = {}) const;
 };
 
 #endif // TABFILEIO_H

@@ -1,6 +1,8 @@
 # ZeroSlack
 
-Current version: `v0.33.5`
+Current version: `v0.34.0`
+
+Release 0.34.0 adds slash-triggered templates and inline text, image and reference blocks in the code editor. Templates become ordinary source code; blocks remain in associated files and block-only saves preserve source bytes and modification time. Ctrl+Space retains Symbols and Commands. Scoped acceptance combines 241/246 original results with successful targeted retests for 246 effective passes; this is not a new full-regression run. Suite SDK/Runtime remains 1.0.2, native xIPs 2.16.1 and the independent asset adapter 2.14.2.
 
 Release 0.33.5 removes the New TB editor action, New testbench context action, Create Demo TB action and their dedicated generation workflow. Existing and handwritten TBs, ordinary templates, formatting, TB selection and simulation remain available. The accepted pre-version candidate passed 245 tests; 10 policy-restricted entries were not launched, with no actual failures or timeouts. SDK/Runtime remains 1.0.2; xIPs native 2.16.0 and asset adapter 2.14.2 are retained.
 
@@ -137,8 +139,8 @@ including every shortcut and edge case, lives in the linked chapter or contract 
 | Sessions | Tabs, layout, navigation filters and scan state restore from local application storage; a workspace `.zs` file is only a read-only legacy import source. | [manual §4.3](用户手册.md) |
 | Editing | Incremental highlighting, folding, structural navigation, formatter with ordinary and type-parameter alignment, multi-cursor and column operations, split views, templates, and line/selection operations including triple-click line selection. | [manual §5–§6](用户手册.md), [§13](用户手册.md), [§14](用户手册.md) |
 | Editing | The editor context menu is a compact icon-only ring; unavailable actions stay gray and explain why on hover. | [manual §6.1](用户手册.md) |
-| Completion | `Ctrl+Space` opens one palette at the caret for scoped symbols (enum values included), simulation templates and application commands. Templates contains built-in, user and file-local simulation snippets/calls/print presets; `@` filters the same catalog. `m <filter>` module lookup remains in Symbols. | [manual §7](用户手册.md) |
-| Templates | Use the unified palette to insert `@definitions`, `@process`, `@repeat` and user templates. Input slots retain validation, nested Code, undo/redo and saved identity; ordinary edits to fixed text invalidate the affected template identity while preserving the source. | [manual §8](用户手册.md) |
+| Completion | `Ctrl+Space` opens Symbols and Commands. Symbols provides scoped semantic completion; `m <filter>` inserts modules with parameter and port slots. Templates and `@` template expansion are no longer available from this panel. Existing template files and slot editing are retained. |
+| Templates and blocks | Type `/` at any editable position to search; Enter inserts the selected resource. `/` followed immediately by Space writes `/ ` literally. Templates generate editable source with temporary inputs. Text notes, images and object previews live between source lines and save in portable association files. | [manual §8](用户手册.md), [resource format](resources/templates/README.md) |
 | Semantics | Slang-backed symbols, diagnostics, definitions, references, relationships, hierarchy, hover and effective compile-time values from the current workspace snapshot. | [manual §10–§11](用户手册.md) |
 | Semantics | A clean `Ctrl+S` is a true no-op; changed saves classify their impact and schedule only the needed work off the UI thread, and trivia-only edits never invoke Slang. | [manual §20](用户手册.md) |
 | Semantics | Unsaved comment and whitespace edits recover semantic availability after 250 ms of idle time when worker validation proves equivalence; other unsaved edits still require saving. | [manual §20](用户手册.md) |
@@ -239,7 +241,7 @@ Shared signal-relationship analysis, clock/reset facts and semantic Diff renderi
 ## Versioning and release
 
 `VERSION` is the single manually maintained product version source and must contain exactly
-one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.32.10`.
+one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.34.0`.
 CMake generates `generated/version.h`, which supplies the application title/status version and
 the GUI tests. `version_documentation_guard` checks the generated header and the version
 markers in this README, the user manual and the package README.
@@ -256,7 +258,7 @@ Release steps: update `VERSION`; reconfigure CMake so `generated/version.h` is r
 build and run the Ela release verification targets. A committed release can carry a tag
 named `vX.Y.Z`. Stage with `scripts/package-release.ps1 -Formal`, then publish the verified
 `ZeroSlack-win64` directory under the local Nutstore `PinloomRoot\AppPackage\AppSuite\Apps`
-root (`E:\PinloomRoot\AppPackage\AppSuite\Apps` on the current machine). Pass explicit
+root (`D:\PinloomRoot\AppPackage\AppSuite\Apps` on the current machine). Pass explicit
 local build and toolchain paths to the packaging script; its defaults refer to the original machine.
 The executable is `ZeroSlack.exe`; the package directory never includes the version.
 Replace the current local package and update the suite manifest and shortcuts.
@@ -274,7 +276,7 @@ end/endcase/endmodule align with their opening structure. Generated delimiter
 tracking preserves continuation indentation and repeated-close behavior after undo/redo.
 Release 0.31.17 fixes workspace-analysis handoff and removes redundant search, document, catalog, marker and semantic-query work.
 
-The current release is `0.33.5`. Ela is the sole formal package,
+The current release is `0.34.0`. Ela is the sole formal package,
 replacing the former classic package with the normal ZeroSlack name. The existing
 `ZeroSlack/ZeroSlack-Ela` INI storage identity is retained to preserve settings and sessions.
 `package-ela.ps1` forwards to the same release script for compatibility.

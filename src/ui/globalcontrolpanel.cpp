@@ -3,6 +3,7 @@
 #include <QShowEvent>
 #include <QHideEvent>
 #include "globalcontrolpanel.h"
+#include "compactcandidatedelegate.h"
 
 #include "insightvisualstyle.h"
 
@@ -21,46 +22,6 @@
 #include <QStyle>
 #include <utility>
 
-namespace {
-class CompactCandidateDelegate final : public QStyledItemDelegate {
-public:
-    using QStyledItemDelegate::QStyledItemDelegate;
-    QSize sizeHint(const QStyleOptionViewItem& option, const QModelIndex&) const override {
-        return {420, qMax(30, QFontMetrics(option.font).height() + 12)};
-    }
-    void paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const override {
-        QStyleOptionViewItem row(option); initStyleOption(&row, index); row.text.clear();
-        const auto* style = row.widget ? row.widget->style() : QApplication::style();
-        style->drawControl(QStyle::CE_ItemViewItem, &row, painter, row.widget);
-        painter->save(); painter->setFont(option.font);
-        const bool selected = option.state.testFlag(QStyle::State_Selected);
-        const auto foreground = option.palette.color(selected ? QPalette::HighlightedText : QPalette::Text);
-        auto rect = option.rect.adjusted(10, 4, -10, -4);
-        const auto badge = index.data(Qt::UserRole + 1).toString();
-        const auto summary = index.data(Qt::UserRole + 2).toString();
-        const QFontMetrics metrics(option.font);
-        if (!badge.isEmpty()) {
-            QColor color = badge.contains(QStringLiteral("enum")) ? QColor("#c76812")
-                : badge == QStringLiteral("module") || badge == QStringLiteral("instance") ? QColor("#366dcc")
-                : badge == QStringLiteral("function") || badge == QStringLiteral("task") ? QColor("#8058b4")
-                : badge == QStringLiteral("parameter") || badge == QStringLiteral("localparam") ? QColor("#93721a") : QColor("#258274");
-            const int width = metrics.horizontalAdvance(badge) + 12;
-            QRect box(rect.right() - width + 1, rect.top(), width, rect.height());
-            painter->fillRect(box, color); painter->setPen(Qt::white);
-            painter->drawText(box, Qt::AlignCenter, badge); rect.setRight(box.left() - 12);
-        } else if (!summary.isEmpty()) {
-            const int width = qMin(rect.width() / 2, metrics.horizontalAdvance(summary));
-            QRect details(rect.right() - width + 1, rect.top(), width, rect.height());
-            auto muted = foreground; muted.setAlpha(150); painter->setPen(muted);
-            painter->drawText(details, Qt::AlignRight | Qt::AlignVCenter, metrics.elidedText(summary, Qt::ElideRight, width));
-            rect.setRight(details.left() - 16);
-        }
-        painter->setPen(option.state.testFlag(QStyle::State_Enabled) ? foreground : option.palette.color(QPalette::Disabled, QPalette::Text));
-        painter->drawText(rect, Qt::AlignLeft | Qt::AlignVCenter, metrics.elidedText(index.data().toString(), Qt::ElideRight, rect.width()));
-        painter->restore();
-    }
-};
-}
 
 GlobalControlPanel::GlobalControlPanel(QWidget* parent)
     : QFrame(parent, Qt::Popup | Qt::FramelessWindowHint)
@@ -81,8 +42,7 @@ GlobalControlPanel::GlobalControlPanel(QWidget* parent)
     categoryTabs = UiControls::tabBar(this);
     categoryTabs->setObjectName(QStringLiteral("globalControlCategoryTabs"));
     categoryTabs->setExpanding(true);
-    categoryTabs->addTab(QStringLiteral("All"));
-    categoryTabs->addTab(QStringLiteral("Templates"));
+    categoryTabs->addTab(QStringLiteral("Symbols"));
     categoryTabs->addTab(QStringLiteral("Commands"));
     layout->addWidget(categoryTabs);
 
@@ -131,7 +91,6 @@ void GlobalControlPanel::setItems(const QList<GlobalControlItem>& items, const Q
         auto* listItem = new QListWidgetItem(item.title, resultList);
         listItem->setData(Qt::UserRole, i);
         listItem->setData(Qt::UserRole + 1, item.typeBadge);
-        listItem->setData(Qt::UserRole + 2, item.parameterSummary);
         listItem->setToolTip(item.disabledReason.isEmpty() ? item.insertionText : item.disabledReason);
         if (!item.disabledReason.isEmpty()) listItem->setFlags(listItem->flags() & ~Qt::ItemIsEnabled);
         resultList->addItem(listItem);
@@ -146,26 +105,18 @@ void GlobalControlPanel::setItems(const QList<GlobalControlItem>& items, const Q
     updatePopupGeometry();
 }
 
-void GlobalControlPanel::setSimulationOnly(bool enabled)
-{
-    categoryTabs->setVisible(!enabled);
-    setProperty("simulationOnly", enabled);
-    updatePlaceholder();
-    updatePopupGeometry();
-}
-
 void GlobalControlPanel::setCategory(GlobalControlCategory value)
 {
     if (!categoryTabs)
         return;
-    categoryTabs->setCurrentIndex(static_cast<int>(value));
+    categoryTabs->setCurrentIndex(value == GlobalControlCategory::Commands ? 1 : 0);
     updatePlaceholder();
 }
 
 GlobalControlCategory GlobalControlPanel::category() const
 {
     const int index = categoryTabs ? categoryTabs->currentIndex() : 0;
-    return static_cast<GlobalControlCategory>(qBound(0, index, 2));
+    return index == 1 ? GlobalControlCategory::Commands : GlobalControlCategory::Symbols;
 }
 
 QString GlobalControlPanel::queryText() const
@@ -211,10 +162,7 @@ void GlobalControlPanel::showAt(QWidget* anchor,
 
 void GlobalControlPanel::updatePopupGeometry(bool chooseDirection)
 {
-    if (!chooseDirection && !isVisible()) return;
-    const bool compact = property("simulationOnly").toBool()
-        || category() == GlobalControlCategory::Templates;
-    if (!compact && !compactLayout && !chooseDirection) return;
+    if (!chooseDirection) return;
     ensurePolished();
     for (auto* child : findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly))
         child->ensurePolished();
@@ -226,53 +174,9 @@ void GlobalControlPanel::updatePopupGeometry(bool chooseDirection)
     const QRect available = screen
         ? screen->availableGeometry()
         : QRect(popupAnchor, sizeHint());
-    if (compact) {
-        // The template popup owns its height; an intermediate list/notice
-        // update must not grow the native window through a stale layout minimum.
-        layout()->setSizeConstraint(QLayout::SetNoConstraint);
-        setMinimumHeight(0);
-        const int preferredWidth = chooseDirection ? sizeHint().width() : this->width();
-        const int width = qMin(available.width(), qBound(minimumWidth(), preferredWidth, maximumWidth()));
-        const int count = qMin(8, resultList->count());
-        const int rowHeight = count ? resultList->sizeHintForRow(0) + 2 * resultList->spacing() : 0;
-        const int frameHeight = count ? 2 * resultList->frameWidth() : 0;
-        resultList->setVisible(count > 0);
-        resultList->setFixedHeight(0);
-        layout()->invalidate();
-        const auto heightForWidth = [this, width] {
-            return layout()->hasHeightForWidth() ? layout()->totalHeightForWidth(width)
-                : layout()->totalSizeHint().height();
-        };
-        const int chromeHeight = heightForWidth();
-        const int below = qMax(0, available.bottom() + 1 - popupAnchor.y() - 8);
-        const int above = qMax(0, popupAnchor.y() - 8 - available.top());
-        const int desiredHeight = chromeHeight + count * rowHeight + frameHeight;
-        if (chooseDirection)
-            opensAbove = desiredHeight > below && above > below;
-        int space = opensAbove ? above : below;
-        const int opposite = opensAbove ? below : above;
-        if (space < chromeHeight + rowHeight + frameHeight && opposite > space) {
-            opensAbove = !opensAbove;
-            space = opposite;
-        }
-        // Keep the chosen side while filtering. Reduce whole visible rows
-        // before letting the shared bounds helper move the popup at an edge.
-        const int rows = count ? qBound(1, (space - chromeHeight - frameHeight) / rowHeight, count) : 0;
-        resultList->setFixedHeight(rows * rowHeight + frameHeight);
-        layout()->invalidate();
-        layout()->activate();
-        resize(width, heightForWidth());
-    } else {
-        layout()->setSizeConstraint(QLayout::SetDefaultConstraint);
-        resultList->show();
-        resultList->setMinimumHeight(260);
-        resultList->setMaximumHeight(QWIDGETSIZE_MAX);
-        layout()->invalidate();
-        layout()->activate();
-        adjustSize();
-        opensAbove = popupAnchor.y() + 8 + height() > available.bottom() + 1;
-    }
-    compactLayout = compact;
+    layout()->activate();
+    adjustSize();
+    opensAbove = popupAnchor.y() + 8 + height() > available.bottom() + 1;
     const int y = opensAbove ? popupAnchor.y() - height() - 8 : popupAnchor.y() + 8;
     setGeometry(CandidatePopupNavigation::fitToBounds(
         QRect(QPoint(popupAnchor.x(), y), size()), available));
@@ -379,16 +283,9 @@ void GlobalControlPanel::updatePlaceholder()
 {
     if (!searchEdit)
         return;
-    if (property("simulationOnly").toBool()) {
-        searchEdit->setPlaceholderText(QStringLiteral("Filter simulation templates"));
-        return;
-    }
     switch (category()) {
     case GlobalControlCategory::Symbols:
         searchEdit->setPlaceholderText(QStringLiteral("Search symbols"));
-        break;
-    case GlobalControlCategory::Templates:
-        searchEdit->setPlaceholderText(QStringLiteral("Filter simulation templates"));
         break;
     case GlobalControlCategory::Commands:
         searchEdit->setPlaceholderText(QStringLiteral("Filter commands, ow, or fd"));
