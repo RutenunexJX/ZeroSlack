@@ -9,6 +9,7 @@
 #include "pinloomcontextview.h"
 #include "pinloomhostclient.h"
 #include "tsdocument.h"
+#include "workspacesessionstateservice.h"
 
 #include <QApplication>
 #include <QAction>
@@ -34,6 +35,7 @@
 #include <QVector>
 
 #include <iostream>
+#include <algorithm>
 #include <utility>
 
 namespace {
@@ -166,12 +168,125 @@ QJsonObject rectangleDocumentJson(const QJsonObject& entry,
                       .arg(page)}}},
             {QStringLiteral("preview"), preview}};
 }
+
+void verifyUriOnlyResources()
+{
+    QTemporaryDir workspace;
+    check(workspace.isValid(), "URI-only integration has a private workspace");
+    if (!workspace.isValid()) return;
+    QMainWindow window;
+    auto* region = new QWidget(&window);
+    window.setCentralWidget(region);
+    window.resize(1100, 750);
+    window.show();
+    ContextWorkspaceController controller(&window, region, &window);
+    PinloomHostIdentity expected, authoritative, resolved, opened;
+    QUrl currentUri;
+    PinloomHostClient client([&](const QJsonObject& request, PinloomHostClient::RawReplyHandler reply) {
+        const auto method = request.value("method").toString();
+        const auto identity = PinloomHostIdentity::fromJson(request.value("params").toObject().value("identity").toObject());
+        if (method == "search") reply({{"entries", QJsonArray{}}}, {});
+        else if (method == "resolve") {
+            resolved = identity;
+            if (identity.toJson() != expected.toJson() && identity.toJson() != authoritative.toJson()) {
+                reply({}, "Unknown URI identity");
+                return;
+            }
+            reply({{"entry", QJsonObject{{"identity", authoritative.toJson()},
+                        {"uri", currentUri.toString(QUrl::FullyEncoded)}, {"title", "URI target"}, {"type", "anchor"}}},
+                   {"content", "Resolved through the URI identity"}, {"contentType", "text/plain"}}, {});
+        } else if (method == "open") {
+            opened = identity;
+            reply({{"message", "Opened URI target"}}, {});
+        }
+    });
+    check(controller.registerProvider(std::make_unique<PinloomContextProvider>(&client)), "URI-only provider registers");
+    controller.setWorkspaceRoot(workspace.path());
+    PinloomCodeLinkCoordinator coordinator(&controller);
+    coordinator.setWorkspaceRoot(workspace.path());
+    const auto* descriptor = findActionById(QString::fromLatin1(ActionIds::PinloomOpenLinkedContent));
+    check(descriptor != nullptr, "existing code-link action is available");
+    if (!descriptor) return;
+    const QString sourceText = "module top;\nassign a = b;\nendmodule\n";
+    const QString sourcePath = workspace.filePath("top.sv");
+    QFile sourceFile(sourcePath);
+    check(sourceFile.open(QIODevice::WriteOnly) && sourceFile.write(sourceText.toUtf8()) > 0, "URI link source is written");
+    sourceFile.close();
+    TSDocument syntax;
+    syntax.setText(sourceText);
+    const auto source = PinloomSourceSelection::fromSyntaxAnchor(workspace.path(), sourcePath, sourceText,
+        syntax.bindableCodeAnchorAt(sourceText.indexOf("assign")));
+    WorkspaceSessionStateService sessions(workspace.filePath("session.ini"));
+    const QList<QPair<QString, PinloomHostIdentity>> cases{
+        {"pinloom://entry/resource:r?resource=r", {"resource:r", "r", {}, {}}},
+        {"pinloom://anchor/a", {{}, {}, "a", {}}},
+        {"pinloom://anchor/a?resource=r", {{}, "r", "a", {}}},
+        {"pinloom://clip/c", {{}, {}, {}, "c"}},
+    };
+    for (const auto& row : cases) {
+        currentUri = QUrl(row.first, QUrl::StrictMode);
+        expected = row.second;
+        authoritative = expected;
+        if (authoritative.entryId.isEmpty()) authoritative.entryId = authoritative.clipId.isEmpty() ? "anchor:a" : "clip:c";
+        if (!authoritative.anchorId.isEmpty()) authoritative.resourceId = "r";
+        resolved = {}; opened = {};
+        controller.clearResources();
+        ActionInvocation invocation;
+        invocation.parameters.insert("pinloomUri", row.first);
+        check(coordinator.execute(*descriptor, invocation).succeeded, "URI-only code-link route opens the actual Context view");
+        auto* view = qobject_cast<PinloomContextView*>(controller.dockHost()->viewForResource(
+            controller.dockHost()->currentResource().stableKey()));
+        check(view && resolved.toJson() == expected.toJson(), "URI-only route resolves the intended stable identifier");
+        if (!view) continue;
+        check(view->previewEditor()->toPlainText().contains("Resolved through"), "URI-only target content is displayed");
+        view->openButton()->click();
+        check(opened.toJson() == authoritative.toJson(), "Open forwards the resolved authoritative identity");
+
+        auto resource = PinloomContextProvider::resourceForUri(currentUri, workspace.path());
+        resource.state.clear();
+        controller.clearResources();
+        QString error;
+        check(controller.openResource(resource, {ContextSurface::Docked, ContextPersistence::Kept, ContextBinding::Global}, &error),
+              "URI-only resource opens without cached identity state");
+        WorkspaceSessionState session;
+        session.workspaceRoot = workspace.path();
+        session.ui.contextWorkspace = controller.captureState();
+        check(session.ui.contextWorkspace.pinnedResources.size() == 1, "kept URI resource is captured for persistence");
+        // Exercise recovery of old records containing only the resource URI.
+        for (auto& pinned : session.ui.contextWorkspace.pinnedResources) pinned.remove("state");
+        check(sessions.save(session).saved, "URI-only session is saved by the actual session service");
+        controller.clearResources();
+        const auto restored = sessions.load(workspace.path());
+        check(restored.loaded && controller.restoreState(restored.state.ui.contextWorkspace).restoredResources == 1,
+              "URI-only session reopens through the provider");
+        view = qobject_cast<PinloomContextView*>(controller.dockHost()->viewForResource(
+            controller.dockHost()->currentResource().stableKey()));
+        check(view && view->currentEntry().identity.toJson() == authoritative.toJson(), "session reopen preserves target identity");
+
+        check(coordinator.store()->addLink(source, currentUri, "URI-only binding", {}, &error), "code link is saved without an identity object");
+        PinloomCodeLinkStore reopened;
+        reopened.setWorkspaceRoot(workspace.path());
+        const auto links = reopened.records();
+        const auto found = std::find_if(links.cbegin(), links.cend(), [&](const auto& link) { return link.uri == currentUri; });
+        check(found != links.cend() && found->identity.isEmpty(), "code-link disk reopen retains the URI-only record");
+        if (found != links.cend()) {
+            auto anchor = reopened.anchors().constFirst();
+            anchor.links = {*found};
+            const auto bindings = PinloomContextProvider::resourceForBindings(anchor, workspace.path());
+            check(bindings.isValid() && bindings.state.value("boundEntries").toList().size() == 1,
+                  "saved code binding reconstructs its target through URI fallback");
+        }
+    }
+    check(!PinloomContextProvider::resourceForUri(QUrl("pinloom://anchor/"), workspace.path()).isValid(),
+          "missing URI identity never creates an openable resource");
+}
 }
 
 int main(int argc, char* argv[])
 {
     QApplication app(argc, argv);
     if (!initializeUiStyleForTest()) return 3;
+    verifyUriOnlyResources();
 
     const PinloomHostIdentity parsedIdentity =
         PinloomHostIdentity::fromUri(

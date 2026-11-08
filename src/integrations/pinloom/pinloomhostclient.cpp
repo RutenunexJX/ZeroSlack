@@ -182,6 +182,7 @@ bool PinloomHostIdentity::isValid() const
 {
     return !entryId.trimmed().isEmpty()
         || !resourceId.trimmed().isEmpty()
+        || !anchorId.trimmed().isEmpty()
         || !clipId.trimmed().isEmpty();
 }
 
@@ -205,13 +206,25 @@ QUrl PinloomHostIdentity::toUri() const
     QUrl uri;
     uri.setScheme(QStringLiteral("pinloom"));
     uri.setHost(QStringLiteral("entry"));
-    uri.setPath(QStringLiteral("/") + entryId);
+    QString id = entryId.trimmed();
+    if (id.isEmpty()) {
+        if (!anchorId.trimmed().isEmpty()) {
+            uri.setHost(QStringLiteral("anchor"));
+            id = anchorId.trimmed();
+        } else if (!clipId.trimmed().isEmpty()) {
+            uri.setHost(QStringLiteral("clip"));
+            id = clipId.trimmed();
+        } else {
+            id = QStringLiteral("resource:%1").arg(resourceId.trimmed());
+        }
+    }
+    uri.setPath(QStringLiteral("/") + id);
     QUrlQuery query;
-    if (!resourceId.isEmpty())
+    if (uri.host() != QStringLiteral("clip") && !resourceId.isEmpty())
         query.addQueryItem(QStringLiteral("resource"), resourceId);
-    if (!anchorId.isEmpty())
+    if (uri.host() == QStringLiteral("entry") && !anchorId.isEmpty())
         query.addQueryItem(QStringLiteral("anchor"), anchorId);
-    if (!clipId.isEmpty())
+    if (uri.host() == QStringLiteral("entry") && !clipId.isEmpty())
         query.addQueryItem(QStringLiteral("clip"), clipId);
     uri.setQuery(query);
     return uri;
@@ -239,19 +252,31 @@ PinloomHostIdentity PinloomHostIdentity::fromUri(const QUrl& uri)
     if (!uri.isValid()
         || uri.scheme().compare(QStringLiteral("pinloom"),
                                 Qt::CaseInsensitive) != 0
-        || uri.host().compare(QStringLiteral("entry"),
-                              Qt::CaseInsensitive) != 0) {
+        || !uri.userInfo().isEmpty()
+        || uri.port(-1) != -1
+        || !uri.fragment().isEmpty()) {
         return result;
     }
-    result.entryId = uri.path().mid(1).trimmed();
+    QString id = uri.path(QUrl::FullyDecoded);
+    if (id.startsWith(QLatin1Char('/')))
+        id.remove(0, 1);
+    id = id.trimmed();
+    if (id.isEmpty() || id.contains(QLatin1Char('/')))
+        return result;
     const QUrlQuery query(uri);
-    result.resourceId =
-        query.queryItemValue(QStringLiteral("resource")).trimmed();
-    result.anchorId =
-        query.queryItemValue(QStringLiteral("anchor")).trimmed();
-    result.clipId =
-        query.queryItemValue(QStringLiteral("clip")).trimmed();
-    return result.isValid() ? result : PinloomHostIdentity{};
+    const QString host = uri.host().toCaseFolded();
+    if (host == QStringLiteral("anchor")) {
+        result.anchorId = id;
+        result.resourceId = query.queryItemValue(QStringLiteral("resource")).trimmed();
+    } else if (host == QStringLiteral("clip")) {
+        result.clipId = id;
+    } else if (host == QStringLiteral("entry")) {
+        result.entryId = id;
+        result.resourceId = query.queryItemValue(QStringLiteral("resource")).trimmed();
+        result.anchorId = query.queryItemValue(QStringLiteral("anchor")).trimmed();
+        result.clipId = query.queryItemValue(QStringLiteral("clip")).trimmed();
+    }
+    return result;
 }
 
 bool PinloomHostEntry::isValid() const

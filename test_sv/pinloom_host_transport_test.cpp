@@ -13,6 +13,39 @@ int main(int argc, char** argv)
         std::printf("[%s] %s\n", condition ? "PASS" : "FAIL", name);
         if (!condition) ++failures;
     };
+    struct UriCase { const char* uri; PinloomHostIdentity identity; };
+    const QList<UriCase> validUris{
+        {"pinloom://entry/entry-a", {"entry-a", {}, {}, {}}},
+        {"pinloom://entry/anchor:a?resource=r&anchor=a&clip=c", {"anchor:a", "r", "a", "c"}},
+        {"pinloom://anchor/anchor-a", {{}, {}, "anchor-a", {}}},
+        {"pinloom://anchor/anchor-a?resource=resource-a", {{}, "resource-a", "anchor-a", {}}},
+        {"pinloom://clip/clip-a", {{}, {}, {}, "clip-a"}},
+        {"PINLOOM://ANCHOR/anchor-a?unknown=ignored&clip=ignored", {{}, {}, "anchor-a", {}}},
+        {"pinloom://clip/clip-a?resource=ignored&anchor=ignored", {{}, {}, {}, "clip-a"}},
+        {"pinloom://anchor/%E7%AC%94%E8%AE%B0%20a%25+?resource=%E8%B5%84%E6%96%99%20r+", {{}, QString::fromUtf8("资料 r+"), QString::fromUtf8("笔记 a%+"), {}}},
+        {"pinloom://entry/e?resource=%20r%20&anchor=%20a%20&clip=c", {"e", "r", "a", "c"}},
+        {"pinloom://anchor/a?resource=first&resource=second", {{}, "first", "a", {}}},
+    };
+    for (const auto& row : validUris) {
+        const auto identity = PinloomHostIdentity::fromUri(QUrl(QString::fromUtf8(row.uri), QUrl::StrictMode));
+        check(identity.isValid() && identity.toJson() == row.identity.toJson(), qPrintable(QStringLiteral("URI identity: %1").arg(row.uri)));
+        check(PinloomHostIdentity::fromUri(identity.toUri()).toJson() == row.identity.toJson(),
+              qPrintable(QStringLiteral("URI round-trip: %1").arg(row.uri)));
+    }
+    for (const auto* uri : {"https://anchor/a", "pinloom://library", "pinloom://other/a", "pinloom://anchor/",
+             "pinloom://clip/", "pinloom://entry/", "pinloom://entry/?resource=r", "pinloom://anchor/%20",
+             "pinloom://anchor/a/b", "pinloom://clip/a%2Fb", "pinloom://entry/a/b", "pinloom://user@anchor/a",
+             "pinloom://anchor:9/a", "pinloom://anchor/a#fragment", "pinloom://anchor/%ZZ"}) {
+        check(!PinloomHostIdentity::fromUri(QUrl(QString::fromUtf8(uri), QUrl::StrictMode)).isValid(),
+              qPrintable(QStringLiteral("Invalid URI rejected: %1").arg(uri)));
+    }
+    const PinloomHostIdentity resourceOnly{{}, "resource-a", {}, {}};
+    check(resourceOnly.toUri() == QUrl("pinloom://entry/resource:resource-a?resource=resource-a")
+          && PinloomHostIdentity::fromUri(resourceOnly.toUri()).resourceId == resourceOnly.resourceId,
+          "resource-only identity uses the existing host resource entry spelling");
+    const PinloomHostIdentity anchorOnly{{}, {}, "anchor-a", {}};
+    check(anchorOnly.isValid() && anchorOnly.toUri() == QUrl("pinloom://anchor/anchor-a"),
+          "anchor-only identity is valid and serializes without an empty entry identifier");
     const QString serverName = "zeroslack-test-" + QUuid::createUuid().toString(QUuid::WithoutBraces);
     QJsonObject envelope{{"protocol", kProtocol}, {"requestId", "test-request"}, {"method", "search"}, {"params", QJsonObject{}}};
     auto disconnected = exchangeRequest(envelope, {}, {}, serverName);

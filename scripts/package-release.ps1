@@ -17,6 +17,14 @@ param(
 $ErrorActionPreference = 'Stop'
 $sourceRoot = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'ReleasePreparation.ps1')
+$PreparationPlan = Resolve-ZeroSlackReleasePath $PreparationPlan
+$PreparationEvidence = Resolve-ZeroSlackReleasePath $PreparationEvidence
+$BuildDirectory = Resolve-ZeroSlackReleasePath $BuildDirectory
+$OutputDirectory = Resolve-ZeroSlackReleasePath $OutputDirectory
+foreach ($parameter in @('QtDirectory','CompilerDirectory','XipsPackageDirectory','XipsAssetAdapterDirectory','WelcomeResourceDirectory','DocumentEditorDirectory')) {
+    Set-Variable -Name $parameter -Value (Resolve-ZeroSlackReleasePath (Get-Variable -Name $parameter -ValueOnly))
+}
+$assemblySources = $null
 $originalSourceRoot = $sourceRoot
 if (-not $PreparationEvidence -and -not $PreparationPlan) {
     throw 'A preparation plan or complete preparation evidence is required before any package write.'
@@ -33,6 +41,32 @@ $arguments = @('verify', '--evidence', $PreparationEvidence, '--source', $origin
 if ($Formal) { $arguments += '--formal' }
 Invoke-ZeroSlackGate $python $arguments
 $preparation = Get-Content -LiteralPath $PreparationEvidence -Raw | ConvertFrom-Json
+if ($preparation.schema -eq 'zeroslack.release-reuse/v1') {
+    if (-not $OutputDirectory) { throw 'Reused candidates require an explicit new staging directory.' }
+    if ($PreparationPlan -or $PSBoundParameters.ContainsKey('BuildDirectory') -or $XipsPackageDirectory -or
+        $XipsAssetAdapterDirectory -or $WelcomeResourceDirectory -or $DocumentEditorDirectory) {
+        throw 'Reuse staging accepts only the verified candidate and retained package; input overrides require new evidence.'
+    }
+    $original = Get-Content -LiteralPath $preparation.preparation -Raw | ConvertFrom-Json
+    if ([IO.Path]::GetFullPath($QtDirectory) -ne [IO.Path]::GetFullPath($original.qtDirectory) -or
+        [IO.Path]::GetFullPath($CompilerDirectory) -ne [IO.Path]::GetFullPath($original.compilerDirectory)) {
+        throw 'Reuse packaging toolchain differs from the verified candidate.'
+    }
+    if ($preparation.acceptedPackage) {
+        $arguments = @('stage-reused-package', '--evidence', $PreparationEvidence, '--package', $OutputDirectory)
+        if ($AllowDirty) { $arguments += '--allow-dirty' }
+        Invoke-ZeroSlackGate $python $arguments
+        Write-Output $OutputDirectory
+        return
+    }
+    if (-not $preparation.packageSources) { throw 'First packaging requires a verified PackageSources plan.' }
+    $assemblySources = Get-Content -LiteralPath $preparation.packageSources.path -Raw | ConvertFrom-Json
+    $preparation = $original
+    $XipsPackageDirectory = $assemblySources.sources.native.root
+    $XipsAssetAdapterDirectory = $assemblySources.sources.adapter.root
+    $WelcomeResourceDirectory = $assemblySources.sources.welcome.root
+    $DocumentEditorDirectory = $assemblySources.sources.documents.root
+}
 $gitExecutable = $preparation.tools.git.path
 if (-not $gitExecutable) { throw 'Verified preparation must identify its Git executable.' }
 if ($PSBoundParameters.ContainsKey('BuildDirectory') -and -not $PreparationPlan -and
@@ -50,11 +84,12 @@ foreach ($override in @(
     @{ value=$WelcomeResourceDirectory; expected=(Join-Path $preparation.sourceRoot 'resources/welcome') },
     @{ value=$DocumentEditorDirectory; expected=(Join-Path $preparation.buildDirectory 'resources/document-editors') }
 )) {
-    if ($override.value -and [IO.Path]::GetFullPath($override.value) -ne [IO.Path]::GetFullPath($override.expected)) {
+    if (-not $assemblySources -and $override.value -and [IO.Path]::GetFullPath($override.value) -ne [IO.Path]::GetFullPath($override.expected)) {
         throw 'Packaging resource override differs from the prepared candidate; include it in a new preparation plan.'
     }
 }
 $sourceRoot = $preparation.sourceRoot
+$deliverySourceRoot = if ($assemblySources) { $originalSourceRoot } else { $sourceRoot }
 $BuildDirectory = $preparation.buildDirectory
 $version = (Get-Content -LiteralPath (Join-Path $sourceRoot 'VERSION') -Raw).Trim()
 if (-not [IO.Path]::IsPathRooted($BuildDirectory)) { $BuildDirectory = Join-Path $sourceRoot $BuildDirectory }
@@ -76,7 +111,7 @@ $revision = & $gitExecutable -C $originalSourceRoot rev-parse HEAD
 if ($LASTEXITCODE -ne 0) { throw 'Cannot read Git revision.' }
 $branch = & $gitExecutable -C $originalSourceRoot branch --show-current
 if ($LASTEXITCODE -ne 0) { throw 'Cannot read Git branch.' }
-$sourceStatus = if ($Formal) { & $gitExecutable -c core.fsmonitor=false -C $originalSourceRoot status --porcelain --untracked-files=no } else { & $gitExecutable -c core.fsmonitor=false -C $originalSourceRoot status --porcelain --untracked-files=no --ignore-submodules=all }
+$sourceStatus = & $gitExecutable -c core.fsmonitor=false -C $originalSourceRoot status --porcelain --untracked-files=no --ignore-submodules=all
 if ($LASTEXITCODE -ne 0) { throw 'Cannot read Git source status.' }
 $trackedNames = @(& $gitExecutable -C $originalSourceRoot ls-files)
 if ($LASTEXITCODE -ne 0) { throw 'Cannot read tracked candidate paths.' }
@@ -158,6 +193,10 @@ foreach ($component in @(
         if (Test-Path -LiteralPath $path -PathType Leaf) { Copy-Item -LiteralPath $path -Destination $componentTarget }
     }
     $componentNotices = Join-Path $outputRoot "licenses/components/$($component.id)"
+    if ($assemblySources) {
+        New-Item -ItemType Directory -Path (Split-Path -Parent $componentNotices) -Force | Out-Null
+        Copy-Item -LiteralPath $assemblySources.sources.nativeLicenses.root -Destination $componentNotices -Recurse
+    }
     foreach ($name in @('licenses', 'vendor', 'THIRD-PARTY-NOTICES.md')) {
         $path = Join-Path $componentRoot $name
         if (Test-Path -LiteralPath $path) {
@@ -200,8 +239,8 @@ if (-not (Test-Path -LiteralPath $adapterRoot -PathType Container)) {
     $adapterInfo = Get-Content -LiteralPath (Join-Path $adapterRoot 'build-info.json') -Raw | ConvertFrom-Json
     if ($adapterInfo.schema -ne 'xips.asset-adapter.build/v1' -or $adapterInfo.protocolVersion -ne 1 -or
         $adapterInfo.buildType -ne 'Release' -or $adapterInfo.qt -ne '6.10.2' -or
-        $adapterInfo.coreVersion -ne $nativeComponents.xips.version -or
-        $adapterInfo.coreCommit -ne $nativeComponents.xips.revision) {
+        (-not $assemblySources -and ($adapterInfo.coreVersion -ne $nativeComponents.xips.version -or
+        $adapterInfo.coreCommit -ne $nativeComponents.xips.revision))) {
         throw 'The asset adapter identity does not match the native xIPs component.'
     }
     foreach ($entry in @(
@@ -296,9 +335,10 @@ foreach ($name in @('COPYING3', 'COPYING3.LIB', 'COPYING.RUNTIME')) {
 Copy-Item -LiteralPath (Join-Path $CompilerDirectory 'licenses/gcc/COPYING3.LIB') -Destination (Join-Path $licenseRoot 'Qt-LGPLv3.txt')
 Copy-Item -LiteralPath (Join-Path $CompilerDirectory 'licenses/winpthreads/COPYING') -Destination (Join-Path $licenseRoot 'winpthreads-COPYING.txt')
 Copy-Item -LiteralPath (Join-Path $CompilerDirectory 'licenses/mingw-w64/COPYING.MinGW-w64.txt') -Destination (Join-Path $licenseRoot 'MinGW-w64-COPYING.txt')
-foreach ($name in @('LICENSE', 'THIRD-PARTY-NOTICES.md', '用户手册.md')) {
+foreach ($name in @('LICENSE', 'THIRD-PARTY-NOTICES.md')) {
     Copy-Item -LiteralPath (Join-Path $sourceRoot $name) -Destination $outputRoot
 }
+Copy-Item -LiteralPath (Join-Path $deliverySourceRoot '用户手册.md') -Destination $outputRoot
 # Ship editable user-template definitions and their non-destructive merge tool.
 $templateTarget = Join-Path $outputRoot 'templates'
 New-Item -ItemType Directory -Path $templateTarget -Force | Out-Null
@@ -357,10 +397,10 @@ foreach ($required in @('markdown/index.html','blocks/index.html','NOTICE.txt','
 }
 Copy-Item -LiteralPath $editorSource -Destination (Join-Path $outputRoot 'resources/document-editors') -Recurse
 Copy-Item -LiteralPath (Join-Path $sourceRoot 'thirdparty/document-editors/README.txt') -Destination (Join-Path $outputRoot 'DOCUMENT-EDITORS.txt')
-Copy-Item -LiteralPath (Join-Path $sourceRoot 'packaging/ZeroSlack-PACKAGE-README.txt') -Destination (Join-Path $outputRoot 'README.txt')
+Copy-Item -LiteralPath (Join-Path $deliverySourceRoot 'packaging/ZeroSlack-PACKAGE-README.txt') -Destination (Join-Path $outputRoot 'README.txt')
 # Public CLI documentation and the headless Qt platform are runtime payload.
 New-Item -ItemType Directory -Path (Join-Path $outputRoot 'docs') -Force | Out-Null
-Copy-Item -LiteralPath (Join-Path $sourceRoot 'docs/cli-automation.md') -Destination (Join-Path $outputRoot 'docs/cli-automation.md')
+Copy-Item -LiteralPath (Join-Path $deliverySourceRoot 'docs/cli-automation.md') -Destination (Join-Path $outputRoot 'docs/cli-automation.md')
 Copy-Item -LiteralPath (Join-Path $QtDirectory 'plugins/platforms/qoffscreen.dll') -Destination (Join-Path $outputRoot 'platforms/qoffscreen.dll')
 $channel = if ($Formal) { 'formal' } else { 'preview' }
 $releaseTag = $null
@@ -372,7 +412,7 @@ if ($Formal -and -not $dirty) {
 [ordered]@{ version=$version; revision=$revision; branch=$branch; dirty=$dirty; channel=$channel;
     releaseTag=$releaseTag; backend='ela'; qt='6.10.2'; nativeComponents=$nativeComponents;
     assetAdapter=$assetAdapter;
-    sourceStatusIncludesSubmodules=[bool]$Formal;
+    sourceStatusIncludesSubmodules=$false;
     preparationEvidenceSha256=(Get-FileHash -LiteralPath $PreparationEvidence -Algorithm SHA256).Hash.ToLowerInvariant();
     documentEditors=[ordered]@{ format='zeroslack.document-editors'; version=1; directory='resources/document-editors';
         marktext=$editorManifest.inputs.marktext.commit; blocksuite=$editorManifest.inputs.blocksuite.commit;
@@ -382,7 +422,7 @@ if ($Formal -and -not $dirty) {
         origin=$(if ($WelcomeResourceDirectory) { 'custom' } else { 'default' });
         packagedManifestSha256=(Get-FileHash -LiteralPath $welcomeManifestPath -Algorithm SHA256).Hash.ToLowerInvariant() };
     integratedFeatures=[ordered]@{ simdock=$integratedSimDock };
-    appSuiteEnabled=[bool]$suiteBuild.enabled; distribution='standalone';
+    appSuiteEnabled=[bool]$suiteBuild.enabled; distribution=$(if ($assemblySources) { $assemblySources.distribution } else { 'standalone' });
     suiteSdkVersion=$suiteBuild.sdkVersion; suiteGuiProvider=[bool]$suiteBuild.guiProvider;
     suiteCliClient=[bool]$suiteBuild.cliClient; runtimeBundled=$false;
     upstreamEla='454cac2d57a47d3cc28577dc817793aec1881ca7'; builtAtUtc=[DateTime]::UtcNow.ToString('o') } |

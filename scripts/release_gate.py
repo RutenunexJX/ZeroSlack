@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 
 from test_policy import (PolicyError, applicable, digest, dump, external_tool_path, guard, inventory,
                          load_policy, read_json, require, safe_path, stamp)
@@ -20,6 +21,18 @@ FORMAL_FLAGS = {'BUILD_TESTING':'ON','CMAKE_BUILD_TYPE':'Release','ZEROSLACK_ENA
                 'ZEROSLACK_SELF_CONTAINED_FIXTURES':'ON','ZEROSLACK_TEST_REAL_NATIVE_COMPONENTS':'ON'}
 FORMAL_DEPENDENCIES = ['SuiteApp_DIR','ZEROSLACK_XIPS_COMPONENT_DIR','ZEROSLACK_XIPS_ASSET_ADAPTER_DIR',
                        'ZEROSLACK_TICKX_COMPONENT_DIR','ZEROSLACK_DOCUMENT_EDITORS_DIR','ZEROSLACK_WEBVIEW2_SDK_DIR']
+REPOSITORY = Path(__file__).resolve().parent.parent
+# These are external delivery inputs, never C++/resource-generation exemptions.
+EXTERNAL_FILES = {'README.md','ARCHITECTURE.md','用户手册.md','packaging/ZeroSlack-PACKAGE-README.txt',
+                  'docs/cli-automation.md','docs/release-process.md',
+                  'scripts/release_gate.py','scripts/ReleasePreparation.ps1','scripts/prepare-release.ps1',
+                  'scripts/package-release.ps1','scripts/package-ela.ps1','scripts/install-release.py',
+                  'scripts/release_smoke.py','scripts/test_release_reuse.py','scripts/test_policy_contracts.py'}
+
+
+def absolute(value):
+    path = Path(value)
+    return (path if path.is_absolute() else REPOSITORY/path).resolve()
 
 
 def tree_files(root, policy):
@@ -355,12 +368,17 @@ def prepare(plan_path, work, formal=False):
             require((build/required_input).is_file(),f'Missing prepared native/runtime capability: {required_input}')
         receipt['packageInputs']={name:digest(path) for name,path in tree_files(build,policy)
                                  if path.suffix.lower() in {'.exe','.dll'} or name.startswith(('components/','resources/document-editors/'))}
+        receipt['buildIdentity']=build_identity(receipt,policy)
+        receipt['buildIdentityOrigin']={'phase':'after_compile_before_required_tests',
+                                       'compileLogSha256':receipt['compile']['logSha256'],'capturedUtc':stamp()}
+        dump(receipt_path,receipt)
         matrix=test_set(config,work/'required',required=True)
         receipt['required']={'status':matrix['status'],'proof':str(work/'required/result.json'),'sha256':digest(work/'required/result.json')}
         require(matrix['status']=='passed','Required layout matrix failed; package writes remain prohibited')
         verify_sources(manifest,policy)
         verify_dependencies(dependency_manifest,policy)
         require(all(digest(build/name)==value for name,value in receipt['binaries'].items()),'Product binary changed during preparation')
+        verify_build_identity(receipt,policy)
         receipt['status']='passed'
         receipt['completedUtc']=stamp()
         dump(receipt_path,receipt)
@@ -371,10 +389,346 @@ def prepare(plan_path, work, formal=False):
         raise
 
 
-def verify_receipt(path, original_root=None, formal=False):
+def prepared_version(receipt):
+    version=(Path(receipt['sourceRoot'])/'VERSION').read_text(encoding='utf8').strip()
+    header=(Path(receipt['buildDirectory'])/'generated/version.h').read_text(encoding='utf8')
+    match=re.search(r'#define\s+APP_VERSION\s+"([^"]+)"',header)
+    require(match and match[1]==version,'Generated/application version mismatch; incremental version build required')
+    return version
+
+
+def ninja_command_hash(command):
+    # Ninja 1.12.1 build_log.cc: MurmurHash64A, log format v6.
+    data=command.encode('utf8'); mask=(1<<64)-1; multiplier=0xc6a4a7935bd1e995
+    value=(0xDECAFBADDECAFBAD ^ (len(data)*multiplier)) & mask
+    stop=len(data)//8*8
+    for offset in range(0,stop,8):
+        part=int.from_bytes(data[offset:offset+8],'little')*multiplier & mask
+        part^=part>>47; part=part*multiplier & mask
+        value=(value^part)*multiplier & mask
+    if stop<len(data):
+        value=(value^int.from_bytes(data[stop:],'little'))*multiplier & mask
+    value^=value>>47; value=value*multiplier & mask; value^=value>>47
+    return format(value,'x')
+
+
+BUILD_IDENTITY_SCOPE = 'all-build-files-with-managed-commands/v1'
+
+
+def build_file_identity(build,policy):
+    """Freeze build files without an extension allowlist; exclude test artifacts."""
+    build=Path(build); files={}; pending=[build]
+    commands=safe_path(build,'Testing/ManagedCommands',policy)
+    if commands.is_dir():pending.append(commands)
+    while pending:
+        directory=pending.pop()
+        for entry in os.scandir(directory):
+            path=Path(entry.path); name=path.relative_to(build).as_posix()
+            # CTest and managed tests may create cyclic fixture trees here.
+            # ManagedCommands is configuration, so it is included separately.
+            if name=='Testing' or entry.name in {'__pycache__','.git'}:
+                continue
+            safe_path(build,name,policy)
+            if entry.is_dir(follow_symlinks=False):
+                pending.append(path)
+            else:
+                require(entry.is_file(follow_symlinks=False),f'Non-regular build input: {name}')
+                files[name]=digest(path)
+    return files
+
+
+def build_identity(receipt,policy):
+    """Sample current metadata. This alone is NOT evidence of prior build inputs."""
+    build=Path(receipt['buildDirectory']); ninja=receipt['tools']['ninja']['path']
+    log=(build/'.ninja_log').read_text(encoding='utf8').splitlines()
+    require(log and log[0]=='# ninja log v6','Unknown/missing Ninja command evidence; complete preparation required')
+    logged={parts[3]:parts[4] for line in log[1:] if len(parts:=line.split('\t'))==5}
+    def compdb(expand=False):
+        command=[ninja,'-C',str(build),'-t','compdb']+(['-x'] if expand else [])
+        process=subprocess.run(command,capture_output=True,encoding='utf8',timeout=30)
+        require(process.returncode==0,'Cannot inspect Ninja commands')
+        return json.loads(process.stdout)
+    raw=compdb(); expanded=compdb(True)
+    require(len(raw)==len(expanded),'Ninja command inspection changed during verification')
+    checked={}
+    for row,full in zip(raw,expanded):
+        name=row['output']; command=row['command']
+        if not command or name not in logged:
+            continue
+        require(name==full['output'],'Ninja command order changed')
+        if command!=full['command']:
+            matches=list(re.finditer(r'@(?:"[^"]+"|[^\s]+)',command))
+            require(len(matches)==1,f'Unknown response-file command: {name}')
+            token=matches[0]; prefix=command[:token.start()]; suffix=command[token.end():]
+            require(full['command'].startswith(prefix) and full['command'].endswith(suffix),f'Unknown response expansion: {name}')
+            content=full['command'][len(prefix):len(full['command'])-len(suffix) if suffix else None]
+            command+=';rspfile='+content
+        require(ninja_command_hash(command)==logged[name],f'Build command changed since execution: {name}')
+        checked[name]=logged[name]
+    require(all(name in checked for name in PRODUCT_BINARIES if name!='WebView2Loader.dll'),
+            'Product link commands are not covered by the completed build log')
+    prepared_version(receipt)
+    return {'scope':BUILD_IDENTITY_SCOPE,'files':build_file_identity(build,policy),'executedCommands':checked}
+
+
+def require_original_build_identity(receipt):
+    origin=receipt.get('buildIdentityOrigin',{})
+    require(receipt.get('buildIdentity',{}).get('scope')==BUILD_IDENTITY_SCOPE
+            and origin.get('phase')=='after_compile_before_required_tests'
+            and origin.get('compileLogSha256')==receipt.get('compile',{}).get('logSha256')
+            and origin.get('capturedUtc'),
+            'Original generated-input identity missing: an import-time sample cannot prove the old compilation. '
+            'Minimum evidence: the complete build-time file/command fingerprint bound to its successful compile log, '
+            'captured before acceptance tests, plus unchanged-file verification after those tests. '
+            'If that original evidence does not exist, prepare an isolated candidate; do not backfill the historical receipt.')
+
+
+def verify_build_identity(receipt,policy):
+    require_original_build_identity(receipt)
+    require(build_identity(receipt,policy)==receipt['buildIdentity'],
+            'Generated inputs/build commands changed from their original build-time fingerprint')
+
+
+def source_delta(receipt,current_root):
+    policy=load_policy(Path(receipt['sourceRoot'])/'test_sv/test-execution-policy.json')
+    manifest=read_json(receipt['sourceManifest']); root=absolute(current_root)
+    names=set(manifest['files'])
+    # Index inspection does not open protected fixtures. Inspect untracked names
+    # only inside product directories that contain no restricted resources.
+    git=receipt['tools']['git']['path']
+    tracked=subprocess.check_output([git,'-C',str(root),'ls-files','-z']).decode('utf8').split('\0')
+    from test_policy import blocked
+    names.update(n for n in tracked if n and not blocked(policy,n,('deny_access','hash_only'))
+                 and not n.startswith('scripts/__pycache__/'))
+    extras=subprocess.check_output([git,'-C',str(root),'ls-files','--others','--exclude-standard','-z',
+                                    '--','src','include','cmake','components']).decode('utf8').split('\0')
+    names.update(n for n in extras if n)
+    names.update(n for n in EXTERNAL_FILES if safe_path(root,n,policy).is_file())
+    delta={}; current={}
+    for name in sorted(names):
+        file=safe_path(root,name,policy,('deny_access','hash_only'))
+        actual=digest(file) if file.is_file() else None
+        expected=manifest['files'].get(name,{}).get('sha256')
+        current[name]=actual
+        if actual!=expected:
+            kind='external_metadata' if name in EXTERNAL_FILES else 'compiled_version' if name=='VERSION' else 'build_or_function_input'
+            delta[name]={'before':expected,'after':actual,'kind':kind}
+    return delta,current
+
+
+def accept_source_delta(delta):
+    versions=[n for n,v in delta.items() if v['kind']=='compiled_version']
+    changed=[n for n,v in delta.items() if v['kind']=='build_or_function_input']
+    require(not versions,'VERSION is compiled into the program: direct reuse refused; incrementally configure/build affected targets and verify their versions, then import matching evidence (old runs retain their original binary identity)')
+    require(not changed,'Build/function inputs changed; supplement affected checks or run complete preparation: '+', '.join(changed[:12]))
+    require(all(v['after'] for v in delta.values()),'Removed external delivery input; review/update its packaging contract first')
+
+
+def verify_checksums(package,policy,allow_extras=False):
+    actual={name:digest(path) for name,path in tree_files(package,policy) if name!='SHA256SUMS.txt'}
+    recorded={}
+    for line in (Path(package)/'SHA256SUMS.txt').read_text(encoding='utf-8-sig').splitlines():
+        value,name=line.split('  ',1)
+        safe_path(package,name,policy)
+        require(name not in recorded,'Duplicate package checksum: '+name)
+        recorded[name]=value
+    require((recorded==actual) if not allow_extras else bool(recorded) and all(actual.get(n)==h for n,h in recorded.items()),
+            'Package checksums/inventory mismatch')
+    return actual
+
+
+def write_checksums(package,policy):
+    values={name:digest(path) for name,path in tree_files(package,policy) if name!='SHA256SUMS.txt'}
+    (Path(package)/'SHA256SUMS.txt').write_text(''.join(value+'  '+name+'\n' for name,value in sorted(values.items())),encoding='utf8')
+
+
+def verify_package_sources(path,receipt):
+    policy=load_policy(Path(receipt['sourceRoot'])/'test_sv/test-execution-policy.json')
+    plan=read_json(external_tool_path(path,policy))
+    require(plan.get('schema')=='zeroslack.package-sources/v1','Invalid first-package source plan')
+    require(set(plan.get('sources',{}))=={'native','nativeLicenses','adapter','welcome','documents'},
+            'First packaging needs explicit component, adapter, resource and component-license sources')
+    for name,entry in plan['sources'].items():
+        root=external_tool_path(entry['root'],policy)
+        proof=entry['provenance']; proof_file=external_tool_path(proof['file'],policy)
+        require(digest(proof_file)==proof['sha256'],'Package source provenance changed: '+name)
+        recorded=read_json(proof_file)
+        for key in proof['keys']:recorded=recorded[key]
+        require(isinstance(recorded,dict),'Provenance must identify a file mapping: '+name)
+        expected={n[len(proof.get('prefix','')):]:h for n,h in recorded.items() if n.startswith(proof.get('prefix',''))}
+        expected={n:(h['sha256'] if isinstance(h,dict) else h) for n,h in expected.items()}
+        require(entry.get('files') and entry['files']==expected,'Package source not fully covered by original provenance: '+name)
+        require({n:digest(p) for n,p in tree_files(root,policy)}==expected,'Package source inventory/content changed: '+name)
+    approval=plan['componentBaseline']
+    baseline_file=external_tool_path(approval['file'],policy)
+    require(digest(baseline_file)==approval['sha256'],'Approved component baseline changed')
+    baseline=read_json(baseline_file);native=read_json(Path(plan['sources']['native']['root'])/'build-info.json')
+    adapter=read_json(Path(plan['sources']['adapter']['root'])/'build-info.json')
+    version=lambda value:tuple(int(x) for x in value.split('.'))
+    require(native.get('channel')=='formal' and not native.get('dirty') and not native.get('sourceDirty'),
+            'Native component must be a clean approved release')
+    require(native==baseline['native'] and adapter==baseline['adapter'],
+            'Native/adapter sources differ from their explicitly approved baseline (including version)')
+    suite=read_json(Path(receipt['buildDirectory'])/'generated/suiteapp-build.json')
+    require(version(suite['sdkVersion'])>=version(baseline['native']['suiteSdk']),'Suite SDK downgrade refused')
+    require(native['nativeSurfaceAbi']==1 and native['qt']=='6.10.2' and adapter['protocolVersion']==1
+            and adapter['qt']=='6.10.2' and adapter['buildType']=='Release','Incompatible native/independent adapter contracts')
+    documents=plan['sources']['documents']
+    dependencies=read_json(receipt['dependencyManifest'])
+    require(documents['files']==dependencies['ZEROSLACK_DOCUMENT_EDITORS_DIR']['files'],
+            'Document resources differ from the accepted build dependency')
+    require(plan.get('distribution') in {'standalone','appsuite'},'Package distribution must be explicit')
+    return plan
+
+
+def verify_assembled_payload(package,receipt):
+    report=receipt.get('reuse',{})
+    if not report.get('packageSources'):return
+    plan=verify_package_sources(report['packageSources']['path'],receipt)
+    destinations={'native':'components/xips','nativeLicenses':'licenses/components/xips',
+                  'adapter':'components/xips-asset-adapter','welcome':'resources/welcome','documents':'resources/document-editors'}
+    policy=load_policy(Path(receipt['sourceRoot'])/'test_sv/test-execution-policy.json')
+    for role,prefix in destinations.items():
+        expected=plan['sources'][role]['files']
+        actual={name:digest(p) for name,p in tree_files(Path(package)/prefix,policy)}
+        require(actual==expected,'Assembled component/resources/licenses differ from their source: '+role)
+    # Every deployed Qt/MinGW runtime file must come from the accepted toolchain.
+    dependencies=read_json(receipt['dependencyManifest'])
+    approved={}
+    for key in ['qtRuntime','compilerRuntime']:
+        for name,value in dependencies[key]['files'].items():
+            if name.startswith(('bin/','plugins/')):approved[name.split('/',1)[1]]=value
+    owned=read_json(Path(package)/'build-info.json')
+    native=read_json(Path(plan['sources']['native']['root'])/'build-info.json')
+    adapter=read_json(Path(plan['sources']['adapter']['root'])/'build-info.json')
+    require(owned['nativeComponents']['xips']['version']==native['version']
+            and owned['assetAdapter']['coreVersion']==adapter['coreVersion'],'Assembled component metadata mismatch')
+    for name,p in tree_files(package,policy):
+        if p.suffix.casefold()=='.dll' and not name.startswith('components/') and name not in receipt['binaries']:
+            require(approved.get(name)==digest(p),'Unapproved packaged runtime/plugin: '+name)
+
+
+def reuse(evidence,source,output,accepted_package=None,package_sources=None):
+    evidence=absolute(evidence); output=absolute(output); source=absolute(source)
+    require(not output.exists(),'Reuse report must be new; historical evidence is read-only')
+    require(read_json(evidence).get('schema')=='zeroslack.release-preparation/v1',
+            'Import the original preparation, not a chain of reuse reports')
+    started=time.monotonic()
+    report={'schema':'zeroslack.release-reuse/v1','status':'checking','startedUtc':stamp(),
+            'preparation':str(evidence),'preparationSha256':digest(evidence),'currentSource':str(source),
+            'executed':{'cppBuild':False,'layoutMatrix':False,'fullRegression':False},'releaseAuthorized':False}
+    try:
+        receipt=verify_receipt(evidence,formal=True,origins=False)
+        require(source==Path(receipt['originalRoot']).resolve(),'Reuse source must identify the prepared repository')
+        delta,current=source_delta(receipt,source)
+        report.update(sourceDifferences=delta,currentFiles=current)
+        accept_source_delta(delta)
+        policy=load_policy(Path(receipt['sourceRoot'])/'test_sv/test-execution-policy.json')
+        # Preserve the verified build-time identity, never establish a new
+        # baseline by sampling whatever exists at import time.
+        report['buildIdentity']=receipt['buildIdentity']
+        require(not (accepted_package and package_sources),'Select existing-package reuse or first assembly, not both')
+        if package_sources:
+            path=absolute(package_sources);verify_package_sources(path,receipt)
+            report['packageSources']={'path':str(path),'sha256':digest(path)}
+            report['stagingMode']='assemble_from_build'
+        if accepted_package:
+            package=absolute(accepted_package)
+            prior=verify_package(package,origins=False)
+            require(prior['sourceManifestSha256']==receipt['sourceManifestSha256']
+                    and prior['binaries']==receipt['binaries'],'Accepted package belongs to a different candidate')
+            report['acceptedPackage']={'path':str(package),'gateSha256':digest(package/'release-gate.json'),
+                                       'checksumsSha256':digest(package/'SHA256SUMS.txt')}
+            report['stagingMode']='copy_existing_package'
+        report.update(status='passed',sourceManifestSha256=receipt['sourceManifestSha256'],
+                      requiredProof=receipt['required'],binaryIdentity=receipt['binaries'],
+                      originalSourceControl=receipt['sourceControl'],
+                      disposition='reuse_with_external_updates' if delta else 'direct_reuse')
+    except BaseException as error:
+        report.update(status='blocked',reason=str(error),disposition='supplement_or_prepare')
+        raise
+    finally:
+        report.update(completedUtc=stamp(),seconds=round(time.monotonic()-started,3))
+        dump(output,report)
+    return report
+
+
+def verify_reuse(path,original_root=None,formal=False):
+    report=read_json(path)
+    require(report.get('status')=='passed','Missing/failed reuse verification')
+    if original_root:
+        require(absolute(original_root)==absolute(report['currentSource']),'Reuse source mismatch')
+    require(digest(report['preparation'])==report['preparationSha256'],'Original preparation changed')
+    require(read_json(report['preparation']).get('schema')=='zeroslack.release-preparation/v1','Nested reuse evidence unsupported')
+    receipt=verify_receipt(report['preparation'],formal=formal,origins=False)
+    delta,current=source_delta(receipt,report['currentSource']); accept_source_delta(delta)
+    require(delta==report['sourceDifferences'] and current==report['currentFiles'],'Current source changed after reuse verification')
+    policy=load_policy(Path(receipt['sourceRoot'])/'test_sv/test-execution-policy.json')
+    require(build_identity(receipt,policy)==report['buildIdentity'],'Generated inputs/build identity changed after reuse verification')
+    if report.get('acceptedPackage'):
+        item=report['acceptedPackage']; package=Path(item['path'])
+        require(digest(package/'release-gate.json')==item['gateSha256']
+                and digest(package/'SHA256SUMS.txt')==item['checksumsSha256'],'Accepted package identity changed')
+        binding=read_json(package/'release-gate.json')
+        # A same-candidate package may already be bound to a prior reuse report.
+        # Its frozen gate/checksums and original candidate content are the link.
+        require(binding['sourceManifestSha256']==receipt['sourceManifestSha256']
+                and all(binding['files'].get(name)==value for name,value in receipt['binaries'].items()),
+                'Accepted package/preparation mismatch')
+        verify_checksums(package,policy)
+    if report.get('packageSources'):
+        entry=report['packageSources']
+        require(digest(entry['path'])==entry['sha256'],'First-package source plan changed')
+        verify_package_sources(entry['path'],receipt)
+    return {**receipt,'reuse':report,'reuseEvidence':str(path)}
+
+
+def stage_reused_package(evidence,output,allow_dirty=False):
+    evidence=absolute(evidence); output=absolute(output)
+    receipt=verify_receipt(evidence,formal=True)
+    report=receipt.get('reuse',{}); item=report.get('acceptedPackage')
+    if not item:
+        require(report.get('packageSources'),'First packaging needs --package-sources with approved component/runtime/resource/license provenance')
+        command=['pwsh.exe','-NoProfile','-NonInteractive','-File',str(REPOSITORY/'scripts/package-release.ps1'),
+                 '-PreparationEvidence',str(evidence),'-OutputDirectory',str(output),'-Formal']
+        if allow_dirty:command.append('-AllowDirty')
+        result=subprocess.run(command,creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
+        require(result.returncode==0,'First package assembly failed; retain its output and diagnostic')
+        return {'status':'passed','package':str(output),'stagingMode':'assemble_from_build','cppBuildExecuted':False,'layoutMatrixExecuted':False}
+    root=Path(report['currentSource']); policy=load_policy(Path(receipt['sourceRoot'])/'test_sv/test-execution-policy.json')
+    require(not output.exists(),'Package staging directory must be new')
+    external_tool_path(str(output),policy)
+    package=Path(item['path'])
+    require(not output.is_relative_to(package) and not package.is_relative_to(output),'Staging overlaps accepted package')
+    git=receipt['tools']['git']['path']
+    status=subprocess.check_output([git,'-C',str(root),'status','--porcelain','--untracked-files=no','--ignore-submodules=all']).decode('utf8')
+    dirty=bool(status) or any(v['before'] is None for v in report['sourceDifferences'].values())
+    require(not dirty or allow_dirty,'Formal staging has uncommitted source; explicitly use -AllowDirty for an isolated candidate')
+    shutil.copytree(package,output)
+    info=read_json(output/'build-info.json')
+    for name,target in [('用户手册.md','用户手册.md'),('packaging/ZeroSlack-PACKAGE-README.txt','README.txt'),('docs/cli-automation.md','docs/cli-automation.md')]:
+        shutil.copyfile(root/name,output/target)
+    revision=subprocess.check_output([git,'-C',str(root),'rev-parse','HEAD']).decode().strip()
+    tags=subprocess.check_output([git,'-C',str(root),'tag','--points-at',revision,'--list','v'+info['version']]).decode().splitlines()
+    info.update(revision=revision,dirty=dirty,releaseTag=None if dirty or 'v'+info['version'] not in tags else 'v'+info['version'],
+                preparationEvidenceSha256=digest(evidence),packagedAtUtc=stamp(),
+                reusedBinarySource={'preparation':report['preparation'],'sha256':report['preparationSha256'],
+                                    'sourceManifestSha256':receipt['sourceManifestSha256']})
+    dump(output/'build-info.json',info)
+    seal_package(output,evidence)
+    write_checksums(output,policy)
+    verify_package(output)
+    return {'status':'passed','package':str(output),'cppBuildExecuted':False,'layoutMatrixExecuted':False}
+
+
+def verify_receipt(path, original_root=None, formal=False, origins=True, sealed_payload_only=False):
+    path=absolute(path)
     receipt=read_json(path)
+    if receipt.get('schema')=='zeroslack.release-reuse/v1':
+        return verify_reuse(path,original_root,formal)
     require(receipt.get('schema')=='zeroslack.release-preparation/v1' and receipt.get('status')=='passed','Missing/failed complete preparation evidence')
-    require(receipt.get('newBuildDirectoryVerified') is True,'No new build directory evidence')
+    if not sealed_payload_only:
+        require_original_build_identity(receipt)
     if formal:
         require(receipt.get('channel')=='formal-candidate','Preview preparation cannot authorize a formal candidate')
     if original_root:
@@ -387,9 +741,11 @@ def verify_receipt(path, original_root=None, formal=False):
     policy_path=Path(receipt['sourceRoot'])/'test_sv/test-execution-policy.json'
     policy=load_policy(policy_path)
     require(digest(policy_path)==receipt['policySha256'],'Policy changed since preparation')
-    verify_sources(read_json(receipt['sourceManifest']),policy)
+    verify_sources(read_json(receipt['sourceManifest']),policy,origins=origins)
     require(digest(receipt['dependencyManifest'])==receipt['dependencyManifestSha256'],'Dependency manifest changed')
     verify_dependencies(read_json(receipt['dependencyManifest']),policy)
+    require(dependency_identity(plan,policy)==read_json(receipt['dependencyManifest']),
+            'Dependency inventory changed (including added files)')
     for name,tool in receipt['tools'].items():
         require(digest(tool['path'])==tool['sha256'],f'Preparation tool changed: {name}')
     require(digest(sys.executable)==receipt['tools']['python']['sha256'],'Evidence verifier interpreter differs from preparation')
@@ -408,6 +764,9 @@ def verify_receipt(path, original_root=None, formal=False):
     current_guard=guard(build/'managed-test-config.json')
     for name in ['compile','policy','required']:
         require(receipt.get(name,{}).get('status')=='passed',f'Incomplete preparation stage: {name}')
+    configured=receipt['configure']
+    require(configured['exitCode']==0 and not configured['timeout']
+            and digest(configured['log'])==configured['logSha256'],'Configure result/log mismatch')
     result=receipt['compile']
     require(result['exitCode']==0 and not result['timeout'] and first_diagnostic(result)['failedMarkers']==0
             and digest(result['log'])==result['logSha256'],'Compile result/log mismatch')
@@ -435,33 +794,45 @@ def verify_receipt(path, original_root=None, formal=False):
         require(digest(coverage['result'])==coverage['resultSha256'] and digest(coverage['measurements'])==coverage['measurementsSha256']
                 and digest(coverage['qtLog'])==coverage['qtLogSha256'],f'{name}: layout evidence modified')
         verify_required_result(rule,coverage['result'],receipt['buildDirectory'],receipt['policySha256'])
+    if not sealed_payload_only:
+        verify_build_identity(receipt,policy)
     return receipt
 
 
-def verify_package(package):
-    package=Path(package)
+def verify_package(package, origins=True, allow_extras=False):
+    package=absolute(package)
     binding=read_json(package/'release-gate.json')
     info=read_json(package/'build-info.json')
     require(info.get('channel')=='formal' and info.get('backend')=='ela','Preview/non-Ela package is not a formal suite input')
     require(binding.get('schema')=='zeroslack.package-gate/v1','Invalid package binding')
     require(digest(binding['preparation'])==binding['preparationSha256'],'Package preparation reference changed')
-    receipt=verify_receipt(binding['preparation'],formal=True)
+    # Existing sealed payload verification is not a new candidate import.
+    # reuse()/prepare/first staging still require original build-time evidence.
+    receipt=verify_receipt(binding['preparation'],formal=True,origins=origins,sealed_payload_only=True)
     require(binding['sourceManifestSha256']==receipt['sourceManifestSha256'],'Package candidate identity mismatch')
     for name,value in binding['files'].items():
         require(digest(safe_path(package,name,load_policy(Path(receipt['sourceRoot'])/'test_sv/test-execution-policy.json')))==value,f'Package content mismatch: {name}')
     require(all(binding['files'].get(name)==value for name,value in receipt['binaries'].items()),'Packaged product binary does not match prepared candidate')
     policy=load_policy(Path(receipt['sourceRoot'])/'test_sv/test-execution-policy.json')
     actual={name for name,p in tree_files(package,policy) if p.name not in {'release-gate.json','SHA256SUMS.txt'}}
-    require(actual==set(binding['files']),'Package file inventory changed')
+    require(actual==set(binding['files']) if not allow_extras else actual>=set(binding['files']),'Package file inventory changed')
+    version=prepared_version(receipt)
+    require(info.get('version')==version,'Package/program version mismatch')
+    require(info.get('preparationEvidenceSha256')==binding['preparationSha256'],'Package metadata/evidence mismatch')
+    verify_checksums(package,policy,allow_extras)
     return receipt
 
 
 def seal_package(package, preparation):
     receipt=verify_receipt(preparation,formal=True)
-    package=Path(package)
+    package=absolute(package)
     policy=load_policy(Path(receipt['sourceRoot'])/'test_sv/test-execution-policy.json')
     files={name:digest(p) for name,p in tree_files(package,policy) if p.name not in {'release-gate.json','SHA256SUMS.txt'}}
     require(all(files.get(name)==value for name,value in receipt['binaries'].items()),'Package has different prepared product binaries')
+    info=read_json(package/'build-info.json')
+    require(info.get('version')==prepared_version(receipt),'Package/program version mismatch')
+    require(info.get('preparationEvidenceSha256')==digest(preparation),'Package metadata/evidence mismatch')
+    verify_assembled_payload(package,receipt)
     dump(package/'release-gate.json',{'schema':'zeroslack.package-gate/v1','preparation':str(Path(preparation).absolute()),
                                     'preparationSha256':digest(preparation),'sourceManifestSha256':receipt['sourceManifestSha256'],'files':files})
 
@@ -470,14 +841,23 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     sub=parser.add_subparsers(dest='action',required=True)
     p=sub.add_parser('prepare');p.add_argument('--plan',required=True);p.add_argument('--work',required=True);p.add_argument('--formal',action='store_true')
+    p=sub.add_parser('reuse');p.add_argument('--evidence',required=True);p.add_argument('--source',required=True);p.add_argument('--output',required=True);p.add_argument('--accepted-package');p.add_argument('--package-sources')
+    p=sub.add_parser('stage-reused-package');p.add_argument('--evidence',required=True);p.add_argument('--package',required=True);p.add_argument('--allow-dirty',action='store_true')
     p=sub.add_parser('verify');p.add_argument('--evidence',required=True);p.add_argument('--source');p.add_argument('--formal',action='store_true')
     p=sub.add_parser('verify-package');p.add_argument('--package',required=True)
     p=sub.add_parser('seal-package');p.add_argument('--package',required=True);p.add_argument('--evidence',required=True)
     p=sub.add_parser('test');p.add_argument('--config',required=True);p.add_argument('--output',required=True);p.add_argument('--names');p.add_argument('--required',action='store_true');p.add_argument('--caller-path')
     args=parser.parse_args()
+    for name in ['plan','work','evidence','source','output','accepted_package','package_sources','package','config','names']:
+        if getattr(args,name,None):
+            setattr(args,name,str(absolute(getattr(args,name))))
     try:
         if args.action=='prepare':
             prepare(args.plan,args.work,args.formal)
+        elif args.action=='reuse':
+            reuse(args.evidence,args.source,args.output,args.accepted_package,args.package_sources)
+        elif args.action=='stage-reused-package':
+            stage_reused_package(args.evidence,args.package,args.allow_dirty)
         elif args.action=='verify':
             verify_receipt(args.evidence,args.source,args.formal)
         elif args.action=='verify-package':

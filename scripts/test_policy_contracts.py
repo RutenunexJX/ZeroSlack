@@ -131,6 +131,8 @@ def verify_contracts(config_path):
         verify_frozen_regex(config, root, env, check)
         from test_qt_gui_runner_contracts import verify_qt_gui_runner
         verify_qt_gui_runner(config, root, env, check)
+        from test_release_reuse import verify_release_reuse
+        verify_release_reuse(root, check)
         return _verify(config, root, source, build, scripts, env, proof, check)
     except Exception as error:
         proof.update(status='failed', error=str(error))
