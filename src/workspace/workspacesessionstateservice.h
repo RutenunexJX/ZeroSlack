@@ -24,6 +24,12 @@ struct WorkspaceSessionTabState {
     int groupIndex = 0;
     int tabIndex = 0;
     bool locked = false;
+    QString regionId;
+    QString groupId;
+    QString pageId;
+    QString kind;
+    QString documentId;
+    QJsonObject viewState;
 };
 
 struct WorkspaceSessionUiState {
@@ -35,6 +41,7 @@ struct WorkspaceSessionUiState {
     QString tabGroupingMode = QStringLiteral("none");
     PanelLayoutState panelLayout;
     ContextWorkspaceState contextWorkspace;
+    QJsonObject pageLayout;
 };
 
 struct WorkspaceSessionState {
@@ -80,7 +87,7 @@ struct WorkspaceLegacyImportResult {
 class WorkspaceSessionStateService
 {
 public:
-    static constexpr int kVersion = 4;
+    static constexpr int kVersion = 5;
 
     explicit WorkspaceSessionStateService(
         const QString& settingsFilePath =

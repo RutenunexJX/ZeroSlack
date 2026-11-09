@@ -7,6 +7,8 @@
 #include <QString>
 #include "zeroslackexport.h"
 
+class EditorSplitController;
+class QTimer;
 class NavigationManager;
 class NavigationWidget;
 class TabManager;
@@ -34,9 +36,8 @@ public:
     void showFiles();
     void showDesign();
     void showSearch();
-    void setSourceFilesWidget(QWidget* widget);
     int activeTab() const;
-    void setActiveTab(int tab);
+    void setActiveTab(int tab, bool activate = true);
     QString filesSearchQuery() const;
     QString designSearchQuery() const;
     void setSearchQueries(const QString& filesQuery,
@@ -59,6 +60,11 @@ private:
     void finishOverlay();
     QPointer<NavigationWidget> navigationWidget;
     NavigationManager* navigationManager = nullptr;
+    QPointer<EditorSplitController> pageRegistry;
+    QTimer* tabHoverTimer = nullptr;
+    bool dragOpened = false;
+    QPointer<QWidget> draggedPage;
+    int hoverTicks = 0;
     int expandedWidth = 280;
     bool expanded = true;
     bool transitioning = false;

@@ -1,21 +1,17 @@
 #pragma once
-#include "../core/wavepalette.h"
 #include <ElaDialog.h>
+#include <functional>
 class ElaLineEdit;
-class ElaComboBox;
 
 namespace simdock {
+class WorkspaceSimulationController;
 class SettingsDialog : public ElaDialog {
 public:
     explicit SettingsDialog(const QString& executable, QWidget* parent = nullptr, bool simulatorLocked = false,
-                            const QString& waveThemeId = {}, bool hostTheme = false);
+                            WorkspaceSimulationController* controller = nullptr,
+                            std::function<void()> configureWorkspace = {});
     QString executable() const;
-    bool darkTheme() const;
-    WaveTheme waveTheme() const;
 private:
     ElaLineEdit* m_path;
-    ElaComboBox* m_theme;
-    ElaComboBox* m_waveTheme;
 };
-QString askProjectName(QWidget* parent, const QString& currentName = {});
 }

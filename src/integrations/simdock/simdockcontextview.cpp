@@ -12,14 +12,14 @@
 #include <QVBoxLayout>
 #include <memory>
 
-SimDockContextView::SimDockContextView(QWidget* parent) : QWidget(parent)
+SimDockContextView::SimDockContextView(QWidget* parent, simdock::WorkspaceSimulationController* controller, DesignProjectService* design) : QWidget(parent)
 {
     setObjectName(QStringLiteral("simdockHost"));
     setProperty("nativeComponentReady", false);
     setProperty("simdockSourceVersion", QStringLiteral("0.6.1"));
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
-    panel = new simdock::Workbench(this);
+    panel = new simdock::Workbench(this, false, controller, design);
     layout->addWidget(panel, 1);
     status = UiControls::label(this);
     status->setObjectName(QStringLiteral("nativeComponentStatus"));

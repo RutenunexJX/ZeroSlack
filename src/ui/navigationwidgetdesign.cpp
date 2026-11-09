@@ -67,7 +67,7 @@ void NavigationWidget::setupDesignSelector()
     designTabLayout->addWidget(designStateLabel, 1);
     designClearSearchButton = UiControls::pushButton(tr("Clear search"), designTab);
     designClearSearchButton->setObjectName(QStringLiteral("clearDesignSearch"));
-    connect(designClearSearchButton, &QAbstractButton::clicked, this, [this] { searchLineEdit->clear(); });
+    connect(designClearSearchButton, &QAbstractButton::clicked, this, [this] { designSearchLineEdit->clear(); });
     designTabLayout->addWidget(designClearSearchButton);
     designSelectionError = new QLabel(designTab);
     designSelectionError->setObjectName(QStringLiteral("designSelectionError"));
@@ -282,10 +282,10 @@ void NavigationWidget::updateDesignPresentation()
     designClearSearchButton->setVisible(empty && !query.isEmpty());
     designBackButton->setVisible(designAdding);
     designSelectionError->setVisible(designAdding && !designSelectionError->text().isEmpty());
-    if (activeTab() == DesignTab) {
-        const QSignalBlocker blocker(searchLineEdit);
-        searchLineEdit->setText(query);
-        searchLineEdit->setPlaceholderText(designAdding ? tr("Search files or modules...") : tr("Search instances or modules..."));
-        searchLineEdit->setVisible(!query.isEmpty() || (designAdding ? !designCandidates.isEmpty() : designHasProjects || !currentDesignHierarchy.nodes.isEmpty()));
+    {
+        const QSignalBlocker blocker(designSearchLineEdit);
+        designSearchLineEdit->setText(query);
+        designSearchLineEdit->setPlaceholderText(designAdding ? tr("Search files or modules...") : tr("Search instances or modules..."));
+        designSearchLineEdit->setVisible(!query.isEmpty() || (designAdding ? !designCandidates.isEmpty() : designHasProjects || !currentDesignHierarchy.nodes.isEmpty()));
     }
 }

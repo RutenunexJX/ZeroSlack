@@ -40,4 +40,5 @@ private:
     ElaTabWidget::DropArea areaAt(const QPoint& position) const;
     void showIndicator(ElaTabWidget::DropArea area);
     void clearIndicator();
+    bool commitDrop(QMimeData* mime, const QPoint& position);
 };

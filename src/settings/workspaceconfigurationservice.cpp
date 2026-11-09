@@ -785,3 +785,45 @@ QString WorkspaceConfigurationService::
     }
     return projectFilePath(workspaceRoot);
 }
+
+QStringList WorkspaceConfigurationService::discoverSourceFiles(const WorkspaceConfiguration& configuration,
+    QString* error, const std::function<bool()>& cancelled)
+{
+    error->clear();
+    const auto root = QFileInfo(configuration.workspaceRoot).canonicalFilePath();
+    if (root.isEmpty() || !QFileInfo(root).isDir()) { *error = QStringLiteral("Workspace directory is unavailable."); return {}; }
+    QStringList pending{configuration.workspaceRoot}, result;
+    auto ignored = configuration.ignoredDirs;
+    ignored << QDir(configuration.workspaceRoot).filePath(QStringLiteral(".git"));
+    auto isIgnored = [&](const QString& path) {
+        for (const auto& prefix : ignored) if (isInsideRoot(prefix, path)) return true;
+        return false;
+    };
+    QSet<QString> visited;
+    while (!pending.isEmpty()) {
+        if (cancelled && cancelled()) { *error = QStringLiteral("Workspace source discovery cancelled."); return {}; }
+        const auto path = pending.takeLast();
+        if (isIgnored(path)) continue;
+        const auto physical = QFileInfo(path).canonicalFilePath();
+        if (!isInsideRoot(root, physical) || visited.contains(pathKey(physical))) continue;
+        visited.insert(pathKey(physical));
+        const QDir directory(path);
+        if (!directory.exists() || !directory.isReadable()) { *error = QStringLiteral("Cannot read workspace directory: %1").arg(path); return {}; }
+        for (const auto& entry : directory.entryInfoList(QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden | QDir::System,
+                 QDir::DirsFirst | QDir::Name | QDir::IgnoreCase)) {
+            if (cancelled && cancelled()) { *error = QStringLiteral("Workspace source discovery cancelled."); return {}; }
+            if (entry.isSymLink() || isIgnored(entry.absoluteFilePath()) || !isInsideRoot(root, entry.canonicalFilePath())) continue;
+            if (entry.isDir()) { pending << entry.absoluteFilePath(); continue; }
+            if (!entry.isFile()) continue;
+            const auto suffix = QLatin1Char('.') + entry.suffix().toLower();
+            for (auto extension : configuration.fileExtensions) {
+                extension = extension.trimmed().toLower();
+                if (!extension.startsWith('.')) extension.prepend('.');
+                if (suffix == extension) { result << normalizePath(entry.absoluteFilePath()); break; }
+            }
+        }
+    }
+    result.sort(Qt::CaseInsensitive);
+    result.removeDuplicates();
+    return result;
+}

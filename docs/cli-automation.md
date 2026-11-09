@@ -15,8 +15,9 @@ The original formatter retains its own 0/1/2 convention.
 Paths resolve against an explicit, existing `workspace`. Document paths must
 remain inside it. Document ranges use **UTF-16 code units**, not UTF-8 bytes or
 Unicode code points. Requests are limited to 1 MiB; editable documents to 8 MiB;
-semantic source lists to 512 files. `sources` preserves compilation order;
-alternatively `projectId` uses the saved project's Build inputs and include paths.
+template semantic source lists to 512 files. For template operations, `sources`
+preserves the supplied order and legacy `projectId` supplies saved inputs.
+Simulation derives its inputs from an explicit TB file and declared top.
 
 ## Templates and inputs
 
@@ -73,6 +74,14 @@ change a running session's profile. `session.describe` reports open documents an
 active template editing. `document.open` opens and locates an existing file in the
 selected GUI session, then returns its actual adopted contents.
 
+The `document.*` automation contract addresses text/code editor buffers and their
+template metadata. Markdown, `.zblock` and PDF pages use separate GUI document
+sessions and are not editable through this contract; unsupported document kinds
+return `unsupported_document_kind` before opening or changing a page.
+`capabilities.documentContract` lists this boundary. GUI pages share stable
+region/group/page identities and workspace layout restoration; this does not add
+CLI commands for dragging pages or editing Web/PDF content.
+
 Online insert/input/format change the shared editor document and become ordinary
 undo steps. They report `adopted: true`, `written: false` and the actual `dirty`
 state. `document.undo` and `document.redo` require the latest `expectedRevision`.
@@ -90,51 +99,66 @@ supported; use the normal GUI Save As flow when a live document needs a new path
 
 ## Simulation
 
-Simulation Build inputs are an explicit selection. The GUI, `simulation.validate`,
-and actual runs share Slang preprocessing and package dependency ordering.
-`simulation.validate` reports `compilationOrder`, `includeOnly`, `dependencies`,
-and `diagnostics`. Each source is a separate compilation unit; workspace macros
-and include paths apply to every unit. Headers are include-only, and module
-instantiation does not introduce a compilation-order edge. Missing or ambiguous
-providers and package cycles block a run with diagnostics. A source edit or rescan
-refreshes the GUI plan; running always validates the inputs again.
+Simulation contract version 2 uses an explicit `workspace`, `tb` and `top`.
+The top is a module/program declaration, not a filename-derived guess. GUI and
+headless validation and runs share the TB dependency planner. It selects the
+actual elaborated closure, orders packages before users, and treats headers as
+include-only. Each source remains a separate compilation unit with the workspace
+macro/include settings; module instantiation does not impose a compile-order
+edge. Missing or ambiguous providers and unsupported external libraries return
+diagnostics. Use Simulation settings for an explicit definition-to-file mapping.
 
-`simulation.put` also accepts `designTopModule` and `designTopFile` to associate
-an explicit, source-qualified Design root with the existing project ID. These
-fields do not replace `dutName`/`dutFile` or `tbName`/`tbFile`. Creating/updating
-a project does not activate it; `simulation.open` selects the same unique active
-project used by Design and Build inputs. Unresolvable saved roots stay visible
-with diagnostics. `simulation.project` reports the GUI's pending/diagnostic/order
-state when connected to a GUI session.
+`simulation.validate` returns `compilationOrder`, `includeOnly`,
+`participatingFiles`, package `dependencies`, `elaborationDependencies`,
+and `diagnostics`. GUI validation includes open modified buffers and does not
+save them. Before running, the GUI saves only participating modified documents
+through normal conflict checks and captures the inputs again. A failed save,
+read-only input, external conflict or stale plan prevents launch. Headless
+sessions compile disk inputs.
 
 | Command | Input and result |
 | --- | --- |
-| `simulation.projects` | Lists saved projects and storage diagnostics. Querying does not migrate legacy storage. |
-| `simulation.project` | `projectId`; returns disk project/revision plus actual selected GUI workbench state when available. |
-| `simulation.put` | `expectedRevision`, `project` patch, optional `projectId` and `dryRun`. Omit ID and use revision `missing` to create. |
-| `simulation.open` | `projectId`, explicit GUI session; adopts that workspace/project and locates the workbench. Dirty documents prevent a workspace change. |
-| `simulation.validate` | `projectId`; runs existing Build input validation. |
-| `support.install` | `kind: "print"` or `"behaviors"`; materializes the existing support sources, returns paths. Add them explicitly to Build inputs. |
-| `simulation.run` | `projectId`, `expectedRevision`, explicit `simulator` executable, optional `timeoutMs` (100–3600000; default 120000). Requires a persistent session. |
-| `simulation.status` | `runId`; returns progress/state, bounded log, completion and process cleanup state. |
+| `simulation.projects` | Read-only saved legacy projects and storage diagnostics; does not migrate their storage. |
+| `simulation.project` | `projectId`; returns the saved project/revision with `readOnlyCompatibility: true`. |
+| `simulation.open` | `tb` and `top`, explicit GUI session; selects the target and reveals compact controls. |
+| `simulation.validate` | `tb` and `top`; plans without starting Questa. |
+| `support.install` | `kind: "print"` or `"behaviors"`; materializes existing support sources. Referenced support is discovered by the planner. |
+| `simulation.run` | `tb`, `top`, explicit `simulator` executable; persistent GUI or headless session required. |
+| `simulation.status` | `runId`; state, outcome, bounded log, plan and process state. |
 | `simulation.events` | `runId`, optional `offset` and `limit` (1–1000); structured print records and next offset. |
-| `simulation.cancel` | `runId`; cancels preparation or the owned Questa process tree. Poll until done and `processAlive: false`. |
-| `simulation.clear` | `runId`; releases the retained completed result after process cleanup. |
+| `simulation.cancel` | `runId`; cancels preparation or the running session. |
+| `simulation.clear` | `runId`; releases a completed or cancelled retained result. |
 
-Project fields: `name`, `sources`, `includeDirectories`, `designTopFile`, `designTopModule`, `dutFile`, `dutName`,
-`tbFile`, `tbName`, `durationNs`. Project writes use storage revisions and adopt
-the matching open workbench only after its current edit/busy state is checked.
-Retired graphical stimulus fields are rejected.
+Example validation request:
 
-Start `zeroslack-cli serve --profile <directory>` to run without a GUI. Its first
-JSON line identifies the session; it remains running for API calls. An API request
-`{"command":"session.shutdown"}` to that headless session ends it and cleans up
-owned work. GUI sessions cannot be closed through this command.
+```json
+{"command":"simulation.validate","workspace":"D:/work/design","tb":"tb/top_tb.sv","top":"top_tb"}
+```
 
-Automation runs use the same preparation and Questa session services in console
-mode, with a distinct run owned by the selected automation session. They do not
-pretend that the workbench's interactive Run button was activated. One retained
-run is allowed per session. At most 10000 events and 1 MiB of log characters are
-retained; truncation counters are returned. Poll/collect results before clearing
-or shutting down. Source saves and project changes during a run do not alter its
-captured inputs. Only owned transient simulation files are automatically removed.
+For legacy compatibility, `projectId` can replace `tb` and `top`; a legacy
+run also requires its latest `expectedRevision`. Only its saved TB and include
+settings are mapped. Legacy source selections do not limit the dependency
+closure, and selecting a simulation target does not change the active Design
+project. Existing project/TB/stimulus files are preserved. `simulation.put`
+returns `retired_operation`; explicit simulation `sources`, `durationNs`
+or `timeoutMs` returns `retired_parameter`. These parameters are not ignored.
+
+Runs continue under TB control. `finished` means an explicit successful
+`$finish`; `exhausted` means no scheduled events remain. `fatal`,
+`failed`, `paused` (`$stop` or breakpoint), `cancelled`,
+`preparation_timeout` and `process_exit` remain distinct outcomes.
+Preparation has a bounded wait; normal Running has no total runtime limit.
+A client's response/poll timeout does not stop simulation.
+
+Start `zeroslack-cli serve --profile <directory>` for a persistent headless
+session. Its first JSON line identifies the session. Send
+`{"command":"session.shutdown"}` to end that headless session and clean its
+owned work; GUI sessions cannot be shut down through this command.
+
+GUI automation shares the workspace simulation controller and cannot start a
+second run while the GUI is busy. Completed GUI sessions can retain Questa for
+waveform inspection; headless runs close it when execution completes.
+Hiding or closing a presentation page does not stop the workspace run.
+One result is retained per automation session; collect it and clear it before
+another automation run. At most 10000 events and 1 MiB of log characters are
+retained, with truncation counters. Only owned transient artifacts are removed.

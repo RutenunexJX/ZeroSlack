@@ -165,7 +165,7 @@ private slots:
         QVERIFY2(coordinator.saveSession(),qPrintable(store + ": " + coordinator.lastSaveOutcome().reason));
         QVERIFY(service.load(root).loaded);
         QSettings saved(store, QSettings::IniFormat);
-        QCOMPARE(QJsonDocument::fromJson(saved.value(stateKey(root)).toByteArray()).object().value("version").toInt(), 4);
+        QCOMPARE(QJsonDocument::fromJson(saved.value(stateKey(root)).toByteArray()).object().value("version").toInt(), 5);
         coordinator.clearSession();
         QCOMPARE(service.load(root).status, WorkspaceSessionReadStatus::Missing);
         QCOMPARE(bytesAt(store), QByteArray());

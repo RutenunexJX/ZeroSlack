@@ -96,14 +96,14 @@ static QByteArray counterTb()
     return QByteArrayLiteral("`timescale 1ns/1ps\nmodule tb_counter;\n"
         "localparam WIDTH=8; logic clk=0, rst_n=0, enable=0; wire [WIDTH-1:0] count;\n"
         "counter #(.WIDTH(WIDTH)) dut(.*); always #5 clk=~clk;\n"
-        "initial begin #50; rst_n=1; end\nendmodule\n");
+        "initial begin #50; rst_n=1; #1950; $finish; end\nendmodule\n");
 }
 static QByteArray typedTb()
 {
     return QByteArrayLiteral("`timescale 1ns/1ps\nmodule tb_typed_dut; import demo_types::*;\n"
         "logic clk=0, rst=1; mode_e mode=IDLE, mode_copy=IDLE, result;\n"
         "payload_t payload='0; word_t data='0; typed_dut dut(.*);\n"
-        "always #5 clk=~clk; initial begin #50; rst=0; end\nendmodule\n");
+        "always #5 clk=~clk; initial begin #50; rst=0; #50; $finish; end\nendmodule\n");
 }
 static auto semanticRecords(const QByteArray& bytes, const QString& path)
 {
@@ -168,7 +168,7 @@ private slots:
     {
         auto p = newProject("Scope"); p.sources = {"design.sv"}; p.tbFile = "tb.sv"; p.tbName = "tb";
         auto script = runScript("root", p, "run", "modelsim.ini", WaveTheme::Mocha);
-        QVERIFY(script.contains("log -r /*")); QVERIFY(script.contains("find signals -r /*"));
+        QVERIFY(script.contains("log -r /*")); QVERIFY(script.contains("find signals -r \"/tb/*\""));
         QVERIFY(script.contains("add wave -r /*"));
         p.waveScope = "all";
         QVERIFY(runScript("root", p, "run", "modelsim.ini").contains("log -r /*"));
@@ -425,6 +425,7 @@ private slots:
         project.tbFile = "sim/" + name + "/tb_counter.sv";
         QCOMPARE(project.tbFile, "sim/" + name + "/tb_counter.sv");
         const auto inputDir = QFileInfo(workspace.filePath(project.tbFile)).absolutePath();
+        project.includeDirectories = {QDir(workspace.path()).relativeFilePath(inputDir)};
         auto rtl = counter();
         rtl.replace("always_ff", "`include \"step.svh\"\nalways_ff");
         rtl.replace("count+1'b1", "count+STEP");
@@ -437,11 +438,12 @@ private slots:
             QVERIFY(put(workspace.filePath("second/priority.svh"), "localparam PRIORITY=22;\n"));
             QVERIFY(put(QDir(inputDir).filePath("priority.svh"), "localparam PRIORITY=33;\n"));
             project.sources = {project.tbFile, "first $+ [one]/helper.sv", "second/helper.sv", "counter.sv"};
+            project.includeDirectories = {"first $+ [one]", "second", QDir(workspace.path()).relativeFilePath(inputDir)};
             tb = "`timescale 1ns/1ps\nmodule tb_counter;\n`include \"step.svh\"\n"
                  "logic clk=0, rst_n=0, enable=1; wire [7:0] count; counter dut(.*);\n"
                  "always #5 clk=~clk; initial begin #2; rst_n=1; #34;\n"
                  "if (count != 4*STEP || dut.PRIORITY != 11) $fatal(1, \"Include order mismatch\");\n"
-                 "$display(\"LITERAL_INCLUDE_OK\"); end endmodule\n";
+                 "$display(\"LITERAL_INCLUDE_OK\"); $finish; end endmodule\n";
         } else {
             tb = counterTb();
         }
@@ -534,7 +536,7 @@ private slots:
         project.tbFile = QStringLiteral("tb_top.sv");
         project.tbName = QStringLiteral("tb_top");
         QString error;
-        const auto tb = QByteArrayLiteral("`timescale 1ns/1ps\nmodule tb_top; logic clk=0; wire [7:0] data; top dut(.*); always #5 clk=~clk; endmodule\n");
+        const auto tb = QByteArrayLiteral("`timescale 1ns/1ps\nmodule tb_top; logic clk=0; wire [7:0] data; top dut(.*); always #5 clk=~clk; initial #100 $finish; endmodule\n");
         QVERIFY(put(workspace.filePath(project.tbFile), tb));
         QuestaSession session;
         QSignalSpy finished(&session, &QuestaSession::finished);
@@ -555,7 +557,7 @@ private slots:
         const auto executable = qEnvironmentVariable("SIMDOCK_TEST_QUESTA");
         if (executable.isEmpty()) QSKIP("Set SIMDOCK_TEST_QUESTA to verify the real Questa state handoff.");
         QTemporaryDir workspace;
-        QVERIFY(put(workspace.filePath("tb.sv"), "module tb; reg clk=0; always #5 clk=~clk; endmodule\n"));
+        QVERIFY(put(workspace.filePath("tb.sv"), "module tb; reg clk=0; always #5 clk=~clk; initial #100 $finish; endmodule\n"));
         auto project = newProject("State reader");
         project.sources = {"tb.sv"}; project.tbFile = "tb.sv"; project.tbName = "tb";
         QString log, directory, error;
@@ -565,7 +567,7 @@ private slots:
         QSignalSpy finished(&session, &QuestaSession::finished);
         connect(&session, &QuestaSession::logText, this, [&log](const QString& text) { log += text; });
         connect(&session, &QuestaSession::stateChanged, this, [&](const QString& state) {
-            if (state != QStringLiteral("Completed")) return;
+            if (state != QStringLiteral("Finished")) return;
             // DELETE access detects a read handle that denies atomic replacement,
             // without modifying the file or racing the simulator's contents.
             const auto handle = openState(QDir(directory).filePath("state"), DELETE,
@@ -580,7 +582,7 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(!finished.isEmpty(), 90000);
         QVERIFY2(finished.first()[0].toBool(), qPrintable(log));
         QVERIFY(captureSession("reader", directory, session, log));
-        qInfo() << "State replacement access during Completed callback: Win32 error" << sharingError;
+        qInfo() << "State replacement access during Finished callback: Win32 error" << sharingError;
         QVERIFY(probed);
         QCOMPARE(sharingError, DWORD(ERROR_SUCCESS));
         session.stop(); QTRY_VERIFY_WITH_TIMEOUT(!session.alive(), 5000);
@@ -594,7 +596,7 @@ private slots:
         const auto executable = qEnvironmentVariable("SIMDOCK_TEST_QUESTA");
         if (executable.isEmpty()) QSKIP("Set SIMDOCK_TEST_QUESTA to verify real Questa state publication.");
         QTemporaryDir workspace;
-        QVERIFY(put(workspace.filePath("tb.sv"), "module tb; reg clk=0; always #5 clk=~clk; endmodule\n"));
+        QVERIFY(put(workspace.filePath("tb.sv"), "module tb; reg clk=0; always #5 clk=~clk; initial #100 $finish; endmodule\n"));
         auto project = newProject("State contention");
         project.sources = {"tb.sv"}; project.tbFile = "tb.sv"; project.tbName = "tb";
         QString log, error;
@@ -609,7 +611,7 @@ private slots:
         const auto pid = session.processId();
         const auto statePath = QDir(directory).filePath("state");
         const auto oldRecord = read(statePath);
-        QVERIFY(QByteArray(oldRecord).replace("\r\n", "\n").endsWith("|completed\n"));
+        QVERIFY(QByteArray(oldRecord).replace("\r\n", "\n").endsWith("|finished\n"));
         HANDLE lock = openState(statePath, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE);
         const auto unlock = qScopeGuard([&] { if (lock != INVALID_HANDLE_VALUE) CloseHandle(lock); });
         QVERIFY(lock != INVALID_HANDLE_VALUE);
@@ -621,10 +623,10 @@ private slots:
         QCOMPARE(read(statePath), oldRecord);
         QTest::qWait(180);
         QCOMPARE(finished.size(), 0); QVERIFY(session.busy());
-        QVERIFY(put(statePath, runId + "|completed"));
+        QVERIFY(put(statePath, runId + "|finished"));
         QTest::qWait(180);
         QCOMPARE(finished.size(), 0); QVERIFY(session.busy());
-        QVERIFY(put(statePath, runId + "|completed|unexpected\n"));
+        QVERIFY(put(statePath, runId + "|finished|unexpected\n"));
         QTest::qWait(180);
         QCOMPARE(finished.size(), 0); QVERIFY(session.busy());
         QVERIFY(put(statePath, oldRecord));
@@ -669,12 +671,12 @@ private slots:
         CloseHandle(lock); lock = INVALID_HANDLE_VALUE;
 
         const auto beforeTimeout = sessionDirectories();
-        session.setWallTimeout(1);
+        session.setPreparationTimeout(1);
         QVERIFY2(session.start(executable, workspace.path(), project, &error), qPrintable(error));
         directory = newSessionDirectory(beforeTimeout); QVERIFY(!directory.isEmpty());
         QTRY_VERIFY_WITH_TIMEOUT(!session.alive(), 5000);
         QCOMPARE(finished.size(), 1); QVERIFY(!finished.takeFirst()[0].toBool());
-        QVERIFY(!session.busy()); QVERIFY(log.contains("wall-clock timeout"));
+        QVERIFY(!session.busy()); QCOMPARE(session.outcome(), QString("preparation_timeout"));
         QVERIFY(captureSession("deadline", directory, session, log));
         qInfo() << "Stop during publication retry and the wall-clock deadline both closed their managed sessions";
 #endif
@@ -692,7 +694,7 @@ private slots:
         project.tbFile = QStringLiteral("tb.sv");
         project.tbName = QStringLiteral("tb_load_error");
         QString error;
-        QVERIFY(put(workspace.filePath(project.tbFile), "`timescale 1ns/1ps\nmodule tb_load_error; logic clk=0; wire value; load_error dut(.*); always #5 clk=~clk; endmodule\n"));
+        QVERIFY(put(workspace.filePath(project.tbFile), "`timescale 1ns/1ps\nmodule tb_load_error; logic clk=0; wire value; load_error dut(.*); always #5 clk=~clk; initial #100 $finish; endmodule\n"));
         QuestaSession session;
         QSignalSpy finished(&session, &QuestaSession::finished);
         QSignalSpy states(&session, &QuestaSession::stateChanged);
@@ -736,7 +738,7 @@ private slots:
             "typedef enum logic [1:0] { IDLE, TX } state_t; state_t state=IDLE;\n"
             "wire valid_x=1'bx, ready_z=1'bz; wire [1:0] data_x=2'bxx, data_z=2'bzz;\n"
             "for (genvar i=0; i<2; i++) begin : lanes wire ready=1'b1; end\n"
-            "always #5 clk=~clk; initial begin #20; rst_n=1; #10; valid=1; data=8'ha5; state=TX; end\n"
+            "always #5 clk=~clk; initial begin #20; rst_n=1; #10; valid=1; data=8'ha5; state=TX; #70; $finish; end\n"
             "endmodule\n")));
         auto project = newProject(QStringLiteral("Wave colors"));
         project.sources = {QStringLiteral("tb_colors.sv")};
@@ -885,6 +887,185 @@ private slots:
         session.stop(); QTRY_VERIFY_WITH_TIMEOUT(!session.alive(), 5000);
         QVERIFY(!QFileInfo::exists(currentRun));
     }
+    void preparedInputsMustStillMatch()
+    {
+        QTemporaryDir directory;
+        const auto path = directory.filePath("tb.sv");
+        QVERIFY(put(path, "module tb; endmodule\n"));
+        PreparedRun prepared;
+        prepared.root = directory.path();
+        prepared.inputFingerprints.insert(path, QByteArray("obsolete"));
+        QuestaSession session;
+        QString error;
+        QSignalSpy started(&session, &QuestaSession::eventRunStarted);
+        QVERIFY(!session.start(prepared, &error));
+        QVERIFY(error.contains("changed after preparation"));
+        QVERIFY(!session.alive()); QVERIFY(!session.busy()); QVERIFY(started.isEmpty());
+    }
+    void liveTbControlledTermination_data()
+    {
+        QTest::addColumn<bool>("interactive");
+        QTest::newRow("console") << false;
+        QTest::newRow("gui-literal-dollar") << true;
+    }
+    void liveTbControlledTermination()
+    {
+        QFETCH(bool, interactive);
+        const auto executable = qEnvironmentVariable("SIMDOCK_TEST_QUESTA");
+        if (executable.isEmpty()) QSKIP("Questa is required for terminal-state verification.");
+        QTemporaryDir directory;
+        const QString source = interactive ? QString("source $-folder/cases.sv") : QString("cases.sv");
+        QVERIFY(put(directory.filePath(source),
+            "`timescale 1ns/1ps\n"
+            "module normal; logic flag=0; initial begin #1 flag=1; #1 $finish; end final $display(\"FINAL_NORMAL\"); endmodule\n"
+            "module no_final; initial begin #1 $finish; $fatal(1,\"ran past finish\"); end endmodule\n"
+            "module final_error; initial #1 $finish; final $error(\"FINAL_ERROR\"); endmodule\n"
+            "module exhausted_final_error; initial #1 $display(\"EXHAUSTED\"); final $error(\"FINAL_ERROR\"); endmodule\n"
+            "module fatal_case; initial #1 $fatal(1,\"EXPECTED_FATAL\"); endmodule\n"
+            "module stopped; initial #1 $stop; endmodule\n"
+            "module exhausted; initial #1 $display(\"EXHAUSTED\"); endmodule\n"
+            "module error_case; initial begin #1 $error(\"EXPECTED_ERROR\"); #1 $finish; end endmodule\n"));
+        auto project = newProject("TB termination");
+        project.sources = {source}; project.tbFile = source;
+        QuestaSession session;
+        session.setInteractive(interactive);
+        QString log, error;
+        connect(&session, &QuestaSession::logText, this, [&](const QString& text) { log += text; });
+        QSignalSpy finished(&session, &QuestaSession::finished);
+        const QList<QPair<QString, QString>> cases{{"normal", "finished"}, {"normal", "finished"},
+            {"no_final", "finished"}, {"final_error", "failed"}, {"exhausted_final_error", "failed"},
+            {"fatal_case", "fatal"}, {"stopped", "paused"}, {"exhausted", "exhausted"}, {"error_case", "failed"}};
+        int number = 0;
+        const auto evidence = qScopeGuard([&] {
+            if (!session.lastRunDirectory().isEmpty()) captureSession("termination-last-observation",
+                QFileInfo(session.lastRunDirectory()).absolutePath(), session, log);
+        });
+        for (const auto& entry : cases) {
+            log.clear(); finished.clear(); project.tbName = entry.first;
+            const auto previous = session.lastRunDirectory();
+            QVERIFY2(session.start(executable, directory.path(), project, &error), qPrintable(error));
+            QTRY_VERIFY_WITH_TIMEOUT(!finished.isEmpty(), 30000);
+            QCOMPARE(session.outcome(), entry.second);
+            QCOMPARE(finished.first()[0].toBool(), entry.second == "finished" || entry.second == "exhausted");
+            QVERIFY(session.alive()); QVERIFY(!session.busy());
+            if (entry.first == "normal") QVERIFY(QFileInfo(QDir(session.lastRunDirectory()).filePath("result.wlf")).isFile());
+            else QVERIFY2(!log.contains("No objects found"), qPrintable(log));
+            if (number == 1) QVERIFY2(log.contains("reusing compiled"), qPrintable(log));
+            if (entry.first == "normal") QVERIFY(log.contains("FINAL_NORMAL"));
+            if (!previous.isEmpty()) QVERIFY(!QFileInfo::exists(previous));
+            QVERIFY(captureSession(QStringLiteral("termination-%1-%2").arg(number++).arg(entry.first),
+                QFileInfo(session.lastRunDirectory()).absolutePath(), session, log));
+        }
+        const auto owned = QFileInfo(session.lastRunDirectory()).absolutePath();
+        session.stop(); QVERIFY(!session.alive()); QVERIFY(!QFileInfo::exists(owned));
+    }
+    void liveTbDependencyPlan()
+    {
+        const auto executable = qEnvironmentVariable("SIMDOCK_TEST_QUESTA");
+        if (executable.isEmpty()) QSKIP("Questa is required for the elaborated dependency comparison.");
+        QTemporaryDir directory;
+        QVERIFY(put(directory.filePath("tb.sv"),
+            "`timescale 1ns/1ps\nmodule tb; import build_pkg::*; import zeroslack_events_package::*;\n"
+            "bus_if bus(); dut #(.ENABLE(ENABLE)) d(bus);\n"
+            "initial begin #2; if(bus.ready !== 1'b1) $fatal(1,\"dependency mismatch\");\n"
+            "emit_event($realtime*1000,\"Info\",\"closure\",$sformatf(\"%m\"),`__FILE__,`__LINE__,\"dependency plan ready\"); #1; $finish; end endmodule\n"));
+        QVERIFY(put(directory.filePath("dut.sv"), "module dut #(parameter ENABLE=1)(bus_if bus); leaf l(bus.ready); if(ENABLE) missing_hardware m(); endmodule\n"));
+        QVERIFY(put(directory.filePath("duplicate.sv"), "module dut; missing_hardware m(); endmodule\n"));
+        QVERIFY(put(directory.filePath("leaf.v"), "module leaf(output wire ready); wire logic; assign ready=1'b1; endmodule\n"));
+        QVERIFY(put(directory.filePath("bus.sv"), "interface bus_if; logic ready; endinterface\n"));
+        QVERIFY(put(directory.filePath("package.sv"), "`include \"choice.svh\"\npackage build_pkg; parameter ENABLE=`ENABLE; endpackage\n"));
+        QVERIFY(put(directory.filePath("first/choice.svh"), "`define ENABLE 0\n"));
+        QVERIFY(put(directory.filePath("second/choice.svh"), "`define ENABLE 1\n"));
+        QVERIFY(put(directory.filePath("monitor.sv"), "module monitor(input logic ready); initial begin #1; if(ready !== 1'b1) $fatal; $display(\"BOUND_MONITOR_PASS\"); end endmodule\n"));
+        QVERIFY(put(directory.filePath("binding.sv"), "bind dut monitor checks(bus.ready);\n"));
+        QVERIFY(put(directory.filePath("unrelated.sv"), "module unrelated; this is invalid @@@; endmodule\n"));
+        const auto package = read(":/simulation/zeroslack_events_package.sv");
+        QVERIFY(!package.isEmpty());
+        QVERIFY(put(directory.filePath("events.sv"), package));
+        QString error;
+        auto request = SimulationBuildPlanner::workspaceRequest(directory.path(), {"tb.sv", "tb"}, &error);
+        QVERIFY2(error.isEmpty(), qPrintable(error));
+        request.includeDirectories = {"first", "second"};
+        const auto ambiguous = prepareRun(executable, request);
+        QVERIFY(ambiguous.error.contains("multiple definitions"));
+        request.definitionSources.insert("dut", "dut.sv");
+        auto prepared = prepareRun(executable, request);
+        QVERIFY2(prepared.error.isEmpty(), qPrintable(prepared.error));
+        QCOMPARE(prepared.plan->compilation.files.size(), 8);
+        QVERIFY(!prepared.project.compilationUnits.contains("unrelated.sv"));
+        QVERIFY(!prepared.project.compilationUnits.contains("duplicate.sv"));
+        QVERIFY(!prepared.project.compilationUnits.contains("first/choice.svh"));
+        QuestaSession session;
+        session.setInteractive(false);
+        QString log;
+        QList<SimulationEvent> events;
+        const auto evidence = qScopeGuard([&] {
+            if (!session.lastRunDirectory().isEmpty()) captureSession("tb-dependency-last-observation",
+                QFileInfo(session.lastRunDirectory()).absolutePath(), session, log);
+        });
+        connect(&session, &QuestaSession::logText, this, [&](const QString& text) { log += text; });
+        connect(&session, &QuestaSession::eventsReady, this, [&](const QList<SimulationEvent>& values) { events += values; });
+        QSignalSpy finished(&session, &QuestaSession::finished);
+        QVERIFY(put(directory.filePath("first/choice.svh"), "`define ENABLE 1\n"));
+        QVERIFY(!session.start(prepared, &error));
+        QVERIFY(error.contains("changed after preparation"));
+        QVERIFY(!session.alive());
+        QVERIFY(put(directory.filePath("first/choice.svh"), "`define ENABLE 0\n"));
+        QVERIFY2(session.start(prepared, &error), qPrintable(error));
+        QTRY_VERIFY_WITH_TIMEOUT(!finished.isEmpty(), 30000);
+        QVERIFY2(finished.first()[0].toBool(), qPrintable(log));
+        QCOMPARE(session.outcome(), "finished");
+        QVERIFY(log.contains("BOUND_MONITOR_PASS"));
+        QCOMPARE(events.size(), 1);
+        QCOMPARE(events.first().tag, "closure");
+        QCOMPARE(events.first().message, "dependency plan ready");
+        QCOMPARE(events.first().timePs.toDouble(), 2000.0);
+        QVERIFY(events.first().sourceFile.endsWith("tb.sv"));
+        QVERIFY(events.first().sourceLine > 0); QVERIFY(!events.first().runId.isEmpty());
+        const auto owned = QFileInfo(session.lastRunDirectory()).absolutePath();
+        QVERIFY(captureSession("tb-dependency-plan", owned, session, log));
+        session.stop(); QVERIFY(!QFileInfo::exists(owned));
+        request.includeDirectories = {"second", "first"};
+        const auto enabled = prepareRun(executable, request);
+        QVERIFY2(enabled.error.contains("missing_hardware"), qPrintable(enabled.error));
+    }
+    void liveNoRuntimeDeadline()
+    {
+        const auto executable = qEnvironmentVariable("SIMDOCK_TEST_QUESTA");
+        if (executable.isEmpty()) QSKIP("Questa is required for the 122-second runtime proof.");
+        QTemporaryDir directory;
+        QVERIFY(put(directory.filePath("tb.sv"),
+            "`timescale 1ns/1ps\nmodule tb; int value=1;\n"
+            "function automatic int compute(input int seed); int result; result=seed;\n"
+            "for(int i=0;i<1000000;i++) result=(result ^ (result << 5))+i; return result; endfunction\n"
+            "always #1 value=compute(value); endmodule\n"));
+        auto project = newProject("No runtime deadline");
+        project.sources = {"tb.sv"}; project.tbFile = "tb.sv"; project.tbName = "tb";
+        QuestaSession session;
+        session.setInteractive(false);
+        QString log, error;
+        bool running = false;
+        connect(&session, &QuestaSession::logText, this, [&](const QString& text) { log += text; });
+        connect(&session, &QuestaSession::stateChanged, this, [&](const QString& state) { if (state == "Running") running = true; });
+        QSignalSpy finished(&session, &QuestaSession::finished);
+        QVERIFY2(session.start(executable, directory.path(), project, &error), qPrintable(error));
+        QTRY_VERIFY_WITH_TIMEOUT(running || !finished.isEmpty(), 30000);
+        QVERIFY2(running, qPrintable(log));
+        QElapsedTimer elapsed; elapsed.start();
+        const auto evidence = qScopeGuard([&] {
+            captureSession("runtime-last-observation", QFileInfo(session.lastRunDirectory()).absolutePath(), session, log);
+        });
+        QTest::qWait(122000);
+        QVERIFY(elapsed.elapsed() >= 122000);
+        QVERIFY2(session.busy(), qPrintable(log)); QVERIFY(session.alive()); QVERIFY(finished.isEmpty());
+        const auto owned = QFileInfo(session.lastRunDirectory()).absolutePath();
+        log += QStringLiteral("\nObserved Running for %1 ms without a runtime deadline.\n").arg(elapsed.elapsed());
+        QVERIFY(captureSession("runtime-over-120s", owned, session, log));
+        session.stop();
+        QCOMPARE(session.outcome(), "cancelled"); QCOMPARE(finished.size(), 1);
+        QVERIFY(!finished.first()[0].toBool()); QVERIFY(!session.alive()); QVERIFY(!session.busy());
+        QVERIFY(!QFileInfo::exists(owned));
+    }
     void liveQuesta()
     {
         const QString executable = qEnvironmentVariable("SIMDOCK_TEST_QUESTA");
@@ -920,16 +1101,16 @@ private slots:
         QVERIFY(log.contains(QStringLiteral("Time: 2 us")));
         QVERIFY(!QFileInfo::exists(firstRun));
         QVERIFY(put(temp.filePath(QStringLiteral("counter.sv")), counter() + QByteArrayLiteral("\nnot valid HDL;\n")));
-        QVERIFY(session.start(executable, temp.path(), p, &error));
-        QTRY_VERIFY_WITH_TIMEOUT(!finished.isEmpty(), 45000);
-        QVERIFY2(!finished.takeFirst()[0].toBool(), qPrintable(log));
+        QVERIFY(!session.start(executable, temp.path(), p, &error));
+        QVERIFY2(error.contains("counter.sv"), qPrintable(error));
+        QVERIFY(finished.isEmpty());
         QVERIFY(session.alive());
         QVERIFY(put(temp.filePath(QStringLiteral("counter.sv")), counter()));
         p.tbFile = QStringLiteral("tb_long.sv");
         p.tbName = QStringLiteral("tb_long");
         QVERIFY(put(temp.filePath(p.tbFile), QByteArray(1, char(96)) + QByteArrayLiteral("timescale 1ns/1ps\nmodule tb_long; reg clk=0; always #5 clk=~clk; endmodule")));
         p.durationNs = 3600000000000LL;
-        session.setWallTimeout(30000);
+        session.setPreparationTimeout(30000);
         states.clear();
         QVERIFY(session.start(executable, temp.path(), p, &error));
         const auto reachedRunning = [&states] {
@@ -941,7 +1122,7 @@ private slots:
         session.stop();
         QTRY_VERIFY_WITH_TIMEOUT(!session.alive(), 5000);
         QVERIFY(!session.busy());
-        session.setWallTimeout(1);
+        session.setPreparationTimeout(1);
         finished.clear();
         QVERIFY(session.start(executable, temp.path(), p, &error));
         QTRY_VERIFY_WITH_TIMEOUT(!finished.isEmpty(), 5000);

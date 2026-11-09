@@ -296,8 +296,10 @@ void ElaTabBar::dragEnterEvent(QDragEnterEvent* event)
         mimeData->setProperty("TabDropIndex", tabAt(event->pos()));
 #endif
         Q_EMIT tabDragEnter(mimeData);
-        qApp->processEvents();
-        QMouseEvent pressEvent(QEvent::MouseButtonPress, QPoint(tabRect(currentIndex()).x() + d->_style->getTabSize().width() / 2, 0), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        if (!_hostedDragEnabled) qApp->processEvents();
+        const QPoint pressPosition = _hostedDragEnabled ? tabRect(currentIndex()).center()
+            : QPoint(tabRect(currentIndex()).x() + d->_style->getTabSize().width() / 2, 0);
+        QMouseEvent pressEvent(QEvent::MouseButtonPress, pressPosition, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
         QApplication::sendEvent(this, &pressEvent);
         QMouseEvent moveEvent(QEvent::MouseMove, QPoint(event->pos().x(), 0), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
         QApplication::sendEvent(this, &moveEvent);
@@ -419,6 +421,20 @@ void ElaTabBar::resizeEvent(QResizeEvent* event)
 void ElaTabBar::paintEvent(QPaintEvent* event)
 {
     if (_nativeTabBehavior) {
+        if (_hostedDragEnabled) {
+            Q_D(ElaTabBar);
+            for (int index=0;index<count();++index) {
+                for (const auto side:{QTabBar::LeftSide,QTabBar::RightSide}) {
+                    auto* button=tabButton(index,side);
+                    if (!button) continue;
+                    const QRect bounds=button->geometry();
+                    bool exposed=rect().contains(bounds) && isTabVisible(index);
+                    for (const auto* scroll:{d->_tabBarPrivate->leftB,d->_tabBarPrivate->rightB})
+                        if (scroll->isVisible() && scroll->geometry().intersects(bounds)) exposed=false;
+                    button->setVisible(exposed);
+                }
+            }
+        }
         QTabBar::paintEvent(event);
         return;
     }

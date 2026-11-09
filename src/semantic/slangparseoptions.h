@@ -3,6 +3,7 @@
 
 #include <slang/ast/Compilation.h>
 #include <slang/parsing/Preprocessor.h>
+#include <slang/parsing/Parser.h>
 #include <slang/util/Bag.h>
 
 #include <QDir>
@@ -80,15 +81,29 @@ inline slang::Bag makeSyntaxOptions(const QStringList& includeDirs,
             options.additionalIncludePaths.emplace_back(clean.toStdString());
     }
 
-    for (auto it = defines.constBegin(); it != defines.constEnd(); ++it) {
-        if (it.key().isEmpty())
+    auto defineNames = defines.keys();
+    defineNames.sort();
+    for (const auto& name : defineNames) {
+        if (name.isEmpty())
             continue;
-        const QString define = it.value().isEmpty()
-            ? it.key()
-            : QStringLiteral("%1=%2").arg(it.key(), it.value());
+        const QString define = defines.value(name).isEmpty()
+            ? name
+            : QStringLiteral("%1=%2").arg(name, defines.value(name));
         options.predefines.push_back(define.toStdString());
     }
 
+    return bag;
+}
+
+inline slang::Bag makeUnitSyntaxOptions(const QString& file, const QStringList& includeDirs,
+                                       const QHash<QString, QString>& defines)
+{
+    auto bag = makeSyntaxOptions(includeDirs, defines);
+    if (QFileInfo(file).suffix().compare(QStringLiteral("v"), Qt::CaseInsensitive) == 0) {
+        bag.insertOrGet<slang::parsing::PreprocessorOptions>().languageVersion = slang::LanguageVersion::v1364_2005;
+        bag.insertOrGet<slang::parsing::LexerOptions>().languageVersion = slang::LanguageVersion::v1364_2005;
+        bag.insertOrGet<slang::parsing::ParserOptions>().languageVersion = slang::LanguageVersion::v1364_2005;
+    }
     return bag;
 }
 

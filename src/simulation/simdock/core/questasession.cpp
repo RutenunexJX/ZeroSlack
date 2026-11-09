@@ -75,7 +75,7 @@ QString scoreboardResultScript(const QString& tbName)
 {
     const QString scope = QStringLiteral("sim:/%1/__simdock_scoreboard/").arg(tbName);
     // Questa's decimal radix sign-extends even a one-bit completion flag to -1.
-    return QStringLiteral("if {[examine -radix unsigned %1] != 1} {error \"Scoreboard did not finish. Check the run duration and simulation errors.\"}\n"
+    return QStringLiteral("if {[examine -radix unsigned %1] != 1} {error \"Scoreboard did not finish before the TB ended.\"}\n"
                           "if {[examine -radix unsigned %2] != 0} {error \"Scoreboard checks failed. See SIMDOCK_CHECK_FAIL entries in the run log.\"}\n"
                           "puts \"Scoreboard checks passed.\"\n")
         .arg(tclWord(scope + QStringLiteral("done")), tclWord(scope + QStringLiteral("errors")));
@@ -123,7 +123,8 @@ proc ::simdock::compile {directories commands} {
     for (const auto& directory : directories) script += QLatin1Char(' ') + tclWord(directory);
     return script + QStringLiteral("] ") + tclWord(commands) + QLatin1Char('\n');
 }
-QString runScript(const QString& root, const Project& p, const QString& runDir, const QString& iniPath, WaveTheme waveTheme, bool reuseDesign, const QString& workDirectory, bool interactive)
+QString runScript(const QString& root, const Project& p, const QString& runDir, const QString& iniPath, WaveTheme waveTheme, bool reuseDesign, const QString& workDirectory, bool interactive,
+    const QStringList& bindCompilationUnits)
 {
     const QString directory = simulatorPath(runDir);
     const QString ini = simulatorPath(iniPath);
@@ -164,30 +165,71 @@ QString runScript(const QString& root, const Project& p, const QString& runDir, 
         defineArgs += QLatin1Char(' ') + tclWord(QStringLiteral("+define+") + name
             + (value.isEmpty() ? QString() : QStringLiteral("=") + value));
     }
+    QString tops = tclWord(QStringLiteral("work.") + p.tbName);
     for (const auto& file : files) {
-        if (reuseDesign) continue;
         const QString suffix = QFileInfo(file).suffix().toLower();
         if (suffix == QStringLiteral("vh") || suffix == QStringLiteral("svh")) continue;
-        compilation += QStringLiteral("vlog -modelsimini %1 -work work %2%3 %4\n")
-            .arg(tclWord(ini), suffix == QStringLiteral("sv") ? QStringLiteral("-sv") : QString(), includeArgs + defineArgs,
-                 tclWord(QDir::fromNativeSeparators(QDir(root).filePath(file))));
+        const auto path = QDir::fromNativeSeparators(QDir(root).filePath(file));
+        QString options = suffix == QStringLiteral("sv") ? QStringLiteral("-sv") : QString();
+        if (bindCompilationUnits.contains(SemanticInputCapture::pathKey(path))) {
+            const auto unit = QStringLiteral("__zeroslack_bind_") + QString::fromLatin1(
+                QCryptographicHash::hash(path.toUtf8(), QCryptographicHash::Sha256).toHex());
+            // Exactly one source per invocation preserves file-local macros and $unit scope.
+            options += QStringLiteral(" -mfcu -cuname ") + tclWord(unit);
+            tops += QLatin1Char(' ') + tclWord(QStringLiteral("work.") + unit);
+        }
+        if (reuseDesign) continue;
+        compilation += QStringLiteral("vlog -modelsimini %1 -work work -timescale 1ns/1ps %2%3 %4\n")
+            .arg(tclWord(ini), options, includeArgs + defineArgs, tclWord(path));
     }
     if (!reuseDesign) s += compileWithLiteralDirectories(dirs, compilation);
-    s += QStringLiteral("::simdock::state loading\nvsim -modelsimini %1 -onfinish stop -voptargs=+acc -wlf %2 %3 +SIMDOCK_DURATION_NS=%4\n")
-        .arg(tclWord(ini), tclWord(QDir(directory).filePath(QStringLiteral("result.wlf"))),
-             tclWord(QStringLiteral("work.") + p.tbName)).arg(p.durationNs);
+    // Source navigation is provided by ZeroSlack. Questa expands literal '$'
+    // again in its automatic source popups, contaminating TESTSTATUS on finish.
+    // Apply both transient preferences before loading, including reused runs.
+    if (interactive) s += QStringLiteral("set ::PrefSource(OpenOnBreak) 0\nset ::PrefSource(OpenOnFinish) 0\n");
+    s += QStringLiteral("::simdock::state loading\nvsim -modelsimini %1 -onfinish stop -voptargs=+acc -wlf %2 %3\n")
+        .arg(tclWord(ini), tclWord(QDir(directory).filePath(QStringLiteral("result.wlf"))), tops);
     // Questa can return normally from Tcl's vsim command after elaboration fails.
     s += QStringLiteral("if {[runStatus] eq \"nodesign\"} {\n"
         "    error \"Questa could not load the testbench. Check the compiler and elaboration errors above.\"\n}\n");
-    s += QStringLiteral("onbreak {resume}\nlog -r /*\n");
-    if (interactive) s += QStringLiteral("view wave\ncatch {delete wave *}\nadd wave -r /*\n");
+    // resume continues the command script, never the simulation after a breakpoint.
+    s += QStringLiteral("onbreak {resume}\n"
+        "set signals [find signals -r %1]\nif {[llength $signals]} {log -r /*}\n")
+        .arg(tclWord(QStringLiteral("/%1/*").arg(p.tbName)));
+    if (interactive) s += QStringLiteral("view wave\ncatch {delete wave *}\nif {[llength $signals]} {add wave -r /*}\n");
     if (legacyChecks(p))
         s += QStringLiteral("log -r %1\n").arg(tclWord(QStringLiteral("/%1/__simdock_scoreboard/*").arg(p.tbName)));
-    if (interactive) s += waveAppearanceScript(waveTheme) + waveSignalColorsScript(waveTheme, QStringLiteral("[find signals -r /*]"));
-    s += QStringLiteral("::simdock::state running\nrun %1 ns\n").arg(p.durationNs);
+    if (interactive) s += waveAppearanceScript(waveTheme) + waveSignalColorsScript(waveTheme, QStringLiteral("$signals"));
+    s += QStringLiteral(R"tcl(::simdock::state running
+run -all
+set status [runStatus -full]
+set testStatus [coverage attribute -name TESTSTATUS -concise]
+if {![string is integer -strict $testStatus]} {error "Questa did not return a valid TESTSTATUS."}
+set requestedFinish [expr {[lindex $status 0] eq "break" && [lindex $status 2] eq {$finish}}]
+if {$requestedFinish || [lrange $status 0 1] eq {ready end} || $testStatus >= 3} {
+    run -final
+    set finalStatus [coverage attribute -name TESTSTATUS -concise]
+    if {![string is integer -strict $finalStatus]} {error "Questa did not return a valid final TESTSTATUS."}
+    set testStatus [expr {max($testStatus, $finalStatus)}]
+}
+puts "ZeroSlack: runStatus=$status; TESTSTATUS=$testStatus"
+if {$testStatus >= 3} {
+    set ::simdock::result fatal
+} elseif {$testStatus >= 2 || [lindex $status 0] eq "error"} {
+    set ::simdock::result failed
+} elseif {$requestedFinish} {
+    set ::simdock::result finished
+} elseif {[lrange $status 0 1] eq {ready end}} {
+    set ::simdock::result exhausted
+} elseif {[lindex $status 0] eq "break"} {
+    set ::simdock::result paused
+} else {
+    error "Unrecognized Questa termination status: $status"
+}
+)tcl");
     if (interactive) s += QStringLiteral("wave zoom full\n");
     if (legacyChecks(p))
-        s += scoreboardResultScript(p.tbName);
+        s += QStringLiteral("if {$::simdock::result in {finished exhausted}} {\n") + scoreboardResultScript(p.tbName) + QStringLiteral("}\n");
     return s;
 }
 
@@ -208,10 +250,10 @@ QuestaSession::QuestaSession(QObject* parent) : QObject(parent)
     m_deadline.setSingleShot(true);
     connect(&m_poll, &QTimer::timeout, this, &QuestaSession::poll);
     connect(&m_deadline, &QTimer::timeout, this, [this] {
-        if (!m_busy) return;
+        poll();
+        if (!m_busy || m_executionEntered) return;
+        finish(false, QStringLiteral("Questa startup, compilation or loading exceeded the preparation deadline."), QStringLiteral("preparation_timeout"));
         stop();
-        emit stateChanged(QStringLiteral("Timed out"));
-        emit logText(QStringLiteral("\nThe wall-clock timeout was reached. The Questa session has been stopped.\n"));
     });
     connect(&m_process, &QProcess::readyReadStandardOutput, this, [this] {
         const auto bytes = m_process.readAllStandardOutput();
@@ -233,7 +275,7 @@ QuestaSession::QuestaSession(QObject* parent) : QObject(parent)
         poll();
         m_ready = false;
         m_poll.stop();
-        if (m_busy && !m_stopping) finish(false, QStringLiteral("Questa exited with code %1.").arg(code));
+        if (m_busy && !m_stopping) finish(false, QStringLiteral("Questa exited with code %1 before reporting a terminal result.").arg(code), QStringLiteral("process_exit"));
         else if (!m_stopping) emit stateChanged(QStringLiteral("Session closed"));
         releaseFiles();
     });
@@ -326,12 +368,14 @@ proc ::simdock::poll {} {
     if {[catch {
         if {[file exists [file join $base command.do]]} {
             file rename -force [file join $base command.do] [file join $base active.do]
+            set ::simdock::result failed
             if {[catch {uplevel #0 [list source -encoding utf-8 [file join $base active.do]]} message details]} {
                 puts "SimDock error: $message"
                 puts [dict get $details -errorinfo]
                 set result failed
             } else {
-                set result completed
+                set result $::simdock::result
+                if {$result ni {finished exhausted paused fatal failed}} {set result failed}
             }
             file delete -force [file join $base active.do]
             ::simdock::state $result
@@ -373,54 +417,108 @@ proc ::simdock::poll {} {
     return true;
 }
 
-PreparedRun prepareRun(const QString& executable, const QString& root, const Project& p,
+PreparedRun prepareRun(const QString& executable, const QString& root, const Project& project,
                        const std::atomic_bool* cancelled, const QMap<QString, QByteArray>& overrides)
 {
-    PreparedRun result{executable, root, {}, p, {}};
+    QString error;
+    auto request = SimulationBuildPlanner::workspaceRequest(root, {project.tbFile, project.tbName}, &error,
+        [cancelled] { return cancelled && cancelled->load(); });
+    if (!error.isEmpty()) { PreparedRun failed; failed.error = error; return failed; }
+    request.includeDirectories = project.includeDirectories;
+    for (auto it = overrides.cbegin(); it != overrides.cend(); ++it)
+        request.overrides.insert(it.key(), QString::fromUtf8(it.value()));
+    auto result = prepareRun(executable, request, cancelled);
+    result.project.id = project.id;
+    result.project.name = project.name;
+    result.project.preservedInputs = project.preservedInputs;
+    result.project.stimulus = project.stimulus;
+    return result;
+}
+
+PreparedRun prepareRun(const QString& executable, const SimulationBuildRequest& request,
+                       const std::atomic_bool* cancelled)
+{
+    PreparedRun result;
+    result.executable = executable;
+    result.root = request.project.workspaceRoot;
     result.error = simulatorError(executable);
     if (!result.error.isEmpty()) return result;
-    QMap<QString, QByteArray> fingerprints;
-    BuildInputPlan plan;
-    result.error = validateInputs(root, p, &fingerprints, cancelled, overrides, &plan);
+    const auto stopped = [cancelled] { return cancelled && cancelled->load(); };
+    if (request.refreshCatalog) {
+        auto fresh = SimulationBuildPlanner::workspaceRequest(request.project.workspaceRoot, request.target, &result.error, stopped);
+        if (!result.error.isEmpty()) return result;
+        fresh.includeDirectories = request.includeDirectories;
+        fresh.definitionSources = request.definitionSources;
+        fresh.overrides = request.overrides;
+        fresh.documentRevisions = request.documentRevisions;
+        return prepareRun(executable, fresh, cancelled);
+    }
+    result.plan = SimulationBuildPlanner::plan(request, stopped);
+    result.error = result.plan->error();
     if (!result.error.isEmpty()) return result;
-    plan.apply(result.project, root);
-    result.inputFingerprints = fingerprints;
-    // Reuse the entire unchanged compilation, including user TB compilation
-    // units. Every run still unloads and elaborates a fresh simulation.
+    const auto& plan = *result.plan;
+    auto& project = result.project;
+    project = newProject(request.target.top);
+    project.tbFile = QDir(result.root).relativeFilePath(QDir(result.root).absoluteFilePath(request.target.file));
+    project.tbName = request.target.top;
+    for (const auto& file : plan.compilation.files) project.compilationUnits << QDir(result.root).relativeFilePath(file);
+    project.sources = project.compilationUnits;
+    project.compilationIncludeDirectories = plan.includeDirectories;
+    project.compilationDefines = plan.defines;
+    for (auto it = plan.input->sources.cbegin(); it != plan.input->sources.cend(); ++it) {
+        if (it->overridden) {
+            if (plan.participatingFiles.contains(it.key())) {
+                result.error = QStringLiteral("Save participating document '%1', then capture a new simulation plan.").arg(it.key());
+                return result;
+            }
+            continue;
+        }
+        result.inputFingerprints.insert(it.key(), it->readable ? it->rawSha256 : QByteArray());
+    }
     QByteArray key;
     QDataStream stream(&key, QIODevice::WriteOnly);
     stream.setVersion(QDataStream::Qt_6_0);
-    stream << QStringLiteral("simdock.questa-design/v6") << root << result.project.compilationUnits
-           << plan.includeDirectories << plan.defines << p.tbFile << p.tbName;
-    stream << QStringLiteral("vlog:-work work;-sv by suffix;literal-incdir=root,ordered-source-dirs,tb-dir")
-           << QFileInfo(p.tbFile).path() << QProcessEnvironment::systemEnvironment().toStringList();
-    stream << fingerprints;
+    stream << QStringLiteral("simdock.questa-design/v8:separate-vlog;sv-by-suffix;timescale=1ns/1ps;run-all;stop-and-final;named-bind-units")
+           << result.root << project.compilationUnits << plan.includeDirectories << plan.defines
+           << project.tbFile << project.tbName << plan.definitionSources << plan.bindCompilationUnits << result.inputFingerprints
+           << QProcessEnvironment::systemEnvironment().toStringList();
     const QDir toolDir(QFileInfo(executable).absolutePath());
 #ifdef Q_OS_WIN
     const auto compiler = toolDir.filePath(QStringLiteral("vlog.exe"));
 #else
     const auto compiler = toolDir.filePath(QStringLiteral("vlog"));
 #endif
-    // Ask the selected compiler for its actual version, including patch level.
     QProcess version;
     version.setProgram(compiler); version.setArguments({QStringLiteral("-version")});
     version.setProcessChannelMode(QProcess::MergedChannels); version.start();
     int elapsed = 0;
-    while (!version.waitForFinished(50) && elapsed < 5000 && !(cancelled && cancelled->load())) elapsed += 50;
-    if (version.state() != QProcess::NotRunning) { version.kill(); version.waitForFinished(1000); return result; }
-    if (version.exitStatus() != QProcess::NormalExit || version.exitCode() != 0) return result;
+    while (!version.waitForFinished(50) && elapsed < 5000 && !stopped()) elapsed += 50;
+    if (version.state() != QProcess::NotRunning) {
+        version.kill(); version.waitForFinished(1000);
+        result.error = stopped() ? QStringLiteral("Simulation preparation cancelled.") : QStringLiteral("Questa compiler version query timed out.");
+        return result;
+    }
     const auto versionText = version.readAllStandardOutput();
-    if (versionText.isEmpty()) return result;
+    if (version.exitStatus() != QProcess::NormalExit || version.exitCode() || versionText.isEmpty()) {
+        result.error = QStringLiteral("Cannot establish the selected Questa compiler identity: %1").arg(QString::fromLocal8Bit(versionText));
+        return result;
+    }
     stream << executable << versionText;
-    for (const auto &path : {executable, compiler, toolDir.absoluteFilePath(QStringLiteral("../modelsim.ini"))}) {
+    for (const auto& path : {executable, compiler, toolDir.absoluteFilePath(QStringLiteral("../modelsim.ini"))}) {
         QFile file(path);
+        QByteArray fingerprint;
         if (file.open(QIODevice::ReadOnly)) {
             QCryptographicHash hash(QCryptographicHash::Sha256);
-            if (!hash.addData(&file)) return result;
-            stream << path << hash.result();
-        } else stream << path << QByteArray();
+            if (!hash.addData(&file)) { result.error = QStringLiteral("Cannot fingerprint Questa input: %1").arg(path); return result; }
+            fingerprint = hash.result();
+        } else if (path == executable || path == compiler) {
+            result.error = QStringLiteral("Cannot read Questa tool: %1").arg(path); return result;
+        }
+        result.toolFingerprints.insert(path, fingerprint);
     }
-    if (!(cancelled && cancelled->load())) result.designFingerprint = QCryptographicHash::hash(key, QCryptographicHash::Sha256);
+    stream << result.toolFingerprints;
+    if (stopped()) result.error = QStringLiteral("Simulation preparation cancelled.");
+    else result.designFingerprint = QCryptographicHash::hash(key, QCryptographicHash::Sha256);
     return result;
 }
 
@@ -435,6 +533,20 @@ bool QuestaSession::start(const PreparedRun& prepared, QString* error, WaveTheme
     const auto& executable = prepared.executable;
     const auto& root = prepared.root;
     const auto& p = prepared.project;
+    auto fingerprints = prepared.inputFingerprints;
+    fingerprints.insert(prepared.toolFingerprints);
+    for (auto it = fingerprints.cbegin(); it != fingerprints.cend(); ++it) {
+        QFile input(it.key());
+        QByteArray fingerprint;
+        if (input.open(QIODevice::ReadOnly)) {
+            QCryptographicHash hash(QCryptographicHash::Sha256);
+            if (!hash.addData(&input)) { *error = QStringLiteral("Cannot verify simulation input: %1").arg(it.key()); return false; }
+            fingerprint = hash.result();
+        }
+        if (fingerprint != it.value()) {
+            *error = QStringLiteral("Simulation input changed after preparation: %1. Save and prepare again.").arg(it.key()); return false;
+        }
+    }
     if (m_busy) { *error = QStringLiteral("A simulation is already running."); return false; }
     if (alive() && !m_ready) { *error = QStringLiteral("The Questa session is starting or closing. Try again shortly."); return false; }
     if (alive() && QFileInfo(executable).canonicalFilePath() != QFileInfo(m_executable).canonicalFilePath()) {
@@ -477,7 +589,8 @@ bool QuestaSession::start(const PreparedRun& prepared, QString* error, WaveTheme
     QString iniText = QStringLiteral("[Library]\nwork = %1\n").arg(mappedWork);
     if (QFileInfo(installedIni).isFile()) iniText += QStringLiteral("others = %1\n").arg(QDir::cleanPath(installedIni));
     if (!writeFile(ini, iniText, error)) return false;
-    const QString script = runScript(root, p, runDir, ini, waveTheme, reuse, mappedWork, m_interactive);
+    const QString script = runScript(root, p, runDir, ini, waveTheme, reuse, mappedWork, m_interactive,
+        prepared.plan ? prepared.plan->bindCompilationUnits : QStringList());
     if (!writeFile(QDir(runDir).filePath(QStringLiteral("run.do")), script, error)) return false;
     m_runId = runId; m_runDir = runDir;
     m_events.reset(runId);
@@ -486,11 +599,13 @@ bool QuestaSession::start(const PreparedRun& prepared, QString* error, WaveTheme
     m_activeWork = work; m_oldRunsReleased = false;
     m_pending = QStringLiteral("set ::simdock::runId %1\n").arg(tclWord(m_runId)) + script;
     m_logOffset = 0;
+    m_executionEntered = false;
+    m_outcome.clear();
     m_busy = true;
     if (!alive() && !launch(executable, error)) { m_busy = false; return false; }
-    m_deadline.start(m_wallTimeout);
+    m_deadline.start(m_preparationTimeout);
     emit stateChanged(m_ready ? QStringLiteral("Preparing compilation") : QStringLiteral("Starting Questa"));
-    emit logText(QStringLiteral("\n--- %1 | %2 ns ---\nWorkspace: %3\nRun directory: %4\n").arg(p.name).arg(p.durationNs).arg(root, m_runDir));
+    emit logText(QStringLiteral("\n--- %1 ---\nTB: %2\nWorkspace: %3\nRun directory: %4\n").arg(p.name, p.tbName, root, m_runDir));
     if (m_ready && !sendPending(error)) { finish(false, *error); return false; }
     dispatched = true;
     return true;
@@ -519,6 +634,7 @@ void QuestaSession::poll()
         }
     }
     const QDir dir(m_sessionDir->path());
+    bool pendingLog = false;
     QFile log(m_runDir.isEmpty() ? dir.filePath(QStringLiteral("transcript.log")) : QDir(m_runDir).filePath(QStringLiteral("transcript.log")));
     if (log.open(QIODevice::ReadOnly)) {
         if (log.size() < m_logOffset) m_logOffset = 0;
@@ -535,9 +651,8 @@ void QuestaSession::poll()
                 if (m_events.rejectedRecords() != rejected) emit eventRecordsRejected(m_events.rejectedRecords());
             }
         } while (!log.atEnd() && !alive());
-        const bool remaining = !log.atEnd();
+        pendingLog = !log.atEnd();
         log.close();
-        if (remaining) return;
     }
     QByteArray record;
     {
@@ -552,34 +667,44 @@ void QuestaSession::poll()
     const QString state = QString::fromUtf8(record).trimmed();
     if (state.count(QLatin1Char('|')) != 1) return;
     if (state == m_lastState) return;
-    m_lastState = state;
     const QString id = state.section(QLatin1Char('|'), 0, 0);
     const QString value = state.section(QLatin1Char('|'), 1, 1);
     if (id.isEmpty() && value == QStringLiteral("ready") && m_busy && !m_ready && !m_stopping) {
+        m_lastState = state;
         m_ready = true;
         QString error;
         if (!sendPending(&error)) finish(false, error);
         return;
     }
     if (id != m_runId || !m_busy) return;
+    const bool terminal = value == "finished" || value == "exhausted" || value == "paused" || value == "fatal" || value == "failed";
+    if (value == "running" || terminal) { m_executionEntered = true; m_deadline.stop(); }
+    if (pendingLog && terminal) return;
+    m_lastState = state;
     if (value == QStringLiteral("compiling")) emit stateChanged(QStringLiteral("Compiling"));
     else if (value == QStringLiteral("loading")) emit stateChanged(QStringLiteral("Loading TB"));
     else if (value == QStringLiteral("running")) emit stateChanged(QStringLiteral("Running"));
-    else if (value == QStringLiteral("completed")) finish(true, m_interactive
-        ? QStringLiteral("Run completed. Questa remains open for waveform inspection.")
-        : QStringLiteral("Run completed."));
+    else if (value == QStringLiteral("finished")) finish(true, QStringLiteral("TB finished. Waveforms remain available until the session is closed."), value);
+    else if (value == QStringLiteral("exhausted")) finish(true, QStringLiteral("No scheduled events remain; the TB did not request finish."), value);
+    else if (value == QStringLiteral("paused")) finish(false, QStringLiteral("Simulation paused at $stop or a breakpoint. Inspect the waveform, then run again or close the session."), value);
+    else if (value == QStringLiteral("fatal")) finish(false, QStringLiteral("The TB reported a fatal simulation error. Check the log."), value);
     else if (value == QStringLiteral("failed")) finish(false, QStringLiteral("Compilation or simulation failed. Check the log."));
 }
 
-void QuestaSession::finish(bool success, const QString& message)
+void QuestaSession::finish(bool success, const QString& message, const QString& outcome)
 {
+    m_outcome = outcome.isEmpty() ? (success ? QStringLiteral("finished") : QStringLiteral("failed")) : outcome;
     if (success) { m_cachedDesign = m_pendingDesign; m_cachedWork = m_pendingWork; }
     else { m_cachedDesign.clear(); m_cachedWork.clear(); }
     m_pendingDesign.clear(); m_pendingWork.clear();
     m_busy = false;
     m_deadline.stop();
     m_pending.clear();
-    emit stateChanged(success ? QStringLiteral("Completed") : QStringLiteral("Failed"));
+    emit stateChanged(m_outcome == "paused" ? QStringLiteral("Paused")
+        : m_outcome == "cancelled" ? QStringLiteral("Stopped")
+        : m_outcome == "preparation_timeout" ? QStringLiteral("Preparation timed out")
+        : m_outcome == "exhausted" ? QStringLiteral("Events exhausted")
+        : success ? QStringLiteral("Finished") : QStringLiteral("Failed"));
     emit logText(message + QLatin1Char('\n'));
     emit finished(success, message);
 }
@@ -597,7 +722,7 @@ void QuestaSession::stop()
     if (alive()) { m_process.kill(); m_process.waitForFinished(1500); }
     m_ready = false;
     m_poll.stop();
-    if (m_busy) finish(false, QStringLiteral("Simulation stopped and the SimDock-managed Questa session closed."));
+    if (m_busy) finish(false, QStringLiteral("Simulation stopped and the SimDock-managed Questa session closed."), QStringLiteral("cancelled"));
     releaseFiles();
     m_events.reset({});
     emit eventRunCleared();

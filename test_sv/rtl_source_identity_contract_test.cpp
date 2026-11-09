@@ -105,10 +105,10 @@ void workflowCases(const QString& root) {
     NavigationManager navigation;
     navigation.setNavigationService(&navigationService);
     navigation.connectToWorkspaceManager(&workspace);
-    navigation.connectToWorkbench(&workbench);
+    navigation.connectToDesignProjects(workbench.designService());
     check(navigation.setDesignTop("top",top).isEmpty(), "production navigation creates and activates the Design project");
-    check(!workbench.activeProjectId().isEmpty()
-          && workspace.projectSnapshot().activeDesignProjectId==workbench.activeProjectId()
+    check(!workbench.designService()->activeProjectId().isEmpty()
+          && workspace.projectSnapshot().activeDesignProjectId==workbench.designService()->activeProjectId()
           && workspace.projectSnapshot().activeDesignTopModule=="top",
           "workspace action context follows the active Design project");
     const auto snapshot=index->snapshot();
@@ -121,7 +121,7 @@ void workflowCases(const QString& root) {
           && !snapshot->cachedFileSource(QDir(real).filePath("Absent.sv")).exists, "empty source is distinct from missing source");
     auto* hierarchy=HierarchyService::getInstance();
     const QSet<QString> originalFiles(order.cbegin(),order.cend());
-    const auto design=hierarchy->explicitDesignHierarchy(workbench.designRoots(),workbench.activeProjectId(),originalFiles);
+    const auto design=hierarchy->explicitDesignHierarchy(workbench.designRoots(),workbench.designService()->activeProjectId(),originalFiles);
     QString sourcePath,sinkPath;
     for (const auto& node : design.nodes) {
         if (node.instanceName=="u_source") sourcePath=node.instancePath;

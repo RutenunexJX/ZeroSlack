@@ -1,3 +1,4 @@
+#include "../src/simulation/simdock/core/simulationbuildplanner.h"
 #include "mainwindow.h"
 #include "applicationthememanager.h"
 #include "welcomecard.h"
@@ -187,29 +188,8 @@ class SidebarMainWindowTest : public QObject {
     void captureIconSurfaces(Host& h) {
         if (!qEnvironmentVariableIsSet("ZEROSLACK_ICONS_EVIDENCE")) return;
         auto* controller=h.window->findChild<ContextWorkspaceController*>(); QVERIFY(controller);
-        auto* rename=h.window->findChild<QPushButton*>("renameProject"); QVERIFY(rename);
-        const auto projectId=h.workbench()->activeProjectId();
-        const auto originalName=[&] {
-            for(const auto& p:simdock::loadProjects(h.workspace)) if(p.id==projectId) return p.name;
-            return QString();
-        }();
-        QVERIFY(!originalName.isEmpty());
-        for(const auto& name:{QString("Icon review"),originalName}) {
-            bool accepted=false;
-            QTimer::singleShot(100,[&] {
-                auto* dialog=h.window->findChild<QDialog*>("newProjectDialog");
-                if(!dialog) return;
-                auto* field=dialog->findChild<QLineEdit*>("projectNameInput");
-                auto* confirm=dialog->findChild<QPushButton*>("confirmCreateProject");
-                if(!field || !confirm) return;
-                field->setText(name); confirm->click(); accepted=true;
-            });
-            rename->click(); QVERIFY(accepted);
-            QCOMPARE(h.workbench()->activeProjectId(),projectId);
-            bool saved=false;
-            for(const auto& p:simdock::loadProjects(h.workspace)) if(p.id==projectId) saved=p.name==name;
-            QVERIFY(saved);
-        }
+        auto* target=h.window->findChild<QToolButton*>("simulationTarget");QVERIFY(target);
+        const auto selected=h.workbench()->controller()->target();
         // Real host view and actions; only the external Pinloom data boundary is a fixture.
         QVERIFY(controller->unregisterProvider("pinloom"));
         const QJsonObject entry{{"identity",QJsonObject{{"entryId","anchor:icon-review"},{"resourceId","review-note"},{"anchorId","icon-review"}}},
@@ -234,14 +214,11 @@ class SidebarMainWindowTest : public QObject {
             ApplicationThemeManager::instance().setMode(mode);
             h.navigation()->setActiveTab(NavigationWidget::FileTab);
             capture(h,QString("icons-normal-%1").arg(suffix));
-            h.navigation()->setActiveTab(NavigationWidget::SourceFilesTab);
-            auto* simulation=h.window->findChild<QAction*>("contextRail.simdock"); QVERIFY(simulation);
-            simulation->trigger(); QTest::qWait(240);
+            h.navigation()->setActiveTab(NavigationWidget::DesignTab);
+            QVERIFY(h.workbench()->isVisible());
+            QVERIFY(!h.window->findChild<QAction*>("contextRail.simdock"));
             capture(h,QString("icons-simulation-%1").arg(suffix));
-            QVERIFY(controller->openTool("toolbox")); QTest::qWait(240);
-            auto* run=h.window->findChild<QToolButton*>("contextToolRun.simdock"); QVERIFY(run && run->isVisible());
-            capture(h,QString("icons-toolbox-%1").arg(suffix));
-            run->click(); QTest::qWait(240); QVERIFY(!controller->toolboxVisible());
+            auto* settings=h.workbench()->findChild<QToolButton*>("openSettings");QVERIFY(settings&&!settings->icon().isNull());
             const ContextPlacement kept{ContextSurface::Docked,ContextPersistence::Kept};
             QVERIFY(controller->openResource(home,kept));
             auto* view=qobject_cast<PinloomContextView*>(controller->viewForResource(home.stableKey())); QVERIFY(view);
@@ -256,12 +233,12 @@ class SidebarMainWindowTest : public QObject {
             QCOMPARE(QApplication::clipboard()->text(),entry.value("uri").toString());
             QVERIFY(controller->closePinnedResource(home.stableKey()));
             QVERIFY(h.sessions()->openWorkspace(h.other));
-            h.navigation()->setActiveTab(NavigationWidget::SourceFilesTab);
-            QTRY_VERIFY(!rename->isEnabled());
+            QVERIFY(h.workbench()->controller()->target().isEmpty());
             ApplicationThemeManager::instance().setMode(mode);
-            capture(h,QString("icons-rename-disabled-%1").arg(suffix));
+            capture(h,QString("icons-current-editor-%1").arg(suffix));
             QVERIFY(h.sessions()->openWorkspace(h.workspace));
-            QTRY_COMPARE(h.workbench()->activeProjectId(),projectId);
+            QCOMPARE(h.workbench()->controller()->target().file,selected.file);
+            QCOMPARE(h.workbench()->controller()->target().top,selected.top);
         }
         ApplicationThemeManager::instance().setMode(ThemeMode::Light);
     }
@@ -282,7 +259,7 @@ private slots:
         QVERIFY(h.sessions()->openWorkspace(h.workspace));
         QTRY_COMPARE_WITH_TIMEOUT(h.workbench()->designRoots().size(),1,15000);
         const auto root=h.workbench()->designRoots().first();
-        QCOMPARE(root.module,module); QCOMPARE(h.workbench()->activeProjectId(),root.projectId);
+        QCOMPARE(root.module,module); QCOMPARE(h.workbench()->designService()->activeProjectId(),root.projectId);
         QCOMPARE(root.file.isEmpty(),module=="gone_module");
         auto* tree=h.window->findChild<QTreeWidget*>("navigationDesignTree");
         QTRY_COMPARE_WITH_TIMEOUT(tree->topLevelItemCount(),1,15000);
@@ -296,7 +273,7 @@ private slots:
         QVERIFY(h.sessions()->openWorkspace(h.other));
         QVERIFY(h.sessions()->openWorkspace(h.workspace));
         QCOMPARE(h.workbench()->designRoots().size(),1);
-        QCOMPARE(h.workbench()->activeProjectId(),root.projectId);
+        QCOMPARE(h.workbench()->designService()->activeProjectId(),root.projectId);
     }
     void welcomeAndProjectWorkflow() {
         Host h;
@@ -372,12 +349,12 @@ private slots:
         QTRY_VERIFY(!welcome->isVisible()); QVERIFY(!rtl->motionRunning());
         auto* workbench=h.workbench(); QVERIFY(workbench);
         QTRY_VERIFY_WITH_TIMEOUT(workbench->workspace()==h.workspace,10000);
-        QVERIFY(workbench->activeProjectId().isEmpty());
+        QVERIFY(workbench->designService()->activeProjectId().isEmpty());
         QVERIFY(h.manager());
         QTRY_VERIFY_WITH_TIMEOUT(h.manager()->setDesignTop("sidebar_parent",h.workspace+"/rtl/design.sv").isEmpty(),15000);
-        const auto parent=workbench->activeProjectId();
+        const auto parent=workbench->designService()->activeProjectId();
         QVERIFY(h.manager()->setDesignTop("sidebar_leaf",h.workspace+"/rtl/design.sv").isEmpty());
-        const auto leaf=workbench->activeProjectId(); QVERIFY(parent!=leaf);
+        const auto leaf=workbench->designService()->activeProjectId(); QVERIFY(parent!=leaf);
         QCOMPARE(workbench->designRoots().size(),2);
         auto* tree=h.window->findChild<QTreeWidget*>("navigationDesignTree"); QVERIFY(tree);
         QTRY_COMPARE_WITH_TIMEOUT(tree->topLevelItemCount(),2,15000);
@@ -387,9 +364,9 @@ private slots:
         QCOMPARE(parentRow->child(0)->text(0),QString("u_leaf [sidebar_leaf]"));
         const auto parentRect=tree->visualItemRect(parentRow);
         QTest::mouseClick(tree->viewport(),Qt::LeftButton,{},parentRect.center());
-        QVERIFY(!parentRow->isExpanded()); QCOMPARE(workbench->activeProjectId(),leaf);
+        QVERIFY(!parentRow->isExpanded()); QCOMPARE(workbench->designService()->activeProjectId(),leaf);
         QTest::mouseClick(tree->viewport(),Qt::LeftButton,{},QPoint(parentRect.right()-12,parentRect.center().y()));
-        QTRY_COMPARE(workbench->activeProjectId(),parent);
+        QTRY_COMPARE(workbench->designService()->activeProjectId(),parent);
         QCOMPARE(h.window->workspaceManager->getProjectModel()->snapshot().activeDesignProjectId,parent);
         QTRY_VERIFY(tree->topLevelItemCount()==2
                     && tree->topLevelItem(0)->data(0, NavigationRowStyle::ActiveRole).toBool());
@@ -401,36 +378,26 @@ private slots:
         QTRY_VERIFY(files->topLevelItemCount()>0);
         for(QTreeWidgetItemIterator it(files);*it;++it) { QVERIFY(!(*it)->text(0).contains("[TOP]")); QVERIFY(!(*it)->font(0).bold()); }
         capture(h,"files-tree");
-        h.navigation()->setActiveTab(NavigationWidget::SourceFilesTab);
-        auto* inputs=h.window->findChild<QListView*>("sourceList"); QVERIFY(inputs);
-        QTRY_VERIFY(inputs->model()->rowCount()>=3);
-        for(const auto& relative:{QString("a_use.sv"),QString("z_pkg.sv")}) {
-            for(int row=0;row<inputs->model()->rowCount();++row)if(inputs->model()->index(row,0).data(Qt::UserRole).toString()==relative)
-                QVERIFY(inputs->model()->setData(inputs->model()->index(row,0),Qt::Checked,Qt::CheckStateRole));
-        }
-        auto saved=[&] { for(const auto& p:simdock::loadProjects(h.workspace))if(p.id==parent)return p; return simdock::Project{}; };
-        QTRY_VERIFY_WITH_TIMEOUT(saved().sources.indexOf("z_pkg.sv")<saved().sources.indexOf("a_use.sv"),10000);
-        auto* status=h.window->findChild<QLabel*>("buildInputsStatus"); QVERIFY(status);
-        QTRY_VERIFY(status->text().isEmpty() && status->isHidden());
+        QVERIFY(workbench->selectTarget(h.workspace+"/a_use.sv").isEmpty());
+        QCOMPARE(workbench->designService()->activeProjectId(),parent);
+        const auto plan=[&] {
+            QString error;auto request=simdock::SimulationBuildPlanner::workspaceRequest(h.workspace,workbench->controller()->target(),&error);
+            return simdock::SimulationBuildPlanner::plan(request);
+        };
+        auto selected=plan();QVERIFY2(selected->valid(),qPrintable(selected->error()));
+        const auto ordered=selected->compilation.files;
+        QVERIFY(ordered.indexOf(SemanticInputCapture::pathKey(h.workspace+"/z_pkg.sv"))<ordered.indexOf(SemanticInputCapture::pathKey(h.workspace+"/a_use.sv")));
+        QVERIFY(!h.window->findChild<QWidget*>("sourceList"));QVERIFY(!h.window->findChild<QWidget*>("projectList"));
         put(h.workspace+"/z_pkg.sv","package changed_pkg; endpackage\n");
-        QTRY_VERIFY_WITH_TIMEOUT(status->text().contains("build_pkg"),10000);
-        QVERIFY(!status->isHidden());
+        QVERIFY(plan()->error().contains("build_pkg"));
         put(h.workspace+"/z_pkg.sv","package build_pkg; typedef logic [3:0] word_t; endpackage\n");
-        QTRY_VERIFY_WITH_TIMEOUT(status->text().isEmpty() && status->isHidden(),10000);
-        auto* projectList=h.window->findChild<QListView*>("projectList"); QVERIFY(projectList);
-        QTRY_VERIFY(projectList->visualRect(projectList->model()->index(1,0)).bottom()<projectList->viewport()->height());
-        capture(h,"build-inputs");
-        auto* projects=h.window->findChild<QPushButton*>("projectsDisclosure");
-        auto* inputSection=h.window->findChild<QPushButton*>("inputsDisclosure"); QVERIFY(projects&&inputSection);
-        const auto initialHeight=inputs->height(); projects->click(); QTest::qWait(80); QVERIFY(inputs->height()>initialHeight);
-        projects->click(); inputSection->click(); QTest::qWait(80);
-        QVERIFY(h.window->findChild<QListView*>("projectList")->height()>140); capture(h,"projects-expanded");
-        inputSection->click();
+        QVERIFY(plan()->valid());QCOMPARE(workbench->designService()->activeProjectId(),parent);
+        capture(h,"compact-simulation");
         captureIconSurfaces(h);
         QVERIFY(!QTest::currentTestFailed());
         QVERIFY(h.sessions()->openWorkspace(h.other));
-        QCOMPARE(workbench->activeProjectId(),QString());
-        QVERIFY(h.sessions()->openWorkspace(h.workspace)); QCOMPARE(workbench->activeProjectId(),parent);
+        QCOMPARE(workbench->designService()->activeProjectId(),QString());
+        QVERIFY(h.sessions()->openWorkspace(h.workspace)); QCOMPARE(workbench->designService()->activeProjectId(),parent);
         h.navigation()->setActiveTab(NavigationWidget::DesignTab);
         QTRY_COMPARE_WITH_TIMEOUT(tree->topLevelItemCount(),2,15000);
         for(int i=0;i<tree->topLevelItemCount();++i)

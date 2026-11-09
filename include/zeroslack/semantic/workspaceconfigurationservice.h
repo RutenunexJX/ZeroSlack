@@ -7,6 +7,7 @@
 #include <QStringList>
 
 #include <memory>
+#include <functional>
 
 struct WorkspaceVirtualSourceGroup {
     QString name;
@@ -83,6 +84,8 @@ public:
         const QString& workspaceRoot);
     static QString legacyFilePath(
         const QString& workspaceRoot);
+    static QStringList discoverSourceFiles(const WorkspaceConfiguration& configuration,
+        QString* error, const std::function<bool()>& cancelled = {});
 
     WorkspaceConfiguration defaultConfiguration(
         const QString& workspaceRoot) const;

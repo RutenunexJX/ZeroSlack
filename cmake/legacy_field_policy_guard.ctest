@@ -511,7 +511,9 @@ set(PHASE_L_REVIEWED_REGEX_USAGE
     "src/editor/tbinputassist.cpp|692ce60c6209858c8c3bef0412990d80a81b5c530af200e9f361bc695674081f|743e724100edbd98bafb8ca068b7d4c32df96468c1a229142c188877306b7a66"
     "src/integrations/xips/xipsassetsync.cpp|ebbffbf2fbd193b9d6fb14df17c662aa9c11399bee4a16ace7a712949234e203|494b643ed8808b47df2f64f8122e7ce5757793e0abe638c69db3e9f0dad72786"
     "src/integrations/xips/xipscontextprovider.cpp|85fde73909049adc944c53d777aa32858f23c1666c5ee6cd98073e7940cac896|f309ec69a2989f82793e33ac57195ff7c235ee2c8089f1b1e6d3a616a33d7959"
-    "src/simulation/simdock/core/projectstore.cpp|680c77091791e43dddf34b1c80b55102ce4be6eeec137b5c4968c8d7d8eb6069|eac70917dfd8a69729255407a0965a32a9836579acf7d28ffecf50e88d2200f7"
+    # 2026-11-09: legacy identity conflict reporting; regex statements and literals unchanged.
+    # Provenance: build/coordination/20261109-simulation-unified-tabs/implementation/REGEX-REVIEW.json.
+    "src/simulation/simdock/core/projectstore.cpp|680c77091791e43dddf34b1c80b55102ce4be6eeec137b5c4968c8d7d8eb6069|1e6be16f8537320191362d5da53700ee36b6f8305720d952aae9e46e77b9e3a5"
     "src/simulation/simdock/core/simulationevents.cpp|07ee07526219b3fe665b286a008b92c5ff26961cef8562c2f6daf390bfa23897|e5a1e9c8b24a76571c80f4b68735e0c8aff7a99173120484e92e2340107e16a7"
     # Stage 0 R2 re-review (2026-11-05); working-tree delta from 6f26b974a505b1a3f1c455bf918f2cf740633b56.
     # Separate provenance: build/coordination/20261104-anchor-geometry/implementation/repair01/REGEX-REVIEW.json.
@@ -524,7 +526,8 @@ set(PHASE_L_REVIEWED_REGEX_USAGE
     # Provenance: build/coordination/20261106-connector/implementation/REGEX-REVIEW.json.
     # Stage 4 review (2026-11-06): native default/persistence and linked Web retirement.
     # Provenance: build/coordination/20261106-web-retire/implementation/REGEX-REVIEW.json.
-    "src/ui/linkedcontextcontroller.cpp|37e0c01114dfdb1d91a57785f9a699dc85ed5510795ad189e2b99902cb63e213|b97e3a1c9ce9962becb3a95ca47b7f3842b37fd35618f69f72a1387b80ca905b"
+    # 2026-11-09 C/E shared-host placement; regex unchanged. Provenance: implementation/REGEX-REVIEW.json.
+    "src/ui/linkedcontextcontroller.cpp|37e0c01114dfdb1d91a57785f9a699dc85ed5510795ad189e2b99902cb63e213|e8ac6793e38fb66815666471f5f305c66fa5f5ba3fe28b8a437e753966e0aa4c"
     "src/ui/templatemanagerdialog.cpp|9b6e26960cb1535017135d00fd49807feb213d838e3a24063380eeea7b09923c|5182b21c9fd822d3fc97df6befcdc87f9f1728f1b1b921ba18af2af20db3735a"
     "src/ui/welcomeanimation.cpp|3bb1f59db5ab492fc78b96466e83f175e69fa44fda0c8d23fe21045d44dd9e5a|cff975616d667eadcf0dbbd07a1ef1a77400baf93cc226f0011b3bd66cf09f0d"
 )

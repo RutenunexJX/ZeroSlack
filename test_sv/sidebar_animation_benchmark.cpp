@@ -5,6 +5,9 @@
 #include "navigationwidget.h"
 #include "navigationpanecoordinator.h"
 #include "tabmanager.h"
+#include "editorsplitcontroller.h"
+#include <QTabWidget>
+#include <QScrollBar>
 #include "panellayoutcontroller.h"
 #include "contextworkspacecontroller.h"
 #include "contextdockhost.h"
@@ -166,6 +169,84 @@ public:
     }
 };
 
+static int tabHostBenchmark(MainWindow& host, MyCodeEditor* large, const QString& root, const QString& outputPath)
+{
+    auto* tabs = host.tabManager.get();
+    auto* splits = tabs->editorSplitController();
+    auto* main = splits->initialGroup();
+    auto* navigation = host.findChild<NavigationPaneCoordinator*>();
+    if (!main || !navigation) return 20;
+    // Match the recorded pre-migration viewport; screen-fit acceptance is tested separately.
+    host.resize(1200, 800);
+    host.show(); QTest::qWait(1200);
+    QJsonArray samples;
+    const auto measure = [&](const QString& operation, int count, int repetition, const auto& operationBody) {
+        QElapsedTimer clock; clock.start();
+        const double cpuStart = threadCpuMs();
+        operationBody();
+        QCoreApplication::processEvents();
+        samples.append(QJsonObject{{"operation",operation},{"tabs",count},{"repetition",repetition},
+            {"wallMs",clock.nsecsElapsed()/1e6},{"threadCpuMs",threadCpuMs()-cpuStart}});
+    };
+    QList<QWidget*> pages{large};
+    for (int count : {10,50}) {
+        while (pages.size() < count) {
+            const QString file = QDir(root).filePath(QString("tab_%1.sv").arg(pages.size()));
+            QFile output(file);
+            if (!output.open(QIODevice::WriteOnly)) return 21;
+            output.write(QString("module tab_%1; logic value; endmodule\n").arg(pages.size()).toUtf8());
+            output.close(); splits->setActiveGroup(main);
+            if (!tabs->openFileInTab(file)) return 22;
+            pages.append(tabs->getCurrentEditor());
+        }
+        for (QWidget* page : pages) { main->setCurrentWidget(page); QCoreApplication::processEvents(); }
+        QTest::qWait(250);
+        for (int repetition=0; repetition<20; ++repetition)
+            measure("switch-cycle",count,repetition,[&] { for (QWidget* page : pages) {
+                main->setCurrentWidget(page); QCoreApplication::processEvents();
+            }});
+    }
+    main->setCurrentWidget(large); splits->setActiveGroup(main);
+    if (!tabs->splitCurrentView(EditorSplitDirection::Right)) return 23;
+    QPointer<QTabWidget> second=splits->activeGroup();
+    QPointer<QWidget> moving=pages.at(1);
+    if (!second || second==main) return 24;
+    for (int repetition=0; repetition<20; ++repetition) {
+        bool succeeded=true;
+        measure("move-roundtrip",50,repetition,[&] {
+            succeeded=splits->movePage(moving,second) && splits->movePage(moving,main,1);
+        });
+        if (!succeeded || !moving || main->widget(1)!=moving) return 25;
+    }
+    main->setCurrentWidget(large); splits->setActiveGroup(main);
+    for (int repetition=0; repetition<20; ++repetition)
+        measure("sidebar-roundtrip-no-animation",50,repetition,[&] {
+            navigation->setExpanded(false,false); QCoreApplication::processEvents();
+            navigation->setExpanded(true,false);
+        });
+    for (int repetition=0; repetition<20; ++repetition)
+        measure("large-document-scroll",50,repetition,[&] {
+            large->verticalScrollBar()->setValue(repetition%2 ? 0 : large->verticalScrollBar()->maximum());
+        });
+    const auto original=large->toPlainText();
+    for (int repetition=0; repetition<20; ++repetition)
+        measure("large-document-edit-undo",50,repetition,[&] {
+            QTextCursor cursor(large->document()); cursor.movePosition(QTextCursor::End);
+            cursor.insertText("// benchmark edit\n"); large->undo();
+        });
+    if (large->toPlainText()!=original) return 26;
+    QFile output(outputPath);
+    if (!output.open(QIODevice::WriteOnly)) return 27;
+    const auto data=QJsonDocument(QJsonObject{{"platform",QApplication::platformName()},
+        {"dpr",host.devicePixelRatioF()},{"width",host.width()},{"height",host.height()},
+        {"withinScreen",host.screen()->availableGeometry().contains(host.frameGeometry())},
+        {"largeCharacters",original.size()},{"largeLines",large->blockCount()},
+        {"samples",samples}}).toJson();
+    if (output.write(data)!=data.size()) return 28;
+    large->document()->setModified(false);
+    return 0;
+}
+
 int main(int argc, char** argv) {
     MeasuredApplication app(argc, argv); app.setQuitOnLastWindowClosed(false);
     QObject::connect(app.eventDispatcher(), &QAbstractEventDispatcher::aboutToBlock, &app, [&] {
@@ -179,6 +260,7 @@ int main(int argc, char** argv) {
     const QString outputPath = argc == 2 ? QString::fromLocal8Bit(argv[1])
         : QCoreApplication::applicationDirPath() + "/panel-native-benchmark.json";
     QTemporaryDir profile; if (!profile.isValid()) return 3;
+    QCoreApplication::setOrganizationName("ZeroSlackBenchmark");
     QCoreApplication::setApplicationName("ZeroSlack-Panel-Benchmark");
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, profile.path());
@@ -204,6 +286,8 @@ int main(int argc, char** argv) {
     app.dock = host.findChild<QDockWidget*>("navigationDock");
     if (!editor || !bar || !navigationPane || !app.dock) return 7;
     app.editorViewport = editor->viewport();
+    if (qEnvironmentVariableIsSet("ZEROSLACK_TAB_HOST_BENCHMARK"))
+        return tabHostBenchmark(host, editor, profile.path(), outputPath);
     auto* context = host.findChild<ContextWorkspaceController*>();
     PanelLayoutController* drawer = nullptr;
     for (auto* child : host.children())

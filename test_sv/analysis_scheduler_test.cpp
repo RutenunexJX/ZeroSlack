@@ -3097,11 +3097,11 @@ void runDesignHierarchyTopologyFingerprint()
     expect("topology Design workbench opens", workbench.setContext(directory.path()).isEmpty());
     expect("topology Design scan completes", waitUntil([&] { return !scanned.isEmpty(); }, 10000));
     navigation.connectToWorkspaceManager(&workspace);
-    navigation.connectToWorkbench(&workbench);
+    navigation.connectToDesignProjects(workbench.designService());
     index.setSnapshot(topologySnapshot(0, QStringLiteral("child")));
     expect("topology explicit Design project activates", navigation.setDesignTop("top", topFile).isEmpty());
-    expect("topology project context follows the workbench", !workbench.activeProjectId().isEmpty()
-        && workspace.projectSnapshot().activeDesignProjectId == workbench.activeProjectId());
+    expect("topology project context follows the Design service", !workbench.designService()->activeProjectId().isEmpty()
+        && workspace.projectSnapshot().activeDesignProjectId == workbench.designService()->activeProjectId());
     navigation.setActiveView(NavigationManager::DesignHierarchyView);
     QSignalSpy refreshed(&navigation, &NavigationManager::dataRefreshed);
     expect("initial visible Design hierarchy becomes ready", waitUntil([&] { return !refreshed.isEmpty(); }, 5000));

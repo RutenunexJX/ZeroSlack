@@ -9,6 +9,8 @@
 #include <QWidget>
 #include <QPointer>
 
+class EditorSplitController;
+class QTabWidget;
 class QScrollArea;
 class QLabel;
 class QMimeData;
@@ -22,7 +24,8 @@ class ZEROSLACK_API ContextDockHost final : public QWidget
     Q_OBJECT
 
 public:
-    explicit ContextDockHost(QWidget* parent = nullptr);
+    explicit ContextDockHost(QWidget* parent = nullptr, EditorSplitController* registry = nullptr);
+    EditorSplitController* pageRegistry() const;
     ~ContextDockHost() override;
 
     int resourceCount() const;
@@ -95,36 +98,24 @@ protected:
 
 private:
     struct Section;
-    QPointer<QScrollArea> scroll;
-    QWidget* stack = nullptr;
+    QPointer<EditorSplitController> registry;
+    bool ownsHosts = false;
+    QScrollArea* rightScroll = nullptr;
+    QWidget* rightRoot = nullptr;
     QPointer<QWidget> bottomRoot;
-    QPointer<QScrollArea> bottomScroll;
-    QWidget* bottomStack = nullptr;
-    QSplitter* sideSplitter = nullptr;
-    QSplitter* bottomSplitter = nullptr;
     QPointer<QWidget> leftRoot;
-    QPointer<QScrollArea> leftScroll;
-    QWidget* leftStack = nullptr;
-    QSplitter* leftSplitter = nullptr;
     QWidget* insertionMarker = nullptr;
     QHash<QString, Section*> sections;
-    QStringList order;
-    QString focusedKey;
-    QString draggedKey;
-    QPoint dragStart;
     bool arranging = false;
+    bool arrangementPending = false;
     QHash<QString, ContextResource> resources;
 
     int indexOfResource(const QString& key) const;
     void refreshSectionStatus(const QString& key);
     void arrangeSections();
-    void arrangeArea(Qt::DockWidgetArea area);
-    QScrollArea* scrollForArea(Qt::DockWidgetArea area) const;
-    QWidget* stackForArea(Qt::DockWidgetArea area) const;
-    QSplitter* splitterForArea(Qt::DockWidgetArea area) const;
-    bool isBottomPosition(const QPoint& globalPosition) const;
+    QTabWidget* groupForResource(const QString& key) const;
+    static QString regionForArea(Qt::DockWidgetArea area);
     bool containsDropPosition(const QPoint& globalPosition) const;
-    void finishSectionDrag(const QString& key, const QPoint& globalPosition);
     void settleMotion();
     void focusSection(const QString& key);
     int minimumSectionHeight(const Section* section) const;

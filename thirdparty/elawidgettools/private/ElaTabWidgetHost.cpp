@@ -3,6 +3,7 @@
 #include "ElaAppBar.h"
 #include "ElaTabBar.h"
 #include <QApplication>
+#include <QSignalBlocker>
 #include <QCloseEvent>
 #include <QCursor>
 #include <QDrag>
@@ -13,6 +14,7 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QScreen>
+#include <QScopeGuard>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QWindow>
@@ -34,12 +36,14 @@ public:
     QPointer<QWidget> page;
     QPointer<QObject> scope;
     QList<QPointer<QWidget>> floatingWindows;
+    QList<QPair<QPointer<ElaTabWidget>, QPointer<QWidget>>> previousSelections;
     bool committed{false};
     bool executing{false};
     bool cancelled{false};
 };
 
 QPointer<QObject> activeDragScope;
+QPointer<QWidget> activeDragIndicator;
 
 void followFloatingPage(HostedTabMime* data)
 {
@@ -187,19 +191,44 @@ bool ElaTabWidgetHost::transfer(QWidget* page, ElaTabWidget* target, int index)
     const bool visible = group->isTabVisible(from);
     const bool enabled = group->isTabEnabled(from);
     QPointer<ElaTabWidget> sourceGuard(group), targetGuard(target);
-    QPointer<QWidget> pageGuard(page);
-    group->removeTab(from);
-    if (!sourceGuard || !targetGuard || !pageGuard)
-        return false;
-    const int inserted = target->insertTab(index < 0 ? target->count() : index, page, icon, text);
-    target->setTabToolTip(inserted, tip);
-    target->setTabWhatsThis(inserted, whatsThis);
-    target->tabBar()->setTabData(inserted, data);
-    target->tabBar()->setTabTextColor(inserted, color);
-    target->setTabEnabled(inserted, enabled);
-    target->setTabVisible(inserted, visible);
-    if (visible)
-        target->setCurrentWidget(page);
+    QPointer<QWidget> pageGuard(page), focused(QApplication::focusWidget());
+    QPointer<QWidget> sourceCurrent(group->currentWidget()), targetCurrent(target->currentWidget());
+    const auto insert = [&](ElaTabWidget* destination, int position) {
+        QPointer<ElaTabWidget> destinationGuard(destination);
+        const int inserted = destination->insertTab(position < 0 ? destination->count() : position, pageGuard, icon, text);
+        if (!destinationGuard || !pageGuard || inserted < 0) return false;
+        destination->setTabToolTip(inserted, tip);
+        destination->setTabWhatsThis(inserted, whatsThis);
+        destination->tabBar()->setTabData(inserted, data);
+        destination->tabBar()->setTabTextColor(inserted, color);
+        destination->setTabEnabled(inserted, enabled);
+        destination->setTabVisible(inserted, visible);
+        return true;
+    };
+    {
+        // A move publishes only its committed state. Intermediate currentChanged
+        // notifications otherwise close interaction modes and can destroy the target.
+        QSignalBlocker sourceBlock(group), targetBlock(target);
+        group->removeTab(from);
+        bool transferred = sourceGuard && targetGuard && pageGuard;
+        if (transferred) transferred = insert(targetGuard,index);
+        if (!sourceGuard) sourceBlock.dismiss();
+        if (!targetGuard) targetBlock.dismiss();
+        if (!transferred || !sourceGuard || !targetGuard || !pageGuard) {
+            if (sourceGuard && pageGuard) {
+                if (targetGuard && targetGuard->indexOf(pageGuard)>=0)
+                    targetGuard->removeTab(targetGuard->indexOf(pageGuard));
+                insert(sourceGuard,from);
+                if (sourceCurrent) sourceGuard->setCurrentWidget(sourceCurrent);
+            }
+            if (targetGuard && targetCurrent) targetGuard->setCurrentWidget(targetCurrent);
+            if (focused) focused->setFocus(Qt::OtherFocusReason);
+            return false;
+        }
+        if (visible) target->setCurrentWidget(page);
+    }
+    if (focused && (focused==page || page->isAncestorOf(focused)))
+        focused->setFocus(Qt::OtherFocusReason);
     emit sourceGuard->hostedTabMoved(page, sourceGuard, targetGuard);
     if (targetGuard)
         targetGuard->syncFloatingVisibility();
@@ -276,6 +305,8 @@ void ElaTabWidgetHost::showIndicator(ElaTabWidget::DropArea area)
 {
     if (!indicator)
         indicator = new DropIndicator(group);
+    if (activeDragIndicator && activeDragIndicator!=indicator) activeDragIndicator->hide();
+    activeDragIndicator=indicator;
     QRect areaRect = group->rect().adjusted(3, 3, -3, -3);
     using Area = ElaTabWidget::DropArea;
     if (area == Area::Left) areaRect.setWidth(areaRect.width() / 2);
@@ -300,6 +331,10 @@ void ElaTabWidgetHost::startDrag(QMimeData* gesture)
     gesture->deleteLater();
     if (!scope || !group || isDragging() || !group->currentWidget())
         return;
+    const auto clearPreview=qScopeGuard([] {
+        if (activeDragIndicator) activeDragIndicator->hide();
+        activeDragIndicator.clear();
+    });
     // ElaTabBar and ElaTabWidgetPrivate own gesture/enter/leave routing. This
     // transaction adapts their live-window flow to externally owned documents.
     QPointer<ElaTabWidgetHost> guard(this);
@@ -315,6 +350,7 @@ void ElaTabWidgetHost::startDrag(QMimeData* gesture)
     data->setProperty("ElaHostedTabDrag", true);
     data->setProperty("TabSize", gesture->property("TabSize"));
     QPointer<QDrag> drag(new QDrag(group));
+    drag->setProperty("ElaHostedTabPage", QVariant::fromValue(page.data()));
     drag->setMimeData(data);
     connect(page, &QObject::destroyed, drag, [data] { if (data->executing) QDrag::cancel(); });
     connect(scope, &QObject::destroyed, drag, [data] { if (data->executing) QDrag::cancel(); });
@@ -352,8 +388,44 @@ void ElaTabWidgetHost::startDrag(QMimeData* gesture)
     }
     followFloatingPage(data);
     data->executing = true;
-    const Qt::DropAction result = !cancelled && !data->cancelled && !data->committed && drag && page && scope
-        ? drag->exec(Qt::MoveAction) : Qt::IgnoreAction;
+    Qt::DropAction result = Qt::IgnoreAction;
+    if (!cancelled && !data->cancelled && !data->committed && drag && page && scope) {
+#ifdef Q_OS_WIN
+        if (QGuiApplication::platformName() == QStringLiteral("windows") && origin) {
+            // Qt 6.10 waits for a mouse move on its input HWND before OLE starts.
+            // Reparenting a native view can focus the transparent floating host,
+            // which cannot receive that move. Keep input on the source Qt window.
+            origin->tabBar()->setFocus(Qt::OtherFocusReason);
+            const QPointer<QWindow> input = origin->window()->windowHandle();
+            if (input) {
+                const HWND hwnd = reinterpret_cast<HWND>(input->winId());
+                SetFocus(hwnd); input->setMouseGrabEnabled(true);
+                const auto releaseCapture = qScopeGuard([input] { if (input) input->setMouseGrabEnabled(false); });
+                if (!(GetAsyncKeyState(VK_LBUTTON) & 0x8000)) {
+                    // The user may release while WebView2 is being reparented.
+                    // Commit through the same drop transaction without starting
+                    // a new native loop after that gesture has already ended.
+                    if (!(GetAsyncKeyState(VK_ESCAPE) & 0x8000)) {
+                        for (QWidget* target = QApplication::widgetAt(QCursor::pos()); target; target = target->parentWidget()) {
+                            auto* tabs = qobject_cast<ElaTabWidget*>(target);
+                            if (tabs && tabs != data->source && tabs->_host && tabs->_host->acceptsDrag(data)) {
+                                if (tabs->_host->commitDrop(data, tabs->mapFromGlobal(QCursor::pos()))) result = Qt::MoveAction;
+                                break;
+                            }
+                        }
+                    } else cancelled = true;
+                } else {
+                    POINT cursor{};
+                    GetCursorPos(&cursor);
+                    ScreenToClient(hwnd, &cursor);
+                    PostMessageW(hwnd, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(cursor.x, cursor.y));
+                    result = drag->exec(Qt::MoveAction);
+                }
+            } else cancelled = true;
+        } else
+#endif
+            result = drag->exec(Qt::MoveAction);
+    }
     follow.stop();
     if (dataGuard) data->executing = false;
     if (!guard || !drag || !dataGuard) {
@@ -372,6 +444,13 @@ void ElaTabWidgetHost::startDrag(QMimeData* gesture)
         if (target)
             data->source->transferHostedTab(page, target, originIndex);
     }
+    for (const auto& selection : data->previousSelections) {
+        auto* visited = selection.first.data(); auto* selected = selection.second.data();
+        if (visited && selected && visited->indexOf(selected) >= 0 && visited->indexOf(page) < 0) {
+            const QSignalBlocker block(visited);
+            visited->setCurrentWidget(selected);
+        }
+    }
     dragging = false;
     activeDragScope.clear();
     if (guard && group)
@@ -385,6 +464,11 @@ bool ElaTabWidgetHost::enterDrag(QMimeData* mime)
     if (!acceptsDrag(mime))
         return false;
     auto* data = static_cast<HostedTabMime*>(mime);
+    if (data->source != group && group->currentWidget()) {
+        bool recorded = false;
+        for (const auto& selection : data->previousSelections) if (selection.first == group) recorded = true;
+        if (!recorded) data->previousSelections.append({group, group->currentWidget()});
+    }
     if (!data->source->transferHostedTab(data->page, group, mime->property("TabDropIndex").toInt()))
         return false;
     data->source = group;
@@ -408,7 +492,25 @@ bool ElaTabWidgetHost::dropDrag(QMimeData* mime)
 {
     if (!enterDrag(mime))
         return false;
-    static_cast<HostedTabMime*>(mime)->committed = true;
+    auto* data=static_cast<HostedTabMime*>(mime);
+    data->committed = true;
+    group->setCurrentWidget(data->page);
+    if (data->page) data->page->setFocus(Qt::OtherFocusReason);
+    return true;
+}
+
+bool ElaTabWidgetHost::commitDrop(QMimeData* mime, const QPoint& position)
+{
+    if (!acceptsDrag(mime)) return false;
+    auto* data = static_cast<HostedTabMime*>(mime);
+    const auto area = areaAt(position);
+    ElaTabWidget* target = group;
+    if (area != ElaTabWidget::DropArea::Center && split) target = split(group, area);
+    const int index = area == ElaTabWidget::DropArea::Center
+        ? group->tabBar()->tabAt(group->tabBar()->mapFrom(group, position)) : -1;
+    if (!target || !data->source->transferHostedTab(data->page, target, index)) return false;
+    data->source = target; data->committed = true;
+    if (data->page) data->page->setFocus(Qt::OtherFocusReason);
     return true;
 }
 
@@ -461,15 +563,7 @@ bool ElaTabWidgetHost::eventFilter(QObject* watched, QEvent* event)
         return true;
     }
     clearIndicator();
-    ElaTabWidget* target = group;
-    if (area != ElaTabWidget::DropArea::Center && split)
-        target = split(group, area);
-    int index = -1;
-    if (area == ElaTabWidget::DropArea::Center)
-        index = group->tabBar()->tabAt(group->tabBar()->mapFrom(group, position));
-    if (target && data->source->transferHostedTab(data->page, target, index)) {
-        data->source = target;
-        data->committed = true;
+    if (commitDrop(data, position)) {
         drop->setDropAction(Qt::MoveAction);
         drop->accept();
     } else {

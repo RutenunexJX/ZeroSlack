@@ -1,5 +1,7 @@
 #include "contextcontentprovider.h"
 #include "contextdockhost.h"
+#include "editorsplitcontroller.h"
+#include <QTabWidget>
 #include "contextdocktransition.h"
 #include "contextpeekhost.h"
 #include "contextrail.h"
@@ -73,9 +75,9 @@ void settleUi()
 
 QWidget* sectionResizeHandle(ContextDockHost* host, const QString& key)
 {
-    auto* frame = host->sectionWidget(key);
-    auto* splitter = qobject_cast<QSplitter*>(frame ? frame->parentWidget() : nullptr);
-    return splitter ? splitter->handle(splitter->indexOf(frame) + 1) : nullptr;
+    auto* group = host->pageRegistry()->groupForPage(host->sectionWidget(key));
+    auto* splitter = qobject_cast<QSplitter*>(group ? group->parentWidget() : nullptr);
+    return splitter ? splitter->handle(splitter->indexOf(group) + 1) : nullptr;
 }
 
 void check(bool condition, const char* message)
@@ -452,20 +454,20 @@ void verifyRailAreaBoundaries()
           "rail_area_focus: bottom focus leaves the visible right provider highlighted");
     bottomAction->trigger();
     settleUi();
-    check(controller.dockWidget()->isVisible() && !host->isBottomResource(bottom.stableKey())
+    check(controller.dockWidget()->isVisible() && host->isBottomResource(bottom.stableKey())
               && bottomView->isVisible() && sideView->isVisible()
               && host->viewForResource(bottom.stableKey()) == bottomView
               && host->viewForResource(side.stableKey()) == sideView
               && fixture.counters.created == 1 && bottomCounters.created == 1,
-          "rail_area_first_click: bottom view moves to the right without recreating or losing either view");
-    check(!controller.bottomDockWidget()->isVisible(),
-          "rail_area_empty_bottom: moving the last bottom section hides the empty dock");
+          "rail_area_first_click: reopening activates the current bottom location without recreating either view");
+    check(controller.bottomDockWidget()->isVisible(),
+          "rail_area_bottom_preserved: reopening retains the moved page's region");
     bottomAction->trigger();
     settleUi();
-    check(!controller.dockWidget()->isVisible()
+    check(controller.dockWidget()->isVisible() && controller.bottomDockWidget()->isVisible()
               && host->viewForResource(bottom.stableKey()) == bottomView
               && host->viewForResource(side.stableKey()) == sideView,
-          "rail_area_second_click: the whole right sidebar hides and retains both views");
+          "rail_area_second_click: repeated activation preserves both independent regions and views");
 }
 
 void verifyRailCollapsedSection()
@@ -1385,14 +1387,10 @@ void verifySidebarStack()
           "stack_all_collapsed: the dock remains a visible column of headers");
     for (const auto& key : keys) host->setSectionCollapsed(key, false);
     QSignalSpy reordered(host, &ContextDockHost::resourceOrderChanged);
-    const QPoint start = host->sectionHeader(keys[2])->mapToGlobal(QPoint(80, 10));
-    const QPoint end = host->sectionHeader(keys[0])->mapToGlobal(QPoint(80, 1));
-    sendMouseEvent(host->sectionHeader(keys[2]), QEvent::MouseButtonPress, start, Qt::LeftButton, Qt::LeftButton);
-    sendMouseEvent(host->sectionHeader(keys[2]), QEvent::MouseMove, end, Qt::NoButton, Qt::LeftButton);
-    sendMouseEvent(host->sectionHeader(keys[2]), QEvent::MouseButtonRelease, end, Qt::LeftButton, Qt::NoButton);
+    host->moveResource(keys[2],0);
     check(reordered.count() == 1 && host->resourceKeys().first() == keys[2]
               && ContextResource::fromVariantMap(controller.captureState().pinnedResources.first()).stableKey() == keys[2],
-          "stack_reorder: title drag changes order, emits signal and persists resource order");
+          "stack_reorder: shared group reorder emits once and persists resource order");
     controller.focusResource(keys[1]);
     fixture.window.activateWindow();
     fixture.window.centralWidget()->setFocusPolicy(Qt::StrongFocus);
@@ -1584,7 +1582,9 @@ void verifySidebarCompression()
     host.activateResource(keys[1]);
     host.resize(host.width(), qMax(260, available.height() * 3 / 5));
     settleUi();
-    auto* diagnosticSplitter = host.findChild<QSplitter*>("contextSideSplitter");
+    auto* diagnosticSplitter = qobject_cast<QSplitter*>(host.pageRegistry()->regionRoot(QStringLiteral("right")));
+    check(diagnosticSplitter,"shared groups provide the section splitter");
+    if (!diagnosticSplitter) return;
     std::cerr << "compression diagnostic screen=" << available.height() << " host=" << host.height()
               << " desired=" << desired << " heights=" << host.sectionWidget(keys[0])->height()
               << "," << host.sectionWidget(keys[1])->height() << "," << host.sectionWidget(keys[2])->height()
@@ -1631,6 +1631,9 @@ void verifySidebarCompression()
         settleUi();
         auto* frame = projectionHost.sectionWidget(inserted.stableKey());
         const QRect actual(frame->mapToGlobal(QPoint()), frame->size());
+        if (predicted!=actual) std::cerr << "projection diagnostic bottom=" << bottom << " predicted="
+            << predicted.x() << ',' << predicted.y() << ',' << predicted.width() << ',' << predicted.height()
+            << " actual=" << actual.x() << ',' << actual.y() << ',' << actual.width() << ',' << actual.height() << '\n';
         check(predicted == actual, bottom ? "stack_projection_bottom: preview includes handle gaps and matches the inserted section"
                                          : "stack_projection_side: preview includes handle gaps and matches the inserted section");
     }
@@ -1700,18 +1703,11 @@ void verifySidebarDragOut()
     const QPoint destination(available.left() - available.width(), available.bottom() + available.height() / 4);
     QWidget* handle = host->sectionDragHandle(keys[2]);
     check(handle && handle->isEnabled(), "stack_drag_handle: detachable section has an enabled explicit grip");
-    const QPoint start = handle->mapToGlobal(handle->rect().center());
-    sendMouseEvent(handle, QEvent::MouseButtonPress, start, Qt::LeftButton, Qt::LeftButton);
-    sendMouseEvent(handle, QEvent::MouseMove, destination, Qt::NoButton, Qt::LeftButton);
+    check(controller.dragOutResource(keys[2],destination),"provider preview detach remains available beside shared tab movement");
     auto* floating = controller.floatingWindow();
-#ifdef ZEROSLACK_ENABLE_ELA
-    sendMouseEvent(floating, QEvent::MouseButtonRelease, destination, Qt::LeftButton, Qt::NoButton);
-#else
-    sendMouseEvent(handle, QEvent::MouseButtonRelease, destination, Qt::LeftButton, Qt::NoButton);
-#endif
     check(floating->view() == view && fixture.counters.created == created && !host->containsResource(keys[2])
               && host->sectionHeight(keys[0]) == previousHeight && host->sectionWidget(keys[0])->height() >= previousSize.height()
-              && host->isSectionCollapsed(keys[1]), "stack_drag_out_identity: title gesture transports the view and preserves neighboring sections");
+              && host->isSectionCollapsed(keys[1]), "stack_drag_out_identity: provider detach transports the view and preserves neighboring sections");
     check(floating->hasResource() && available.contains(floating->frameGeometry()),
           "stack_drag_out_geometry: outside-screen drop resolves to a fully visible native rectangle");
     fixture.counters.detachable = false;
@@ -1848,13 +1844,18 @@ void verifyTiledBottomAndSidebar()
     }
     QWidget* first = host->sectionWidget("mock:bottom-a");
     QWidget* second = host->sectionWidget("mock:bottom-b");
-    check(first && second && first->isVisible() && second->isVisible() && first->y() == second->y()
-              && first->geometry().right() < second->geometry().left()
+    if (first && second) std::cerr << "tile geometry first=" << first->mapToGlobal(QPoint()).x() << ',' << first->mapToGlobal(QPoint()).y()
+        << ',' << first->width() << ',' << first->height() << " second=" << second->mapToGlobal(QPoint()).x() << ',' << second->mapToGlobal(QPoint()).y()
+        << ',' << second->width() << ',' << second->height() << " groups=" << host->pageRegistry()->groups(QStringLiteral("bottom")).size() << '\n';
+    check(first && second && first->isVisible() && second->isVisible()
+              && first->mapToGlobal(QPoint()).y() == second->mapToGlobal(QPoint()).y()
+              && first->mapToGlobal(QPoint(first->width(),0)).x() <= second->mapToGlobal(QPoint()).x()
               && controller.dockWidget()->isVisible(), "tiles_bottom_simultaneous_horizontal_layout");
     if (!first || !second) return;
     const int oldFirst = first->width();
     const int oldSecond = second->width();
     dragHandle(sectionResizeHandle(host, "mock:bottom-a"), QPoint(35, 0));
+    std::cerr << "tile resize first=" << oldFirst << "->" << first->width() << " second=" << oldSecond << "->" << second->width() << '\n';
     check(qAbs(first->width() - oldFirst - 35) <= 1 && qAbs(second->width() - oldSecond + 35) <= 1,
           "tiles_divider_moves_adjacent_boundary_by_pointer_distance");
     check(host->viewForResource("mock:bottom-a") == firstView, "tiles_resize_retains_content");
@@ -1869,6 +1870,14 @@ void verifyTiledBottomAndSidebar()
     check(loaded.loaded && sameState(saved, loaded.state.ui.contextWorkspace), "tiles_wire_roundtrip");
     controller.restoreState(loaded.state.ui.contextWorkspace);
     settleUi();
+    if (!sameState(saved, controller.captureState())) {
+        const auto after=controller.captureState();
+        std::cerr << "tile restore active=" << saved.activePinnedResourceKey.toStdString() << "->" << after.activePinnedResourceKey.toStdString()
+            << " orderSame=" << (saved.pinnedResources==after.pinnedResources) << " sectionsSame=" << (saved.dockSections==after.dockSections)
+            << " heights=" << saved.bottomDockHeight << "->" << after.bottomDockHeight << " widths=" << saved.dockWidth << "->" << after.dockWidth << '\n';
+        for (const auto& section : saved.dockSections) std::cerr << "before " << section.resourceKey.toStdString() << ' ' << section.height << ' ' << section.width << '\n';
+        for (const auto& section : after.dockSections) std::cerr << "after " << section.resourceKey.toStdString() << ' ' << section.height << ' ' << section.width << '\n';
+    }
     check(host->areaResourceCount(false) == 1 && host->areaResourceCount(true) == 2
               && controller.bottomDockWidget()->isVisible() && controller.dockWidget()->isVisible()
               && sameState(saved, controller.captureState()), "tiles_live_roundtrip");

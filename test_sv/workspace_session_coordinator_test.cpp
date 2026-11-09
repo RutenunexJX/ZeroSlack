@@ -1,5 +1,7 @@
 #include "mycodeeditor.h"
 #include "tabmanager.h"
+#include "editorsplitcontroller.h"
+#include "uicontrols.h"
 #include "workspacemanager.h"
 #include "workspacesessioncoordinator.h"
 #include "workspacesessionstateservice.h"
@@ -377,10 +379,39 @@ void checkPendingSessionReopen()
     check(!coordinator.restoreSession() && !service.sessionExists(workspace), "explicit Reset discards pending and persisted source");
 }
 
+void checkLegacyCentralGroups()
+{
+    QTemporaryDir root;
+    const auto path = root.filePath("top.sv");
+    check(writeFile(path, "module top; endmodule\n"), "legacy group fixture is available");
+    QWidget host, leftHost, rightHost;
+    auto* initial = UiControls::editorTabWidget(&host);
+    TabManager tabs(initial); tabs.enableSplitLayout(&host); tabs.setWorkspaceScope({root.path()}, root.path());
+    auto* registry = tabs.editorSplitController(); registry->registerRegion("left", &leftHost); registry->registerRegion("right", &rightHost);
+    QList<WorkspaceSessionTabState> states;
+    for (int i = 0; i < 3; ++i) { WorkspaceSessionTabState tab; tab.filePath = path; tab.groupIndex = i; tab.viewId = QString("old-%1").arg(i); states.append(tab); }
+    QStringList skipped;
+    check(tabs.restoreWorkspaceSessionTabs(root.path(), states, &skipped).size() == 3 && skipped.isEmpty(), "v4 restores all views of the same code document");
+    bool central = true;
+    for (auto* editor : tabs.openEditors()) central &= registry->regionForGroup(registry->groupForPage(editor)) == "main";
+    check(central && registry->groups("main").size() == 3 && registry->regionGroup("left")->count() == 0
+        && registry->regionGroup("right")->count() == 0, "v4 indexes stay central despite registered side regions");
+    auto damaged = states;
+    damaged.append(states.first());
+    auto missing = states.first(); missing.filePath = root.filePath("missing.sv"); missing.viewId = "missing"; damaged.append(missing);
+    auto unknown = states.first(); unknown.viewId = "unknown"; unknown.regionId = "retired-region"; damaged.append(unknown);
+    skipped.clear();
+    check(tabs.restoreWorkspaceSessionTabs(root.path(), damaged, &skipped).size() == 3
+        && skipped.size() == 3 && tabs.openEditors().size() == 3,
+        "duplicate, missing and unknown-region records are skipped without discarding valid live views");
+    tabs.closeAllTabs();
+}
+
 int main(int argc, char* argv[])
 {
     QStandardPaths::setTestModeEnabled(true);
     QApplication app(argc, argv);
+    checkLegacyCentralGroups();
     if (app.arguments().contains("--pending-reopen-only")) {
         checkPendingSessionReopen();
         std::cout << (checks - failures) << "/" << checks << " pending reopen checks passed\n";

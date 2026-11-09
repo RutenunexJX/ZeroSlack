@@ -26,7 +26,7 @@ class NavigationService;
 class TabManager;
 class WorkspaceManager;
 class WorkspaceFileOperationService;
-namespace simdock { class Workbench; }
+class DesignProjectService;
 struct WorkspaceFileOperationPlan;
 
 struct DesignHierarchyContextAction {
@@ -62,7 +62,7 @@ public:
     // Manager connections
     void connectToTabManager(TabManager* tabManager);
     void connectToWorkspaceManager(WorkspaceManager* workspaceManager);
-    void connectToWorkbench(simdock::Workbench* workbench);
+    void connectToDesignProjects(DesignProjectService* service);
     void setTemporaryEditorOpenHandler(
         std::function<bool(const EditorLocation&)> handler);
 
@@ -187,7 +187,7 @@ private:
 
     TabManager* connectedTabManager = nullptr;
     WorkspaceManager* connectedWorkspaceManager = nullptr;
-    simdock::Workbench* connectedWorkbench = nullptr;
+    DesignProjectService* designProjects = nullptr;
     QMetaObject::Connection workspaceDiscardConnection;
     std::unique_ptr<WorkspaceFileOperationService>
         fileOperationService;

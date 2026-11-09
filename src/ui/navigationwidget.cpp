@@ -1,6 +1,7 @@
 #include "uicontrols.h"
 #include "uitypography.h"
 #include "navigationwidget.h"
+#include "editorsplitcontroller.h"
 #include "applicationthememanager.h"
 #include "editorfileidentity.h"
 #include "roundedicons.h"
@@ -32,17 +33,27 @@ NavigationWidget::~NavigationWidget()
     cancelFileTreePopulation();
 }
 
-void NavigationWidget::setActiveTab(NavigationTab tab)
+void NavigationWidget::setActiveTab(NavigationTab tab, bool activate)
 {
-    if (tabWidget)
-        tabWidget->setCurrentIndex(static_cast<int>(tab));
+    QWidget* page=tab==DesignTab ? designTab : fileTab;
+    if (pageRegistry) {
+        if (activate) {
+            pageRegistry->restorePage(page,pageRegistry->regionGroup(QStringLiteral("left")));
+            pageRegistry->activatePage(page);
+        } else {
+            if (auto* group=pageRegistry->groupForPage(page)) {
+                const QSignalBlocker block(group); group->setCurrentWidget(page);
+            }
+            onTabChanged(tab==DesignTab ? DesignTab : FileTab);
+        }
+    } else if (tabWidget) tabWidget->setCurrentWidget(page);
 }
 
 void NavigationWidget::focusSearch()
 {
-    if (activeTab() == SourceFilesTab) setActiveTab(FileTab);
-    if (searchLineEdit)
-        searchLineEdit->setFocus(Qt::ShortcutFocusReason);
+    const auto tab=activeTab()==DesignTab ? DesignTab : FileTab;
+    setActiveTab(tab);
+    (tab==DesignTab ? designSearchLineEdit : searchLineEdit)->setFocus(Qt::ShortcutFocusReason);
 }
 
 QString NavigationWidget::searchFilter(NavigationTab tab) const
@@ -58,12 +69,9 @@ void NavigationWidget::setSearchFilter(NavigationTab tab,
     const QString normalized = filter.trimmed();
     setStoredSearchFilter(index, normalized);
     if (index == DesignTab && designAdding) return;
-    if (!tabWidget || tabWidget->currentIndex() != index)
-        return;
-    if (searchLineEdit && searchLineEdit->text() != normalized)
-        searchLineEdit->setText(normalized);
-    else
-        onSearchTextChanged(normalized);
+    auto* search=index==DesignTab ? designSearchLineEdit : searchLineEdit;
+    if (search->text()!=normalized) search->setText(normalized);
+    else onSearchTextChanged(index,normalized);
 }
 
 void NavigationWidget::setWorkspaceRoot(
@@ -237,6 +245,18 @@ void NavigationWidget::setDesignHierarchyPending(bool pending)
     updateDesignPresentation();
 }
 
+void NavigationWidget::setDesignProjectExpanded(const QString& id, bool expanded)
+{
+    for (auto& node : currentDesignHierarchy.nodes)
+        if (node.isTop && node.projectId == id) node.expanded = expanded;
+    if (!designTreeWidget || !designSearchFilter.isEmpty()) return;
+    const QSignalBlocker guard(designTreeWidget);
+    for (int i = 0; i < designTreeWidget->topLevelItemCount(); ++i) {
+        auto* row = designTreeWidget->topLevelItem(i);
+        if (row->data(0, NavigationRowStyle::ProjectRole).toString() == id) row->setExpanded(expanded);
+    }
+}
+
 void NavigationWidget::updateDesignSummary(const DesignHierarchyReport& report, bool structureChanged)
 {
     currentDesignHierarchy = report;
@@ -308,20 +328,9 @@ void NavigationWidget::highlightFile(const QString& filePath)
 
 void NavigationWidget::onTabChanged(int index)
 {
+    if (index!=FileTab && index!=DesignTab) return;
+    lastActiveNavigationTab=index;
     refreshTabLabels();
-    if (index < 0) return;
-    searchLineEdit->setVisible(index != SourceFilesTab);
-    if (index == SourceFilesTab) { emit viewChanged(index); return; }
-    (index == DesignTab ? designTabLayout : fileTabLayout)->insertWidget(0, searchLineEdit);
-    searchLineEdit->show();
-    if (searchLineEdit) {
-        const QSignalBlocker blocker(searchLineEdit);
-        searchLineEdit->setText(index == DesignTab && designAdding ? designAddSearchFilter : searchFilterForIndex(index));
-        searchLineEdit->setPlaceholderText(
-            index == DesignTab
-                ? QStringLiteral("Search instances or modules...")
-                : QStringLiteral("Search files or paths..."));
-    }
     if (index == DesignTab && designTreeRefreshPending)
         populateDesignTree();
     else if (index == FileTab && fileTreeRefreshPending)
@@ -330,9 +339,8 @@ void NavigationWidget::onTabChanged(int index)
     emit viewChanged(index);
 }
 
-void NavigationWidget::onSearchTextChanged(const QString& text)
+void NavigationWidget::onSearchTextChanged(int index, const QString& text)
 {
-    const int index = tabWidget ? tabWidget->currentIndex() : FileTab;
     if (index != FileTab && index != DesignTab) return;
     const QString normalized = text.trimmed();
     if (index == DesignTab && designAdding) {
@@ -429,9 +437,24 @@ void NavigationWidget::setupUI()
     searchLineEdit->setClearButtonEnabled(true);
     mainLayout->addWidget(searchLineEdit);
 
+    designSearchLineEdit=UiControls::lineEdit(this);
+    designSearchLineEdit->setObjectName(QStringLiteral("navigationDesignSearchLineEdit"));
+    designSearchLineEdit->setClearButtonEnabled(true);
+    designSearchLineEdit->setPlaceholderText(tr("Search instances or modules..."));
     tabWidget = UiControls::navigationTabWidget(this);
     tabWidget->setObjectName(QStringLiteral("navigationTabs"));
     tabWidget->setIconSize(QSize(20, 20));
+    auto* addDocument = UiControls::toolButton(tabWidget);
+    addDocument->setObjectName(QStringLiteral("leftAddDocument")); addDocument->setIcon(RoundedIcons::icon(RoundedIcons::Add)); addDocument->setToolTip(QStringLiteral("New or Open Document"));
+    auto* documentMenu = UiControls::menu(addDocument);
+    for (const auto& entry : {qMakePair(QStringLiteral("New Markdown"), QStringLiteral("markdown")), qMakePair(QStringLiteral("New Block Document"), QStringLiteral("blocks")), qMakePair(QStringLiteral("Open File…"), QStringLiteral("open"))}) {
+        auto* action = documentMenu->addAction(entry.first); action->setObjectName(QStringLiteral("leftDocument.") + entry.second);
+        connect(action, &QAction::triggered, this, [this, id = entry.second] { emit documentActionRequested(id); });
+    }
+    addDocument->setMenu(documentMenu); addDocument->setPopupMode(QToolButton::InstantPopup);
+    addDocument->setAccessibleName(QStringLiteral("New or Open Document"));
+    addDocument->setMinimumSize(addDocument->minimumSizeHint());
+    tabWidget->setCornerWidget(addDocument, Qt::TopRightCorner);
     mainLayout->insertWidget(0, tabWidget);
     mainLayout->removeWidget(searchLineEdit);
 
@@ -439,6 +462,7 @@ void NavigationWidget::setupUI()
     setupDesignTab();
     refreshTabLabels();
     fileTabLayout->insertWidget(0, searchLineEdit);
+    designTabLayout->insertWidget(0, designSearchLineEdit);
 
     setLayout(mainLayout);
 }
@@ -539,23 +563,38 @@ QString NavigationWidget::searchFilterForIndex(int index) const
     return index == DesignTab ? designSearchFilter : index == FileTab ? fileSearchFilter : QString();
 }
 
-int NavigationWidget::activeTab() const { return tabWidget->currentIndex(); }
-void NavigationWidget::setSourceFilesWidget(QWidget* widget)
+void NavigationWidget::attachPageRegistry(EditorSplitController* registry)
 {
-    if (!widget || tabWidget->count() > SourceFilesTab) return;
-    const auto index = tabWidget->addTab(widget, RoundedIcons::icon(RoundedIcons::BuildInputs), QString());
-    tabWidget->setTabToolTip(index, tr("Build inputs"));
-    tabWidget->tabBar()->setAccessibleTabName(index, tr("Build inputs"));
+    if (!registry || pageRegistry) return;
+    pageRegistry=registry;
+    registry->registerRegion(QStringLiteral("left"),this,tabWidget);
+    const auto registerTool=[this,registry](QWidget* page,const QString& id) {
+        page->setProperty("toolPage",true); page->setProperty("toolPageId",id);
+        registry->registerPage(page,QStringLiteral("tool:")+id,QStringLiteral("navigation"),
+            [registry,page] { return registry->parkPage(page); });
+    };
+    registerTool(fileTab,QStringLiteral("files"));
+    registerTool(designTab,QStringLiteral("design"));
+    connect(registry,&EditorSplitController::pageActivated,this,[this](QWidget* page) {
+        if (page==fileTab) onTabChanged(FileTab);
+        else if (page==designTab) onTabChanged(DesignTab);
+    });
     refreshTabLabels();
 }
 
+int NavigationWidget::activeTab() const
+{
+    return lastActiveNavigationTab;
+}
 void NavigationWidget::refreshTabLabels()
 {
-    const QStringList titles{tr("Files"),tr("Design"),tr("Build inputs")};
-    for (int i=0;i<tabWidget->count() && i<titles.size();++i) {
-        tabWidget->setTabToolTip(i,titles[i]);
-        tabWidget->tabBar()->setAccessibleTabName(i,titles[i]);
-        tabWidget->setTabText(i,i==tabWidget->currentIndex()?titles[i]:QString());
+    for (auto* page : {fileTab,designTab}) {
+        auto* group=pageRegistry ? pageRegistry->groupForPage(page) : tabWidget;
+        const int index=group ? group->indexOf(page) : -1;
+        if (index<0) continue;
+        const auto title=page==fileTab ? tr("Files") : tr("Design");
+        group->setTabToolTip(index,title); group->tabBar()->setAccessibleTabName(index,title);
+        group->setTabText(index,title);
     }
 }
 
@@ -580,10 +619,12 @@ void NavigationWidget::setStoredSearchFilter(int index,
 void NavigationWidget::setupConnections()
 {
     connect(tabWidget, &QTabWidget::currentChanged,
-            this, &NavigationWidget::onTabChanged);
+            this,[this](int index) {
+                if (!pageRegistry) onTabChanged(tabWidget->widget(index)==designTab ? DesignTab : FileTab);
+            });
 
-    connect(searchLineEdit, &QLineEdit::textChanged,
-            this, &NavigationWidget::onSearchTextChanged);
+    connect(searchLineEdit,&QLineEdit::textChanged,this,[this](const QString& text) { onSearchTextChanged(FileTab,text); });
+    connect(designSearchLineEdit,&QLineEdit::textChanged,this,[this](const QString& text) { onSearchTextChanged(DesignTab,text); });
 
     connect(fileTreeWidget, &QTreeWidget::itemDoubleClicked,
             this, &NavigationWidget::onFileTreeDoubleClicked);

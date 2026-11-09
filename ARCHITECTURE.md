@@ -92,6 +92,12 @@ WorkspaceManager + ProjectModel       TabManager + DocumentModel
   `WorkspaceManager`, `TabManager`, optional `PanelLayoutController` state
   notifications, and narrow UI capture/restore/status callbacks assembled by
   `MainWindow`.
+  Session v5 adds stable region/group/page/view identities, document kinds,
+  split trees, tab order, active pages and per-view state. Readers retain v2–v4,
+  bottom-layout v2 and Context-resource compatibility. Legacy central group
+  indexes refer only to central groups. Restore skips invalid records locally;
+  the existing lock, staged INI and `QSaveFile` commit preserve the prior session
+  on write failure. Layout stores no document body or runnable task.
 - `WorkspaceSwitcher` presents open workspaces as a permanent title-bar icon strip,
   with names, full paths and unsaved state in tooltips. Queued activation and close
   requests resolve workspace paths at dispatch and delegate to
@@ -301,6 +307,47 @@ regression and benchmark logs in the corresponding validation delivery.
 - Add behavior-focused tests at the owning boundary and keep full-text
   document snapshots out of policy guards.
 
+
+## Unified pages and document sessions
+
+`EditorSplitController` owns the shared Main/Left/Right/Bottom group registry,
+stable page IDs, split trees, page parking and native Ela tab transfers.
+`TabManager`, navigation, panel and Context adapters register existing pages;
+moving a page reparents that instance without reloading its document or restarting
+its business service. Fixed region anchors survive empty groups and restoration.
+`TabManager` resolves document commands from the focused view and clears stale
+code targets when a tool gains focus. Linked presentation preserves the normal
+layout independently of its temporary arrangement.
+
+Code views retain `SharedDocument`. Markdown/block views use `WebDocumentSession`
+for file identity, revisions, save/conflict/recovery, assets and operation barriers;
+`WebDocumentPage` owns only the WebView and independent view state. A local
+SharedWorker owns the document's single logical history: pinned Muya structured
+operations for Markdown, Y.Doc updates and grouped undo managers for BlockSuite.
+Transactions carry source/revision identities; saving first flushes every live
+view, including pending IME, paste and asset work. Closing one view transfers no
+file ownership and does not delete the session's recovery record.
+
+`PdfDocumentPage` is a read-only adapter over the existing WebView2 host and local
+PDF.js 6.5.438 resources. Its capability exposes only that PDF and fixed reader
+assets. Bounded range reads use short-lived file handles and validate file
+generation; watcher changes invalidate pending reads. It has no QtPdf/WebEngine
+dependency or document-editing interface. Page, zoom and scroll are view state.
+
+## Workspace simulation ownership
+
+`DesignProjectService` owns Design roots and legacy project identity independently
+of the Simulation UI. `WorkspaceSimulationController` owns preparation, the
+Questa session and retained run data; Workbench/log/event pages observe it.
+Closing or moving a page does not stop a run. `SimulationBuildPlanner` captures
+workspace inputs, resolves the selected TB/top dependency closure using Slang,
+and preserves separate compilation units and Questa macro/include semantics.
+It produces an immutable fingerprinted plan; participating dirty inputs pass
+through the normal save/conflict checks before execution. Stale plans do not run.
+Preparation has bounded waits; Running has TB-controlled termination and no
+replacement for the retired 120-second total timer. GUI and CLI contract v2 use
+the same planner/controller. Legacy `projectId` maps only an unambiguous saved TB;
+old `sources`, `durationNs`, `timeoutMs` and project-writing commands are rejected.
 
 ## Context and Live Insights contract
 

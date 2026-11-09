@@ -17,6 +17,7 @@
 #include <functional>
 #include <optional>
 
+class EditorSplitController;
 class ContextDockHost;
 class ContextDockTransition;
 class ContextPeekHost;
@@ -45,7 +46,8 @@ public:
     ContextWorkspaceController(
         QMainWindow* mainWindow,
         QWidget* editorRegion,
-        QObject* parent = nullptr);
+        QObject* parent = nullptr,
+        EditorSplitController* registry = nullptr);
     ~ContextWorkspaceController() override;
 
     ContextRail* rail() const;
@@ -161,6 +163,8 @@ private:
     QPointer<QDockWidget> bottomDockValue;
     QPointer<QDockWidget> leftDockValue;
     QPointer<PanelLayoutController> bottomPanels;
+    bool sharedLeftHost = false;
+    bool sharedBottomHost = false;
     QPointer<ContextDockTransition> dockTransition;
     QPointer<ContextFloatingWindow> floatingDragSource;
     bool dockingTransition = false;
@@ -248,7 +252,7 @@ private:
     Qt::DockWidgetArea floatingDropArea(const QPoint& position) const;
     bool bottomAreaVisible() const;
     void setBottomAreaVisible(bool visible, bool expandDrawer = true);
-    int boundedDockWidthForWindow(int width) const;
+    int boundedDockWidthForWindow(int width, QDockWidget* target = nullptr) const;
     void showDock(bool applyPreferredWidth, bool animate = true);
     void showResourceDock(const QString& key);
     void hideEmptyDocks();

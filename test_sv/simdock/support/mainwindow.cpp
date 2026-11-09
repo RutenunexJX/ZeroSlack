@@ -20,12 +20,9 @@ MainWindow::MainWindow(QWidget* parent) : ElaWidget(parent)
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     m_workbench = new Workbench(this, true);
-    auto* body = new QHBoxLayout;
-    auto* sources = m_workbench->sourceFilesWidget(); sources->setFixedWidth(290);
-    body->addWidget(sources); body->addWidget(m_workbench, 1);
-    layout->addLayout(body, 1); sources->show();
-    auto* log = m_workbench->runLogWidget(); log->setMaximumHeight(180);
-    layout->addWidget(log); log->show();
+    layout->addWidget(m_workbench);
+    auto* log = m_workbench->runLogWidget();
+    layout->addWidget(log, 1); log->show();
     connect(m_workbench, &Workbench::scanFinished, this, &MainWindow::scanFinished);
     QSettings settings;
     if (settings.contains(QStringLiteral("window/geometry")))
@@ -39,7 +36,6 @@ bool MainWindow::openSuiteTarget(const QString& root, const QString& projectId, 
     showNormal(); raise(); activateWindow();
     return true;
 }
-bool MainWindow::createProject(const QString& name) { return m_workbench->createProject(name); }
 QString MainWindow::workspace() const { return m_workbench->workspace(); }
 void MainWindow::setSimulator(const QString& executable) { m_workbench->setSimulator(executable); }
 void MainWindow::closeEvent(QCloseEvent* event)

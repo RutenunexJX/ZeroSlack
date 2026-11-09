@@ -19,12 +19,29 @@ add_test(NAME tb_editor_assistance COMMAND tb_editor_assistance_test numericRule
 set_tests_properties(tb_editor_assistance PROPERTIES TIMEOUT 180
     ENVIRONMENT "QT_QPA_PLATFORM=windows;QT_SCALE_FACTOR=1"
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>;PATH=path_list_prepend:$<TARGET_FILE_DIR:ElaWidgetTools>;PATH=path_list_prepend:${ZEROSLACK_COMPILER_BIN_DIR};QT_PLUGIN_PATH=set:$<TARGET_FILE_DIR:Qt6::Core>/../plugins")
+add_executable(workspace_simulation_services_test test_sv/workspace_simulation_services_test.cpp)
+add_executable(simulation_build_planner_test test_sv/simulation_build_planner_test.cpp)
+target_link_libraries(simulation_build_planner_test PRIVATE zeroslack_core Qt6::Test)
+target_include_directories(simulation_build_planner_test PRIVATE ${ZEROSLACK_MODULE_INCLUDE_DIRS} ${ZEROSLACK_GENERATED_INCLUDE_DIR})
+zeroslack_qt_test_command(simulation_build_planner_command simulation_build_planner simulation_build_planner_test)
+add_test(NAME simulation_build_planner COMMAND ${simulation_build_planner_command})
+set_tests_properties(simulation_build_planner PROPERTIES TIMEOUT 120
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>;PATH=path_list_prepend:$<TARGET_FILE_DIR:ElaWidgetTools>;PATH=path_list_prepend:${ZEROSLACK_COMPILER_BIN_DIR}")
+target_link_libraries(workspace_simulation_services_test PRIVATE zeroslack_core Qt6::Test)
+target_include_directories(workspace_simulation_services_test PRIVATE ${ZEROSLACK_MODULE_INCLUDE_DIRS} ${ZEROSLACK_GENERATED_INCLUDE_DIR})
+zeroslack_qt_test_command(workspace_simulation_services_command workspace_simulation_services workspace_simulation_services_test)
+add_test(NAME workspace_simulation_services COMMAND ${workspace_simulation_services_command})
+set_tests_properties(workspace_simulation_services PROPERTIES TIMEOUT 120
+    ENVIRONMENT "QT_QPA_PLATFORM=windows;QT_SCALE_FACTOR=1"
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>;PATH=path_list_prepend:$<TARGET_FILE_DIR:ElaWidgetTools>;PATH=path_list_prepend:${ZEROSLACK_COMPILER_BIN_DIR};QT_PLUGIN_PATH=set:$<TARGET_FILE_DIR:Qt6::Core>/../plugins")
 add_executable(simulation_workspace_ui_test test_sv/simulation_workspace_ui_test.cpp)
 target_link_libraries(simulation_workspace_ui_test PRIVATE zeroslack_core Qt6::Test)
 target_include_directories(simulation_workspace_ui_test PRIVATE ${ZEROSLACK_MODULE_INCLUDE_DIRS} ${ZEROSLACK_GENERATED_INCLUDE_DIR})
 add_test(NAME simulation_workspace_ui COMMAND simulation_workspace_ui_test
     sourceFirstSingleOwnershipAndSessionRestore navigationSearchAndTransferredModalGuard
     existingTestbenchAndRetiredInputs logSelectionScrollAndHiddenDelivery hostVisualsAndMenus retiredCreationEntrypoints
+    logLocationsNavigateWithoutOpeningOutsideWorkspace runWaitsForDiscoveryAndSupportsCancellation
+    participatingDocumentSavesAndRevisionChecks participatingSaveConflictBlocksRun automationSharesTbPlanningContract
     -o "${CMAKE_BINARY_DIR}/simulation-workspace-ui.xml,junitxml" -o "${CMAKE_BINARY_DIR}/simulation-workspace-ui.log,txt")
 set_tests_properties(simulation_workspace_ui PROPERTIES TIMEOUT 180
     ENVIRONMENT "QT_QPA_PLATFORM=windows;QT_SCALE_FACTOR=1"
@@ -78,7 +95,7 @@ foreach(name IN ITEMS scan_cache storage core workbench_host ui ui_200 legacy_co
 endforeach()
 set_tests_properties(simdock_ui_200 PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=windows;QT_SCALE_FACTOR=2;SIMDOCK_TEST_QUESTA=")
 if(ZEROSLACK_TEST_QUESTA_EXECUTABLE)
-    add_test(NAME simdock_core_live COMMAND simdock_core_tests liveNamedTypeCompilation liveDependencyCompilation liveStateReaderReleasesHandle liveStatePublicationContention liveLoadFailureAndRecovery liveWaveThemes liveCompilationReuse liveReadableProjectPaths liveQuesta -o "${CMAKE_BINARY_DIR}/simdock-core-live.xml,junitxml" -o -,txt)
+    add_test(NAME simdock_core_live COMMAND simdock_core_tests liveNamedTypeCompilation liveDependencyCompilation liveStateReaderReleasesHandle liveStatePublicationContention liveLoadFailureAndRecovery liveWaveThemes liveCompilationReuse liveReadableProjectPaths liveQuesta liveTbControlledTermination liveTbDependencyPlan liveNoRuntimeDeadline -o "${CMAKE_BINARY_DIR}/simdock-core-live.xml,junitxml" -o -,txt)
     add_test(NAME simdock_workbench_host_live COMMAND simdock_workbench_host_tests simulationLifecycle -o "${CMAKE_BINARY_DIR}/simdock-host-live.xml,junitxml" -o -,txt)
     foreach(name IN ITEMS core workbench_host)
         set_tests_properties(simdock_${name}_live PROPERTIES TIMEOUT 1200 LABELS "simdock-questa-required"

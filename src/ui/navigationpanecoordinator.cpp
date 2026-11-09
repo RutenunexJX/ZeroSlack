@@ -1,4 +1,9 @@
 #include "navigationpanecoordinator.h"
+#include "editorsplitcontroller.h"
+#include "tabmanager.h"
+#include <QTimer>
+#include <QCursor>
+#include <QDrag>
 
 #include "navigationmanager.h"
 #include "navigationwidget.h"
@@ -163,6 +168,40 @@ void NavigationPaneCoordinator::connectNavigationInputs(
     if (!navigationManager)
         return;
 
+    pageRegistry=tabManager ? tabManager->editorSplitController() : nullptr;
+    if (pageRegistry && navigationWidget) {
+        navigationWidget->attachPageRegistry(pageRegistry);
+        connect(navigationWidget, &NavigationWidget::documentActionRequested, tabManager, [this, tabManager](const QString& action) {
+            setExpanded(true);
+            if (action == QStringLiteral("open")) tabManager->openFileInRegion(QString(), QStringLiteral("left"));
+            else tabManager->createWebDocumentFile(action == QStringLiteral("markdown") ? WebDocumentPage::Kind::Markdown : WebDocumentPage::Kind::Blocks, QString(), QStringLiteral("left"));
+        });
+        pageRegistry->setRegionRevealHandler(QStringLiteral("left"),[this] { setExpanded(true); });
+        tabHoverTimer=new QTimer(this); tabHoverTimer->setInterval(40);
+        connect(pageRegistry,&EditorSplitController::tabDragStarted,this,[this](QDrag* drag) {
+            draggedPage=drag ? drag->property("ElaHostedTabPage").value<QWidget*>() : nullptr;
+            dragOpened=false; hoverTicks=0; tabHoverTimer->start();
+        });
+        connect(tabHoverTimer,&QTimer::timeout,this,[this] {
+            if (isExpanded() || !navigationDock) return;
+            auto* host=qobject_cast<QMainWindow*>(navigationDock->parentWidget());
+            if (!host || !host->centralWidget()) return;
+            auto* central=host->centralWidget();
+            const auto pos=central->mapFromGlobal(QCursor::pos());
+            if (pos.x()>=-16 && pos.x()<24 && pos.y()>=0 && pos.y()<central->height()) {
+                if (++hoverTicks>=8) { dragOpened=true; setExpanded(true); }
+            } else hoverTicks=0;
+        });
+        connect(pageRegistry,&EditorSplitController::tabDragFinished,this,[this] {
+            tabHoverTimer->stop();
+            // A committed move into Left keeps it open; cancellation restores the rail.
+            auto* target=pageRegistry->groupForPage(draggedPage);
+            if (dragOpened && (!target || target->window()!=navigationDock->window()
+                || pageRegistry->regionForGroup(target)!=QStringLiteral("left"))) setExpanded(false);
+            dragOpened=false;
+            draggedPage.clear();
+        });
+    }
     navigationManager->connectToTabManager(tabManager);
     navigationManager->connectToWorkspaceManager(workspaceManager);
 }
@@ -322,29 +361,27 @@ void NavigationPaneCoordinator::showFiles()
 {
     if (navigationWidget)
         navigationWidget->setActiveTab(NavigationWidget::FileTab);
-    showDock();
+    if (!pageRegistry) showDock();
 }
 
 void NavigationPaneCoordinator::showDesign()
 {
     if (navigationWidget)
         navigationWidget->setActiveTab(NavigationWidget::DesignTab);
-    showDock();
+    if (!pageRegistry) showDock();
 }
 
 void NavigationPaneCoordinator::showSearch()
 {
-    setExpanded(true, false);
+    if (!pageRegistry) setExpanded(true, false);
     if (navigationWidget)
         navigationWidget->focusSearch();
 }
 
-void NavigationPaneCoordinator::setSourceFilesWidget(QWidget* widget)
-{ if (navigationWidget) navigationWidget->setSourceFilesWidget(widget); }
 int NavigationPaneCoordinator::activeTab() const
 { return navigationWidget ? navigationWidget->activeTab() : 0; }
-void NavigationPaneCoordinator::setActiveTab(int tab)
-{ if (navigationWidget) navigationWidget->setActiveTab(NavigationWidget::NavigationTab(qBound(0, tab, 2))); }
+void NavigationPaneCoordinator::setActiveTab(int tab, bool activate)
+{ if (navigationWidget) navigationWidget->setActiveTab(tab == 1 ? NavigationWidget::DesignTab : NavigationWidget::FileTab, activate); }
 
 QString NavigationPaneCoordinator::filesSearchQuery() const
 {

@@ -3,6 +3,8 @@
 #include "mainwindow.h"
 #include "welcomecard.h"
 #include "workspacemanager.h"
+#include "tabmanager.h"
+#include "editorsplitcontroller.h"
 #include <QtWidgets>
 #include <QtTest>
 
@@ -30,6 +32,12 @@ private slots:
         window->workspaceManager->setWorkspaceAliasSelector([](QWidget*,const QString& suggested) { return suggested; });
         qInfo() << "MainWindow devicePixelRatio:" << window->devicePixelRatioF() << "logical size:" << window->size();
         auto* welcome=window->findChild<QScrollArea*>("welcomePage");QVERIFY(welcome);QTRY_VERIFY(welcome->isVisible());
+        auto* tabs=window->findChild<TabManager*>();QVERIFY(tabs);
+        tabs->createNewTab();QTRY_VERIFY(!welcome->isVisible());
+        auto* registry=tabs->editorSplitController();auto* page=registry->activeGroup()->currentWidget();QVERIFY(page);
+        QVERIFY(registry->movePage(page,registry->regionGroup("left")));
+        QVERIFY(!registry->regionHasPages("main"));QVERIFY(!welcome->isVisible());
+        QVERIFY(tabs->closeAllTabs());QTRY_VERIFY(welcome->isVisible());
         QList<WelcomeCard*> cards;
         for (int i=0;i<3;++i) {
             auto* card=dynamic_cast<WelcomeCard*>(window->findChild<QPushButton*>(QString("welcomeCard%1").arg(i)));

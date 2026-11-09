@@ -22,6 +22,7 @@ public:
                                 QWidget* parent = nullptr);
     ~WebEditorContainer() override;
     bool postMessage(const QJsonObject& message);
+    void focusContent();
     void setAssetResolver(AssetResolver resolver);
     void setZoomFactor(double factor);
     void shutdown();
@@ -42,6 +43,7 @@ protected:
     void hideEvent(QHideEvent* event) override;
     void focusInEvent(QFocusEvent* event) override;
     bool event(QEvent* event) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
     class Private;

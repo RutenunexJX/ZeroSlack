@@ -8,6 +8,14 @@ struct CompilationOrderRequest {
     QStringList includeDirectories;
     QHash<QString, QString> defines;
     QHash<QString, QString> overrides;
+    bool checkInstanceDefinitions = true;
+    bool useFileLanguage = false;
+};
+struct CompilationUnitFacts {
+    QSet<QString> packages, imports, scopes, classes, units, instances, forwardPackageUses;
+    QSet<QString> simulationTops, bindTargets;
+    QStringList inputs;
+    QStringList diagnostics;
 };
 struct CompilationOrderResult {
     QStringList files;
@@ -23,4 +31,10 @@ class CompilationOrderService {
 public:
     static CompilationOrderResult plan(const CompilationOrderRequest& request,
                                       const std::function<bool()>& cancelled = {});
+    static CompilationOrderResult plan(const CompilationOrderRequest& request,
+                                      SemanticInputCapture& capture,
+                                      const std::function<bool()>& cancelled = {});
+    static CompilationUnitFacts inspectUnit(const CompilationOrderRequest& request,
+                                            const QString& file, SemanticInputCapture& capture,
+                                            const std::function<bool()>& cancelled = {});
 };

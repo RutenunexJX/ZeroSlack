@@ -1,4 +1,5 @@
 #include "tabmanager.h"
+#include <QSplitter>
 #include "documentblockstore.h"
 #include "documenttemplatemodel.h"
 #include "workspacesessionstateservice.h"
@@ -15,6 +16,7 @@
 #include <QEvent>
 #include <QFileInfo>
 #include <QJsonDocument>
+#include <QJsonArray>
 #include <QMessageBox>
 #include <QScrollBar>
 #include <QScopedValueRollback>
@@ -327,13 +329,10 @@ TabManager::TabManager(QTabWidget* initialTabWidget, QObject* parent)
             &EditorSplitController::tabActionRequested,
             this,
             &TabManager::handleTabAction);
-    connect(splitController.get(),
-            &EditorSplitController::activeGroupChanged,
-            this,
-            [this](QTabWidget* group) {
-                handleCurrentTabChanged(
-                    group,
-                    group ? group->currentIndex() : -1);
+    connect(splitController.get(), &EditorSplitController::pageActivated, this,
+            [this](QWidget*) {
+                auto* group=splitController->activeGroup();
+                handleCurrentTabChanged(group,group ? group->currentIndex() : -1);
             });
     connect(splitController.get(),
             &EditorSplitController::layoutChanged,
@@ -347,6 +346,19 @@ TabManager::TabManager(QTabWidget* initialTabWidget, QObject* parent)
             &TabManager::workspaceSessionStateChanged);
 
     previousActiveEditor = getCurrentEditor();
+    lastActionEditor = previousActiveEditor;
+    connect(qApp,&QApplication::focusChanged,this,[this](QWidget*,QWidget* now) {
+        if (!now) return;
+        for (auto* widget=now; widget; widget=widget->parentWidget()) {
+            if (auto* editor=qobject_cast<MyCodeEditor*>(widget); editor && sharedDocumentForEditor(editor)) {
+                lastActionEditor=editor; contextDocumentPage=editor; return;
+            }
+        }
+        for (auto* group : splitController->groups()) {
+            auto* page=group->currentWidget();
+            if (page && (page==now || page->isAncestorOf(now))) { lastActionEditor.clear(); return; }
+        }
+    });
     QTimer::singleShot(0, this, [this] {
         scanCrashRecoveryCandidates(temporaryRecoveryWorkspace());
     });
@@ -511,7 +523,7 @@ bool TabManager::writeRecoverySnapshot(SharedDocument* document, bool force)
 void TabManager::completeRecoverySnapshot(QObject* owner, const CrashRecoverySnapshotRequest& request,
                                          const CrashRecoveryWriteResult& result)
 {
-    if (auto* page = qobject_cast<WebDocumentPage*>(owner)) {
+    if (auto* page = qobject_cast<WebDocumentSession*>(owner)) {
         if (!result.succeeded()) emit crashRecoveryOperationFailed(page->documentId(), result.reason);
         return;
     }
@@ -738,7 +750,7 @@ TabManager::applyCrashRecoveryCandidate(
             delete page; result.status = claimed.succeeded() ? CrashRecoveryStatus::IdentityMismatch : claimed.status; result.reason = claimed.reason; return result;
         }
         registerWebDocument(page, activeTabWidget());
-        webRecoveryKeys[page].append({claimed.candidate.workspacePath, claimed.candidate.originalFilePath, claimed.candidate.untitledDocumentId});
+        webRecoveryKeys[page->documentSession().get()].append({claimed.candidate.workspacePath, claimed.candidate.originalFilePath, claimed.candidate.untitledDocumentId});
         result.status = CrashRecoveryStatus::Success; result.documentId = page->documentId(); result.openedView = true;
         result.reason = QStringLiteral("Recovered into an independent unsaved document. Use Save As after reviewing it; the source file was not overwritten.");
         return result;
@@ -1018,6 +1030,7 @@ bool TabManager::openFileInTab(const QString& requestedFileName)
         return true;
     }
 
+    if (PdfDocumentPage::supportsFile(fileName)) return openPdfDocument(fileName) != nullptr;
     if (WebDocumentPage::supportsFile(fileName)) return openWebDocument(fileName) != nullptr;
     SharedDocument* document =
         acquireFileDocument(fileName);
@@ -1065,7 +1078,20 @@ void TabManager::enableSplitLayout(QWidget* host)
 bool TabManager::splitCurrentView(
     EditorSplitDirection direction)
 {
-    if (currentWebDocument()) return moveCurrentViewToSplit(direction);
+    if (auto* current = currentPdfDocument()) {
+        auto* group = splitController->createSplit(activeTabWidget(), direction);
+        auto* page = group ? openPdfDocument(current->fileName(), group) : nullptr;
+        if (page) page->restoreViewState(current->viewState());
+        return page != nullptr;
+    }
+    if (auto* current = currentWebDocument()) {
+        if (!current->ready() || current->busy()) return false;
+        auto* created = splitController->createSplit(activeTabWidget(), direction);
+        if (!created) return false;
+        registerWebDocument(new WebDocumentPage(current->documentSession(), created), created);
+        return true;
+    }
+    if (!getCurrentEditor()) return moveCurrentViewToSplit(direction);
     MyCodeEditor* current = getCurrentEditor();
     SharedDocument* document =
         sharedDocumentForEditor(current);
@@ -1084,8 +1110,7 @@ bool TabManager::splitCurrentView(
 bool TabManager::moveCurrentViewToSplit(
     EditorSplitDirection direction)
 {
-    if (auto* page = currentWebDocument()) return splitController && splitController->movePageToSplit(page, direction, activeTabWidget());
-    MyCodeEditor* current = getCurrentEditor();
+    QWidget* current = activeTabWidget() ? activeTabWidget()->currentWidget() : nullptr;
     return current && splitController
         && splitController->movePageToSplit(
                current,
@@ -1096,6 +1121,15 @@ bool TabManager::moveCurrentViewToSplit(
 
 bool TabManager::duplicateCurrentView()
 {
+    if (auto* current = currentPdfDocument()) {
+        auto* page = openPdfDocument(current->fileName()); if (page) page->restoreViewState(current->viewState()); return page != nullptr;
+    }
+    if (auto* current = currentWebDocument()) {
+        if (!current->ready() || current->busy()) return false;
+        auto* group = activeTabWidget();
+        registerWebDocument(new WebDocumentPage(current->documentSession(), group), group);
+        return true;
+    }
     MyCodeEditor* current = getCurrentEditor();
     SharedDocument* document =
         sharedDocumentForEditor(current);
@@ -1129,7 +1163,7 @@ void TabManager::equalizeSplitSizes()
 int TabManager::splitCount() const
 {
     return splitController
-        ? splitController->groupCount()
+        ? splitController->groups(splitController->regionForGroup(activeTabWidget())).size()
         : (tabWidget ? 1 : 0);
 }
 
@@ -1179,8 +1213,7 @@ MyCodeEditor* TabManager::editorActionTarget(
             return editor;
     }
 
-    MyCodeEditor* current = getCurrentEditor();
-    return isRegistered(current) ? current : nullptr;
+    return isRegistered(lastActionEditor) ? lastActionEditor.data() : nullptr;
 }
 
 bool TabManager::saveEditorView(
@@ -1444,6 +1477,8 @@ bool TabManager::saveExternalConflictLocalAs(
 bool TabManager::closeOtherTabs()
 {
     QTabWidget* group = activeTabWidget();
+    QList<PdfDocumentPage*> pdfTargets;
+    for (auto* page : pdfDocuments()) if (splitController->groupForPage(page) == group && page != currentPdfDocument()) pdfTargets.append(page);
     QList<WebDocumentPage*> webTargets;
     for (auto* page : webDocuments()) if (splitController->groupForPage(page) == group && page != currentWebDocument()) webTargets.append(page);
     if (!confirmWebDocuments(webTargets)) return false;
@@ -1457,6 +1492,7 @@ bool TabManager::closeOtherTabs()
     }
     if (!closeEditorsAtomically(targets)) return false;
     for (auto* page : webTargets) closeWebDocument(page, false);
+    for (auto* page : pdfTargets) closePdfDocument(page);
     return true;
 }
 
@@ -1465,6 +1501,8 @@ bool TabManager::closeTabsToRight()
     QTabWidget* group = activeTabWidget();
     if (!group)
         return false;
+    QList<PdfDocumentPage*> pdfTargets;
+    for (auto* page : pdfDocuments()) if (splitController->groupForPage(page) == group && group->indexOf(page) > group->currentIndex()) pdfTargets.append(page);
     QList<WebDocumentPage*> webTargets;
     for (auto* page : webDocuments()) if (splitController->groupForPage(page) == group && group->indexOf(page) > group->currentIndex()) webTargets.append(page);
     if (!confirmWebDocuments(webTargets)) return false;
@@ -1479,11 +1517,13 @@ bool TabManager::closeTabsToRight()
     }
     if (!closeEditorsAtomically(targets)) return false;
     for (auto* page : webTargets) closeWebDocument(page, false);
+    for (auto* page : pdfTargets) closePdfDocument(page);
     return true;
 }
 
 bool TabManager::closeAllTabs()
 {
+    const auto pdfTargets = pdfDocuments();
     const auto webTargets = webDocuments();
     if (!confirmWebDocuments(webTargets)) return false;
     QList<MyCodeEditor*> targets;
@@ -1493,6 +1533,7 @@ bool TabManager::closeAllTabs()
     }
     if (!closeEditorsAtomically(targets)) return false;
     for (auto* page : webTargets) closeWebDocument(page, false);
+    for (auto* page : pdfTargets) closePdfDocument(page);
     return true;
 }
 
@@ -1502,9 +1543,13 @@ bool TabManager::reopenClosedTab()
         return false;
     const ClosedTabState state =
         recentlyClosedTabs.takeLast();
+    if (state.pdfDocument) {
+        auto* page = openPdfDocument(state.fileName, closedTabGroup(state));
+        if (page) page->restoreViewState(state.pdfState);
+        return page != nullptr;
+    }
     if (state.webDocument) {
-        if (activateOpenFile(state.fileName)) return true;
-        return openWebDocument(state.fileName, ensureGroupIndex(state.groupIndex)) != nullptr;
+        return openWebDocument(state.fileName, closedTabGroup(state)) != nullptr;
     }
     SharedDocument* document = nullptr;
     if (state.fileName.isEmpty()) {
@@ -1521,7 +1566,7 @@ bool TabManager::reopenClosedTab()
         return false;
 
     QTabWidget* group =
-        ensureGroupIndex(state.groupIndex);
+        closedTabGroup(state);
     MyCodeEditor* editor =
         createView(document, group, state.viewState);
     if (!editor)
@@ -1600,13 +1645,16 @@ MyCodeEditor* TabManager::getEditorAt(int index) const
 
 DocumentSnapshot TabManager::getCurrentDocument() const
 {
-    if (currentWebDocument()) return getCurrentDocumentMetadata();
+    if (currentWebDocument() || currentPdfDocument()) return getCurrentDocumentMetadata();
     return documentQueries.currentDocument(
         getCurrentEditor());
 }
 
 DocumentSnapshot TabManager::getCurrentDocumentMetadata() const
 {
+    if (auto* page = currentPdfDocument()) {
+        DocumentSnapshot value; value.documentId = QStringLiteral("pdf:") + identityKey(page->fileName()); value.fileName = page->fileName(); value.saved = true; return value;
+    }
     if (auto* page = currentWebDocument()) {
         DocumentSnapshot value;
         value.documentId = page->documentId(); value.fileName = page->fileName();
@@ -1623,10 +1671,24 @@ DocumentSnapshot TabManager::getDocumentForEditor(
     return documentQueries.documentForEditor(editor);
 }
 
+MyCodeEditor* TabManager::contextEditor() const
+{
+    auto* editor = qobject_cast<MyCodeEditor*>(contextDocumentPage.data());
+    return sharedDocumentForEditor(editor) && editorVisibleInWorkspaceScope(editor) ? editor : nullptr;
+}
+
+DocumentSnapshot TabManager::contextDocumentMetadata() const
+{
+    return documentQueries.currentDocumentMetadata(contextEditor());
+}
+
 bool TabManager::activateOpenFile(const QString& fileName)
 {
+    for (auto* page : pdfDocuments()) if (EditorFileIdentity::same(page->fileName(), fileName)) {
+        if (splitController->activatePage(page)) return true;
+    }
     for (auto* page : webDocuments()) if (!page->fileName().isEmpty() && EditorFileIdentity::same(page->fileName(), fileName)) {
-        if (auto* group = splitController->groupForPage(page)) { splitController->setActiveGroup(group); group->setCurrentWidget(page); page->setFocus(); return true; }
+        if (splitController->activatePage(page)) return true;
     }
     if (!sharedDocuments || !splitController)
         return false;
@@ -1641,10 +1703,7 @@ bool TabManager::activateOpenFile(const QString& fileName)
             group ? group->indexOf(editor) : -1;
         if (group && index >= 0
             && group->isTabVisible(index)) {
-            splitController->setActiveGroup(group);
-            group->setCurrentIndex(index);
-            editor->setFocus();
-            return true;
+            return splitController->activatePage(editor);
         }
     }
     return false;
@@ -1695,6 +1754,7 @@ QWidget* TabManager::openToolPage(QWidget* page,
         return nullptr;
     page->setProperty("toolPage", true);
     page->setProperty("toolPageId", stableId);
+    splitController->registerPage(page,QStringLiteral("tool:")+stableId,QStringLiteral("tool"));
     page->setParent(group);
     const int index = group->addTab(page, title);
     group->setTabToolTip(index, title);
@@ -1712,9 +1772,7 @@ bool TabManager::activateToolPage(const QString& stableId)
     QTabWidget* group = splitController->groupForPage(page);
     if (!group)
         return false;
-    splitController->setActiveGroup(group);
-    group->setCurrentWidget(page);
-    return true;
+    return splitController->activatePage(page);
 }
 
 bool TabManager::closeActiveToolPage(const QString& stableId)
@@ -1740,6 +1798,7 @@ QString TabManager::getPlainTextFromOpenFile(
 QStringList TabManager::getAllOpenFileNames() const
 {
     QStringList result = documentQueries.allOpenFileNames();
+    for (auto* page : pdfDocuments()) if (!result.contains(page->fileName())) result.append(page->fileName());
     for (auto* page : webDocuments()) if (!page->fileName().isEmpty() && !result.contains(page->fileName())) result.append(page->fileName());
     return result;
 }
@@ -1815,6 +1874,7 @@ void TabManager::setWorkspaceScope(
             lastWorkspaceEditors.insert(previousRoot, editor);
     }
     changingWorkspaceScope = true;
+    if (switched) contextDocumentPage.clear();
     scopedWorkspaceRoots =
         lexicalTabWorkspaceRoots(workspaceRoots);
     activeWorkspaceRoot =
@@ -1849,6 +1909,7 @@ void TabManager::setWorkspaceScope(
             }
         }
         if (preferred) {
+            contextDocumentPage = preferred;
             if (QTabWidget* group = splitController->groupForPage(preferred)) {
                 splitController->setActiveGroup(group);
                 group->setCurrentWidget(preferred);
@@ -1914,6 +1975,7 @@ bool TabManager::closeTabsInWorkspace(
     }
     if (!resolvePendingDocuments(documents, nullptr)) return false;
     for (auto* page : webPending) closeWebDocument(page, false);
+    for (auto* page : pdfDocuments()) if (identityKey(workspaceForFile(page->fileName())) == identityKey(workspaceRoot)) closePdfDocument(page);
     for (MyCodeEditor* editor : auxiliary) {
         if (documents.contains(sharedDocumentForEditor(editor)))
             closeAuxiliaryViewInternal(editor, true);
@@ -1952,7 +2014,8 @@ bool TabManager::prepareWorkspacePathMutation(
     WorkspacePathMutation* prepared,
     QWidget* dialogParent,
     QString* failureReason,
-    const WorkspacePathMutationGuard& guard)
+    const WorkspacePathMutationGuard& guard,
+    const QString& renameTarget)
 {
     if (prepared) *prepared = {};
     if (failureReason)
@@ -1967,15 +2030,22 @@ bool TabManager::prepareWorkspacePathMutation(
 
     QList<SharedDocument*> affectedDocuments;
     QList<WebDocumentPage*> affectedWebDocuments;
-    for (auto* page : webDocuments()) if (documentPathMatchesMutation(page->fileName(), sourcePath, recursive)) affectedWebDocuments.append(page);
+    QSet<WebDocumentSession*> affectedWebSessions;
+    for (auto* page : webDocuments()) if (documentPathMatchesMutation(page->fileName(), sourcePath, recursive)
+        && !affectedWebSessions.contains(page->documentSession().get())) {
+        affectedWebSessions.insert(page->documentSession().get()); affectedWebDocuments.append(page);
+    }
     QList<WorkspacePathMutation::WebDocument> confirmedWebDocuments;
+    const auto renamedPath = [&](const QString& path) {
+        return renameTarget.isEmpty() ? QString() : recursive ? QDir(renameTarget).filePath(QDir(sourcePath).relativeFilePath(path)) : renameTarget;
+    };
     for (auto* page : affectedWebDocuments) {
-        if (!page->confirmClose()) return false;
+        if (renameTarget.isEmpty() && !page->documentSession()->confirmClose()) return false;
         if (!documentPathMatchesMutation(page->fileName(), sourcePath, recursive)) continue;
         const quint64 revision = page->currentRevision();
-        auto lock = page->lockForPathMutation(revision, failureReason);
+        auto lock = page->documentSession()->lockForPathMutation(revision, failureReason, !renameTarget.isEmpty());
         if (!lock) return false;
-        confirmedWebDocuments.append({page, page->fileName(), revision, std::move(lock)});
+        confirmedWebDocuments.append({page, page->fileName(), revision, std::move(lock), renamedPath(page->fileName())});
     }
     QList<WorkspacePathMutation::Document> confirmedDocuments;
     for (SharedDocument* document :
@@ -2023,6 +2093,8 @@ bool TabManager::prepareWorkspacePathMutation(
     if (guard.validate && !guard.validate(failureReason)) return false;
     prepared->owner = this;
     prepared->webDocuments = confirmedWebDocuments;
+    for (auto* page : pdfDocuments()) if (documentPathMatchesMutation(page->fileName(), sourcePath, recursive))
+        prepared->pdfDocuments.append({page, page->fileName(), renamedPath(page->fileName())});
     for (const auto& entry : confirmedDocuments) {
         // Save As may have deliberately moved a pending document away.
         if (entry.document && entry.document->documentId() != entry.identity
@@ -2042,6 +2114,8 @@ bool TabManager::validateWorkspacePathMutation(const WorkspacePathMutation& prep
         return false;
     };
     if (prepared.owner != this) return fail();
+    for (const auto& entry : prepared.pdfDocuments)
+        if (!entry.page || entry.page->fileName() != entry.path || !splitController->groupForPage(entry.page)) return fail();
     for (const auto& entry : prepared.webDocuments)
         if (!entry.page || !entry.lock || entry.page->fileName() != entry.path || entry.page->currentRevision() != entry.revision || !entry.page->busy()) return fail();
     for (const auto& entry : prepared.documents) {
@@ -2065,11 +2139,25 @@ bool TabManager::finalizeWorkspacePathMutation(const WorkspacePathMutation& prep
     closingBatch = true;
     bool closedAll = true;
     for (const auto& entry : prepared.webDocuments) {
-        auto* page = entry.page.data();
-        auto* group = splitController->groupForPage(page);
-        if (!page || !group) { closedAll = false; continue; }
-        const QString name = page->fileName();
-        clearWebRecovery(page); group->removeTab(group->indexOf(page)); page->deleteLater(); emit tabClosed(name);
+        auto* original = entry.page.data();
+        if (!original) { closedAll = false; continue; }
+        const auto session = original->documentSession();
+        if (!entry.target.isEmpty()) {
+            if (!session->retargetAfterRename(entry.target, failureReason)) closedAll = false;
+            continue;
+        }
+        clearWebRecovery(original);
+        for (auto* page : session->views()) {
+            auto* group = splitController->groupForPage(page);
+            if (!group) { closedAll = false; continue; }
+            const QString name = page->fileName(); group->removeTab(group->indexOf(page));
+            page->releaseView(); page->deleteLater(); emit tabClosed(name);
+        }
+    }
+    for (const auto& entry : prepared.pdfDocuments) {
+        if (!entry.page) { closedAll = false; continue; }
+        if (!entry.target.isEmpty()) closedAll = entry.page->openFile(entry.target, failureReason) && closedAll;
+        else closedAll = closePdfDocument(entry.page, false) && closedAll;
     }
     for (const auto& guardedEditor : std::as_const(affectedEditors)) {
         auto* editor = guardedEditor.data();
@@ -2083,7 +2171,7 @@ bool TabManager::finalizeWorkspacePathMutation(const WorkspacePathMutation& prep
     closingBatch = false;
     if (splitController)
         splitController->removeEmptyGroups();
-    if (!closedAll && failureReason) {
+    if (!closedAll && failureReason && failureReason->isEmpty()) {
         *failureReason = QStringLiteral(
             "The file operation completed, but an affected editor "
             "view could not be closed.");
@@ -2098,192 +2186,180 @@ TabManager::unsavedDocumentManagerForTesting() const
 }
 
 QList<WorkspaceSessionTabState>
-TabManager::workspaceSessionTabs(
-    const QString& workspaceRoot) const
+TabManager::workspaceSessionTabs(const QString& workspaceRoot) const
 {
     QList<WorkspaceSessionTabState> states;
-    if (workspaceRoot.isEmpty())
-        return states;
-    const QList<QTabWidget*> groups =
-        splitController
-        ? splitController->groups()
-        : QList<QTabWidget*>{tabWidget};
-    for (int groupPosition = 0;
-         groupPosition < groups.size();
-         ++groupPosition) {
-        QTabWidget* group = groups.at(groupPosition);
-        for (int index = 0;
-             group && index < group->count();
-             ++index) {
-            if (auto* page = qobject_cast<WebDocumentPage*>(group->widget(index))) {
-                if (identityKey(workspaceForFile(page->fileName())) == identityKey(workspaceRoot) && QFileInfo(page->fileName()).isFile()) {
-                    WorkspaceSessionTabState state; state.filePath = page->fileName(); state.groupIndex = groupPosition; state.tabIndex = index;
-                    state.active = page == currentWebDocument(); state.viewId = page->documentId(); states.append(state);
-                }
-                continue;
-            }
-            MyCodeEditor* editor =
-                qobject_cast<MyCodeEditor*>(
-                    group->widget(index));
-            if (!editor)
-                continue;
-            const DocumentSnapshot snapshot =
-                getDocumentForEditor(editor);
-            const QString filePath =
-                lexicalPath(
-                    snapshot.fileName);
-            if (identityKey(workspaceForFile(filePath)) != identityKey(workspaceRoot)
-                || !QFileInfo(filePath).isFile()
-                || !fileIo.isSystemVerilogFile(
-                    filePath)) {
-                continue;
-            }
-            const QTextCursor cursor =
-                editor->textCursor();
-            WorkspaceSessionTabState state;
-            state.filePath = filePath;
-            state.cursorLine =
-                cursor.blockNumber() + 1;
-            state.cursorColumn =
-                cursor.positionInBlock() + 1;
-            state.verticalScrollValue =
-                editor->verticalScrollBar()
-                ? editor->verticalScrollBar()->value()
-                : 0;
-            state.horizontalScrollValue =
-                editor->horizontalScrollBar()
-                ? editor->horizontalScrollBar()->value()
-                : 0;
-            state.active =
-                editor == getCurrentEditor()
-                || (isTemporaryEditor(getCurrentEditor())
-                    && lastWorkspaceEditors.value(identityKey(workspaceRoot)) == editor);
-            state.viewId =
-                editor->property(
-                          "editorViewId")
-                    .toString();
-            state.groupIndex = groupPosition;
-            state.tabIndex = index;
-            state.locked = isTabLocked(editor);
-            states.append(state);
-        }
+    if (workspaceRoot.isEmpty()) return states;
+    const auto groups = splitController->groups();
+    for (auto* group : groups) for (int index = 0; index < group->count(); ++index) {
+        QWidget* page = group->widget(index);
+        WorkspaceSessionTabState state;
+        if (auto* web = qobject_cast<WebDocumentPage*>(page)) {
+            state.filePath = web->fileName(); state.kind = web->documentKind() == WebDocumentPage::Kind::Markdown ? "markdown" : "blocks";
+            state.documentId = web->documentId(); state.viewId = web->viewIdentity(); state.viewState = web->viewState();
+        } else if (auto* pdf = qobject_cast<PdfDocumentPage*>(page)) {
+            state.filePath = pdf->fileName(); state.kind = "pdf"; state.documentId = "pdf:" + identityKey(state.filePath);
+            state.viewId = pdf->viewIdentity(); state.viewState = pdf->viewState();
+        } else if (auto* editor = qobject_cast<MyCodeEditor*>(page)) {
+            const auto snapshot = getDocumentForEditor(editor);
+            state.filePath = snapshot.fileName; state.documentId = snapshot.documentId; state.kind = "code";
+            if (!fileIo.isSystemVerilogFile(state.filePath)) continue;
+            const auto cursor = editor->textCursor();
+            state.cursorLine = cursor.blockNumber() + 1; state.cursorColumn = cursor.positionInBlock() + 1;
+            state.verticalScrollValue = editor->verticalScrollBar()->value();
+            state.horizontalScrollValue = editor->horizontalScrollBar()->value();
+            state.viewId = editor->property("editorViewId").toString(); state.locked = isTabLocked(editor);
+            QJsonArray folds;
+            for (const auto& range : editor->foldingViewState().collapsedRanges)
+                folds.append(QJsonObject{{"start", range.startAnchor.isNull() ? range.fallbackStartLine : range.startAnchor.blockNumber()},
+                    {"end", range.endAnchor.isNull() ? range.fallbackEndLine : range.endAnchor.blockNumber()}});
+            state.viewState = {{"cursor", cursor.position()}, {"anchor", cursor.anchor()}, {"folds", folds}};
+            state.active = editor == getCurrentEditor() || (isTemporaryEditor(getCurrentEditor())
+                && lastWorkspaceEditors.value(identityKey(workspaceRoot)) == editor);
+        } else continue;
+        if (identityKey(workspaceForFile(state.filePath)) != identityKey(workspaceRoot) || !QFileInfo(state.filePath).isFile()) continue;
+        state.pageId = splitController->pageId(page); state.regionId = splitController->regionForGroup(group);
+        state.groupId = splitController->groupId(group); state.groupIndex = groups.indexOf(group); state.tabIndex = index;
+        state.active = state.active || (group == activeTabWidget() && group->currentWidget() == page);
+        states.append(state);
     }
     return states;
 }
 
-QStringList TabManager::restoreWorkspaceSessionTabs(
-    const QString& workspaceRoot,
-    const QList<WorkspaceSessionTabState>& tabs,
-    QStringList* skippedFiles)
+QJsonObject TabManager::workspaceSessionPageLayout(const QString& workspaceRoot) const
+{
+    QSet<QString> documentPages;
+    for (const auto& tab : workspaceSessionTabs(workspaceRoot)) documentPages.insert(tab.pageId);
+    return splitController->savePageLayout([&](QWidget* page) {
+        if (qobject_cast<MyCodeEditor*>(page) || qobject_cast<WebDocumentPage*>(page) || qobject_cast<PdfDocumentPage*>(page))
+            return documentPages.contains(splitController->pageId(page));
+        return true;
+    });
+}
+
+QStringList TabManager::restoreWorkspaceSessionTabs(const QString& workspaceRoot,
+    const QList<WorkspaceSessionTabState>& tabs, QStringList* skippedFiles)
 {
     QStringList restoredFiles;
-    if (workspaceRoot.isEmpty())
-        return restoredFiles;
-
-    QPointer<MyCodeEditor> activeEditor;
-    QPointer<WebDocumentPage> activeWebPage;
-    QSet<MyCodeEditor*> restoredViews;
-    for (const WorkspaceSessionTabState& tab : tabs) {
-        const QString filePath =
-            lexicalPath(tab.filePath);
-        if (WebDocumentPage::supportsFile(filePath) && identityKey(workspaceForFile(filePath)) == identityKey(workspaceRoot) && QFileInfo(filePath).isFile()) {
-            WebDocumentPage* page = nullptr;
-            for (auto* existing : webDocuments()) if (EditorFileIdentity::same(existing->fileName(), filePath)) { page = existing; break; }
-            if (!page) page = openWebDocument(filePath, ensureGroupIndex(tab.groupIndex));
-            if (page) { restoredFiles.append(filePath); if (tab.active) activeWebPage = page; }
-            else if (skippedFiles) skippedFiles->append(filePath);
-            continue;
+    if (workspaceRoot.isEmpty()) return restoredFiles;
+    QPointer<QWidget> activePage;
+    QSet<QWidget*> restoredViews;
+    QSet<QString> identities, pageIdentities;
+    QHash<QString, QString> documentPaths;
+    for (auto* web : webDocuments()) documentPaths.insert(web->documentId(), identityKey(web->fileName()));
+    const auto targetGroup = [&](const WorkspaceSessionTabState& tab) {
+        const QString region = tab.regionId.isEmpty() ? QStringLiteral("main") : tab.regionId;
+        if (auto* existing = splitController->groupById(tab.groupId);
+            existing && splitController->regionForGroup(existing) == region) return existing;
+        auto* anchor = splitController->regionGroup(region);
+        if (!anchor) anchor = splitController->initialGroup();
+        if (!tab.groupId.isEmpty()) {
+            auto* group = splitController->createSplit(anchor, EditorSplitDirection::Right);
+            if (group) { group->setProperty("pageGroupId", tab.groupId); return group; }
         }
-        if (identityKey(workspaceForFile(filePath)) != identityKey(workspaceRoot)
-            || !QFileInfo(filePath).isFile()
-            || !fileIo.isSystemVerilogFile(filePath)) {
-            if (skippedFiles)
-                skippedFiles->append(filePath);
-            continue;
+        // v4 group indexes described only the old central editor groups.
+        auto central = splitController->groups(QStringLiteral("main"));
+        const int index = qBound(0, tab.groupIndex, 127);
+        while (tab.regionId.isEmpty() && central.size() <= index) {
+            if (!splitController->createSplit(central.isEmpty() ? anchor : central.last(), EditorSplitDirection::Right)) break;
+            central = splitController->groups(QStringLiteral("main"));
         }
-
-        SharedDocument* document =
-            sharedDocuments->documentForFile(filePath);
-        if (!document)
-            document = acquireFileDocument(filePath);
-        if (!document) {
-            if (skippedFiles)
-                skippedFiles->append(filePath);
-            continue;
-        }
-        MyCodeEditor* existing = nullptr;
-        for (MyCodeEditor* view : document->views()) {
-            if (!isAuxiliaryView(view) && !restoredViews.contains(view)
-                && (tab.viewId.isEmpty() || view->property("editorViewId").toString() == tab.viewId)) {
-                existing = view;
-                break;
+        return tab.regionId.isEmpty() ? central.value(index, anchor) : anchor;
+    };
+    for (const auto& tab : tabs) {
+        const QString path = lexicalPath(tab.filePath);
+        const auto skip = [&] { if (skippedFiles) skippedFiles->append(path); };
+        if (identityKey(workspaceForFile(path)) != identityKey(workspaceRoot) || !QFileInfo(path).isFile()
+            || tab.viewId.size() > 128 || tab.pageId.size() > 128 || tab.groupId.size() > 128
+            || (!tab.regionId.isEmpty() && !splitController->regions().contains(tab.regionId))
+            || (!tab.viewId.isEmpty() && identities.contains(tab.viewId))) { skip(); continue; }
+        if (auto* existingGroup = splitController->groupById(tab.groupId); existingGroup
+            && splitController->regionForGroup(existingGroup) != (tab.regionId.isEmpty() ? QStringLiteral("main") : tab.regionId)) { skip(); continue; }
+        if (!tab.viewId.isEmpty()) identities.insert(tab.viewId);
+        if (!tab.pageId.isEmpty()) {
+            if (pageIdentities.contains(tab.pageId)) { skip(); continue; }
+            pageIdentities.insert(tab.pageId);
+            if (auto* existing = splitController->pageById(tab.pageId)) {
+                QString existingPath;
+                if (auto* web = qobject_cast<WebDocumentPage*>(existing)) existingPath = web->fileName();
+                else if (auto* pdf = qobject_cast<PdfDocumentPage*>(existing)) existingPath = pdf->fileName();
+                else if (auto* editor = qobject_cast<MyCodeEditor*>(existing)) existingPath = getDocumentForEditor(editor).fileName;
+                if (!EditorFileIdentity::same(existingPath, path)
+                    || (!tab.viewId.isEmpty() && existing->property("editorViewId").toString() != tab.viewId)) { skip(); continue; }
             }
         }
-        if (existing) {
-            restoredViews.insert(existing);
-            restoredFiles.append(filePath);
-            if (tab.active) activeEditor = existing;
-            continue;
+        const QString kind = WebDocumentPage::supportsFile(path) ? (WebDocumentPage::kindForFile(path) == WebDocumentPage::Kind::Markdown ? "markdown" : "blocks")
+            : PdfDocumentPage::supportsFile(path) ? "pdf" : fileIo.isSystemVerilogFile(path) ? "code" : QString();
+        if (kind.isEmpty() || (!tab.kind.isEmpty() && kind != tab.kind)) { skip(); continue; }
+        if ((kind == "markdown" || kind == "blocks") && !tab.documentId.isEmpty()) {
+            if (tab.documentId.size() > 128) { skip(); continue; }
+            const auto found = documentPaths.constFind(tab.documentId);
+            if (found != documentPaths.cend() && *found != identityKey(path)) { skip(); continue; }
+            documentPaths.insert(tab.documentId, identityKey(path));
         }
-        QTabWidget* group =
-            ensureGroupIndex(tab.groupIndex);
-        SharedDocumentViewState viewState;
-        viewState.viewId = tab.viewId;
-        MyCodeEditor* editor =
-            createView(document, group, viewState);
-        if (!editor) {
-            if (skippedFiles)
-                skippedFiles->append(filePath);
-            continue;
-        }
-        restoredViews.insert(editor);
-
-        QTextBlock block =
-            editor->document()->findBlockByNumber(
-                qMax(0, tab.cursorLine - 1));
-        if (!block.isValid())
-            block = editor->document()->lastBlock();
-        if (block.isValid()) {
-            const int column =
-                qBound(0,
-                       tab.cursorColumn - 1,
-                       qMax(0, block.text().size()));
-            QTextCursor cursor(block);
-            cursor.setPosition(
-                block.position() + column);
+        auto* group = targetGroup(tab);
+        QWidget* page = nullptr;
+        if (kind == "markdown" || kind == "blocks") {
+            WebDocumentPage* web = nullptr;
+            for (auto* candidate : webDocuments())
+                if (!restoredViews.contains(candidate) && EditorFileIdentity::same(candidate->fileName(), path)
+                    && (tab.viewId.isEmpty() || candidate->viewIdentity() == tab.viewId)) { web = candidate; break; }
+            QString issue;
+            if (!web) web = openWebDocument(path, group, tab.viewId, tab.documentId, &issue);
+            if (web) web->restoreViewState(tab.viewState);
+            page = web;
+        } else if (kind == "pdf") {
+            PdfDocumentPage* pdf = nullptr;
+            for (auto* candidate : pdfDocuments())
+                if (!restoredViews.contains(candidate) && EditorFileIdentity::same(candidate->fileName(), path)
+                    && (tab.viewId.isEmpty() || candidate->viewIdentity() == tab.viewId)) { pdf = candidate; break; }
+            QString issue;
+            if (!pdf) pdf = openPdfDocument(path, group, tab.viewId, &issue);
+            if (pdf) pdf->restoreViewState(tab.viewState);
+            page = pdf;
+        } else {
+            auto* document = sharedDocuments->documentForFile(path);
+            if (!document) document = acquireFileDocument(path);
+            if (!document) { skip(); continue; }
+            MyCodeEditor* editor = nullptr;
+            for (auto* candidate : document->views())
+                if (!isAuxiliaryView(candidate) && !restoredViews.contains(candidate)
+                    && (tab.viewId.isEmpty() || candidate->property("editorViewId").toString() == tab.viewId)) { editor = candidate; break; }
+            if (!editor) { SharedDocumentViewState view; view.viewId = tab.viewId; editor = createView(document, group, view); }
+            if (!editor) { skip(); continue; }
+            QTextCursor cursor(editor->document());
+            const int maximum = qMax(0, editor->document()->characterCount() - 1);
+            if (tab.viewState.contains("cursor")) {
+                cursor.setPosition(qBound(0, tab.viewState.value("anchor").toInt(), maximum));
+                cursor.setPosition(qBound(0, tab.viewState.value("cursor").toInt(), maximum), QTextCursor::KeepAnchor);
+            } else {
+                auto block = editor->document()->findBlockByNumber(qMax(0, tab.cursorLine - 1));
+                if (!block.isValid()) block = editor->document()->lastBlock();
+                cursor.setPosition(block.position() + qBound(0, tab.cursorColumn - 1, block.text().size()));
+            }
             editor->setTextCursor(cursor);
+            EditorFoldViewState folding;
+            for (const auto& value : tab.viewState.value("folds").toArray()) {
+                const auto range = value.toObject(); EditorFoldAnchorState fold;
+                fold.fallbackStartLine = range.value("start").toInt(-1); fold.fallbackEndLine = range.value("end").toInt(-1);
+                if (fold.fallbackStartLine >= 0 && fold.fallbackEndLine > fold.fallbackStartLine) folding.collapsedRanges.append(fold);
+            }
+            editor->restoreFoldingViewState(folding);
+            editor->verticalScrollBar()->setValue(qMax(0, tab.verticalScrollValue));
+            editor->horizontalScrollBar()->setValue(qMax(0, tab.horizontalScrollValue));
+            QTimer::singleShot(0, editor, [editor, vertical = tab.verticalScrollValue, horizontal = tab.horizontalScrollValue] {
+                editor->verticalScrollBar()->setValue(qMax(0, vertical)); editor->horizontalScrollBar()->setValue(qMax(0, horizontal));
+            });
+            setTabLocked(editor, tab.locked); page = editor;
         }
-        if (QScrollBar* bar =
-                editor->verticalScrollBar()) {
-            bar->setValue(
-                qMax(0,
-                     tab.verticalScrollValue));
-        }
-        if (QScrollBar* bar =
-                editor->horizontalScrollBar()) {
-            bar->setValue(
-                qMax(0,
-                     tab.horizontalScrollValue));
-        }
-        if (tab.locked)
-            setTabLocked(editor, true);
-        restoredFiles.append(filePath);
-        if (tab.active)
-            activeEditor = editor;
-    }
-
-    if (activeWebPage) {
-        if (auto* group = splitController->groupForPage(activeWebPage)) { splitController->setActiveGroup(group); group->setCurrentWidget(activeWebPage); }
-    } else if (activeEditor) {
-        QTabWidget* group =
-            splitController->groupForPage(
-                activeEditor);
-        if (group) {
-            splitController->setActiveGroup(group);
-            group->setCurrentWidget(activeEditor);
-        }
+        if (!page) { skip(); continue; }
+        if (!tab.pageId.isEmpty() && !splitController->registerPage(page, tab.pageId, kind)) { skip(); continue; }
+        restoredViews.insert(page); splitController->movePage(page, group, tab.tabIndex);
+        restoredFiles.append(path); if (tab.active) activePage = page;
     }
     applyWorkspaceScope();
+    if (activePage) splitController->activatePage(activePage, false);
+    splitController->removeEmptyGroups();
     return restoredFiles;
 }
 
@@ -2306,8 +2382,9 @@ void TabManager::applyWorkspaceScope()
                     qobject_cast<MyCodeEditor*>(
                         group->widget(index));
                 const auto* web = qobject_cast<WebDocumentPage*>(group->widget(index));
-                const QString webOwner = web ? workspaceForFile(web->fileName()) : QString();
-                const bool visible = web ? (webOwner.isEmpty() || identityKey(webOwner) == identityKey(activeWorkspaceRoot)) : editorVisibleInWorkspaceScope(editor);
+                const auto* pdf = qobject_cast<PdfDocumentPage*>(group->widget(index));
+                const QString webOwner = web ? workspaceForFile(web->fileName()) : pdf ? workspaceForFile(pdf->fileName()) : QString();
+                const bool visible = (web || pdf) ? (webOwner.isEmpty() || identityKey(webOwner) == identityKey(activeWorkspaceRoot)) : editorVisibleInWorkspaceScope(editor);
                 group->setTabVisible(index, visible);
                 if (visible
                     && firstVisibleIndex < 0) {
@@ -2382,6 +2459,7 @@ bool TabManager::eventFilter(
             || event->type()
                    == QEvent::MouseButtonPress)
         && splitController) {
+        lastActionEditor=editor;
         QTabWidget* group =
             splitController->groupForPage(editor);
         if (group) {
@@ -2440,9 +2518,8 @@ void TabManager::registerTabGroup(QTabWidget* group)
             &QTabWidget::currentChanged,
             this,
             [this, group](int index) {
-                handleCurrentTabChanged(
-                    group,
-                    index);
+                if (splitController->activeGroup()==group)
+                    emit workspaceSessionStateChanged();
             });
     if (QTabBar* bar = group->tabBar()) {
         connect(bar,
@@ -2471,6 +2548,7 @@ MyCodeEditor* TabManager::createView(
     if (!editorPointer)
         return nullptr;
 
+    splitController->registerPage(editorPointer, {}, QStringLiteral("code"));
     const int index =
         group->addTab(editorPointer, QString());
     group->setCurrentIndex(index);
@@ -2938,8 +3016,7 @@ bool TabManager::closeEditor(
         }
         closed.viewState =
             document->viewState(editor);
-        closed.groupIndex =
-            groupIndex(group);
+        rememberClosedGroup(closed, group);
         closed.locked = isTabLocked(editor);
         recentlyClosedTabs.append(closed);
         while (recentlyClosedTabs.size() > 20)
@@ -2956,6 +3033,7 @@ bool TabManager::closeEditor(
         EditorModeExitReason::DocumentClosed);
     editor->closeSemanticPopup();
     documentModel->unregisterEditor(editor);
+    splitController->unregisterPage(editor);
     group->removeTab(index);
     // Removing a focused editor delivers a synchronous focus-out event.
     // Keep its original QTextDocument alive until that event has completed;
@@ -2980,7 +3058,10 @@ bool TabManager::closePage(QTabWidget* group, const int index)
     if (!group || index < 0 || index >= group->count())
         return false;
     QWidget* page = group->widget(index);
+    if (splitController->hasPageCloseHandler(page))
+        return splitController->requestPageClose(page);
     if (auto* document = qobject_cast<WebDocumentPage*>(page)) return closeWebDocument(document);
+    if (auto* document = qobject_cast<PdfDocumentPage*>(page)) return closePdfDocument(document);
     if (auto* editor = qobject_cast<MyCodeEditor*>(page))
         return closeEditor(editor);
     if (!page || !page->property("toolPage").toBool())
@@ -2989,6 +3070,7 @@ bool TabManager::closePage(QTabWidget* group, const int index)
     const QString stableId = page->property("toolPageId").toString();
     if (!page->close())
         return false;
+    splitController->unregisterPage(page);
     group->removeTab(index);
     page->deleteLater();
     splitController->removeEmptyGroups();
@@ -3258,6 +3340,7 @@ void TabManager::applyTabGrouping()
     for (QTabWidget* group :
          splitController->groups()) {
         QList<MyCodeEditor*> ordered;
+        QList<int> editorSlots;
         for (int index = 0;
              index < group->count();
              ++index) {
@@ -3265,6 +3348,7 @@ void TabManager::applyTabGrouping()
                     qobject_cast<MyCodeEditor*>(
                         group->widget(index))) {
                 ordered.append(editor);
+                editorSlots.append(index);
             }
         }
         std::stable_sort(
@@ -3289,10 +3373,10 @@ void TabManager::applyTabGrouping()
             const int source =
                 group->indexOf(
                     ordered.at(target));
-            if (source != target)
+            if (source != editorSlots[target])
                 group->tabBar()->moveTab(
                     source,
-                    target);
+                    editorSlots[target]);
         }
         int firstTemporary = -1;
         bool hasWorkspaceTab = false;
@@ -3343,6 +3427,10 @@ void TabManager::handleCurrentTabChanged(
                 EditorModeExitReason::TabChanged);
     }
     previousActiveEditor = editor;
+    lastActionEditor = editor;
+    auto* page = group->widget(index);
+    if (editor || qobject_cast<WebDocumentPage*>(page) || qobject_cast<PdfDocumentPage*>(page))
+        contextDocumentPage = page;
     if (editor) {
         if (!changingWorkspaceScope && !isTemporaryEditor(editor)) {
             const QString owner = workspaceForFile(getDocumentForEditor(editor).fileName);
@@ -3360,6 +3448,8 @@ void TabManager::handleCurrentTabChanged(
         emit activeDocumentChanged(
             getCurrentDocumentMetadata());
         if (auto* page = currentWebDocument()) if (auto* host = qobject_cast<QWidget*>(parent()))
+            host->setWindowTitle(page->title() + QStringLiteral(" - ZeroSlack"));
+        if (auto* page = currentPdfDocument()) if (auto* host = qobject_cast<QWidget*>(parent()))
             host->setWindowTitle(page->title() + QStringLiteral(" - ZeroSlack"));
     }
     emit workspaceSessionStateChanged();
@@ -3434,8 +3524,10 @@ bool TabManager::executeRegisteredTabAction(
         == QString::fromLatin1(
             ActionIds::ViewEditorTabClose)) {
         if (auto* page = currentWebDocument()) return closeWebDocument(page) ? succeed() : fail(QStringLiteral("The document was not closed"));
-        if (!editor)
-            return fail(QStringLiteral("No editor tab is selected"));
+        if (!editor) {
+            auto* group=activeTabWidget();
+            return group && closePage(group,group->currentIndex()) ? succeed() : fail(QStringLiteral("The selected page was not closed"));
+        }
         if (isTabLocked(editor))
             return fail(QStringLiteral("The selected tab is locked"));
         return closeEditor(editor)
@@ -3577,40 +3669,37 @@ bool TabManager::closeEditorsAtomically(
     return closedAll;
 }
 
-int TabManager::groupIndex(QTabWidget* group) const
+void TabManager::rememberClosedGroup(ClosedTabState& state, QTabWidget* group) const
 {
-    return splitController
-        ? splitController->groups().indexOf(group)
-        : 0;
+    if (!splitController || !group) return;
+    state.regionId = splitController->regionForGroup(group);
+    state.groupId = splitController->groupId(group);
+    state.groupIndex = splitController->groups(state.regionId).indexOf(group);
+    if (auto* splitter = qobject_cast<QSplitter*>(group->parentWidget()))
+        state.splitOrientation = splitter->orientation();
 }
 
-QTabWidget* TabManager::ensureGroupIndex(int index)
+QTabWidget* TabManager::closedTabGroup(const ClosedTabState& state)
 {
-    if (!splitController)
-        return tabWidget;
-    const int targetIndex = qMax(0, index);
-    while (splitController->groupCount()
-           <= targetIndex) {
-        const QList<QTabWidget*> groups =
-            splitController->groups();
-        QTabWidget* source =
-            groups.isEmpty()
-            ? tabWidget
-            : groups.last();
-        if (splitController->initialGroup())
-            source = splitController->initialGroup();
-        if (!splitController->createSplit(
-                source,
-                EditorSplitDirection::Right)) {
-            break;
-        }
+    if (!splitController) return tabWidget;
+    if (auto* group = splitController->groupById(state.groupId)) return group;
+    const auto groups = splitController->groups(state.regionId);
+    if (groups.isEmpty()) return splitController->initialGroup();
+    const int index = qBound(0, state.groupIndex, int(groups.size()));
+    auto* neighbor = groups[qMin(index, int(groups.size()) - 1)];
+    auto* restored = neighbor;
+    if (neighbor->count()) {
+        const bool before = index < groups.size();
+        const auto direction = state.splitOrientation == Qt::Horizontal
+            ? (before ? EditorSplitDirection::Left : EditorSplitDirection::Right)
+            : (before ? EditorSplitDirection::Above : EditorSplitDirection::Below);
+        restored = splitController->createSplit(neighbor, direction);
+        if (restored && !state.groupId.isEmpty()) restored->setProperty("pageGroupId", state.groupId);
     }
-    const QList<QTabWidget*> groups =
-        splitController->groups();
-    return groups.isEmpty()
-        ? tabWidget
-        : groups.at(
-              qBound(0,
-                     targetIndex,
-                     groups.size() - 1));
+    // Reusing an empty region anchor preserves its identity. Remaining close
+    // records from the same removed group must follow that single replacement.
+    if (restored && !state.groupId.isEmpty())
+        for (auto& pending : recentlyClosedTabs)
+            if (pending.groupId == state.groupId) pending.groupId = splitController->groupId(restored);
+    return restored;
 }

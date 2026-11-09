@@ -1,5 +1,10 @@
 ZeroSlack document editor resources
 
+PDF reading: PDF.js / pdfjs-dist 6.5.438, Apache-2.0 license.
+The unmodified distribution archive, package metadata and license are included.
+The reader also retains the upstream font, image decoder and color profile
+licenses alongside their corresponding runtime resources under pdf/vendor/.
+
 Markdown: MarkText 0.23.0, Muya workspace source, commit
 18fdc1eddc7d36d9b205180d058982f71f4f6373. MIT license.
 Block documents: BlockSuite 0.22.4, source commit
@@ -28,6 +33,8 @@ Build adaptations:
 - The BlockSuite pointer watcher checks the current event's pressed buttons,
   keeping the existing drag handle stable before native drag start.
 - BlockSuite CSS is compiled with vanilla-extract; fonts and assets are local.
+- Muya structured operations and BlockSuite Yjs transactions use document-level
+  SharedWorkers for content and undo history shared by independent views.
 All other editing behavior is supplied by the pinned upstream implementations.
 
 Open Sans font metadata identifies Version 3.000 and Copyright 2020 The

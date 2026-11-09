@@ -12,6 +12,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSettings>
+#include <QLockFile>
 #include <QTemporaryDir>
 
 #include <iostream>
@@ -323,6 +324,14 @@ int main(int argc, char* argv[])
     sessionA.tabs[0].groupIndex = 1;
     sessionA.tabs[0].tabIndex = 2;
     sessionA.tabs[0].locked = true;
+    sessionA.tabs[0].regionId = "left";
+    sessionA.tabs[0].groupId = "stable-group";
+    sessionA.tabs[0].pageId = "stable-page";
+    sessionA.tabs[0].kind = "code";
+    sessionA.tabs[0].documentId = "document-top-a";
+    sessionA.tabs[0].viewState = {{"cursor", 25}, {"anchor", 3}};
+    sessionA.ui.pageLayout = {{"version", 1}, {"activePage", "stable-page"}, {"regions", QJsonArray{QJsonObject{
+        {"id", "left"}, {"tree", QJsonObject{{"id", "stable-group"}, {"anchor", true}, {"pages", QJsonArray{"stable-page"}}}}}}}};
     sessionA.ui.mainWindowGeometry =
         QByteArrayLiteral("geometry-a");
     sessionA.ui.mainWindowState =
@@ -436,6 +445,13 @@ int main(int argc, char* argv[])
               && loadA.state.tabs.first().groupIndex == 1
               && loadA.state.tabs.first().tabIndex == 2
               && loadA.state.tabs.first().locked
+              && loadA.state.tabs.first().regionId == "left"
+              && loadA.state.tabs.first().groupId == "stable-group"
+              && loadA.state.tabs.first().pageId == "stable-page"
+              && loadA.state.tabs.first().documentId == "document-top-a"
+              && loadA.state.tabs.first().kind == "code"
+              && loadA.state.tabs.first().viewState == sessionA.tabs.first().viewState
+              && loadA.state.ui.pageLayout == sessionA.ui.pageLayout
               && loadA.state.ui.mainWindowState
                      == QByteArrayLiteral(
                          "dock-state-a")
@@ -491,6 +507,26 @@ int main(int argc, char* argv[])
     QJsonDocument editableSession =
         QJsonDocument::fromJson(savedSessionBytes);
     QJsonObject editableRoot = editableSession.object();
+    {
+        auto v4 = editableRoot; v4.insert("version", 4);
+        auto oldUi = v4.value("ui").toObject(); oldUi.remove("pageLayout"); v4.insert("ui", oldUi);
+        auto oldTabs = v4.value("tabs").toArray();
+        for (int i = 0; i < oldTabs.size(); ++i) {
+            auto tab = oldTabs[i].toObject();
+            for (const auto* key : {"regionId", "groupId", "pageId", "kind", "documentId", "viewState"}) tab.remove(key);
+            oldTabs[i] = tab;
+        }
+        v4.insert("tabs", oldTabs);
+        rawSessionSettings.setValue(workspaceAStateKey, QJsonDocument(v4).toJson(QJsonDocument::Compact)); rawSessionSettings.sync();
+        const auto originalV4 = readFile(localStore);
+        const auto old = sessionService.load(workspaceA);
+        check(old.loaded && old.state.tabs.size() == 2 && old.state.tabs[0].groupIndex == 1
+            && old.state.tabs[0].regionId.isEmpty() && old.state.ui.pageLayout.isEmpty(), "v4 remains readable without inventing side-region identities");
+        QLockFile busy(localStore + ".write.lock"); check(busy.tryLock(0), "migration failure fixture locks the existing store");
+        check(!sessionService.save(old.state).saved && readFile(localStore) == originalV4, "failed v4 migration preserves the previous complete bytes");
+        busy.unlock(); check(sessionService.save(old.state).saved, "v4 migration can retry after the write failure");
+        rawSessionSettings.setValue(workspaceAStateKey, savedSessionBytes); rawSessionSettings.sync();
+    }
     QJsonObject editableUi =
         editableRoot.value(QStringLiteral("ui")).toObject();
     QJsonObject editableContext =

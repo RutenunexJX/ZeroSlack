@@ -7,11 +7,13 @@
 #include "contextfloatingwindow.h"
 #include "contextrail.h"
 #include "panellayoutcontroller.h"
+#include "editorsplitcontroller.h"
 #include "navigationpanecoordinator.h"
 #include "temporaryeditorcontextprovider.h"
 #include "../src/integrations/xips/xipscontextprovider.h"
 #include "workspacesessionstateservice.h"
 #include "ElaDrawerArea.h"
+#include "ElaTabWidget.h"
 #include <QAction>
 #include <QApplication>
 #include <QCursor>
@@ -29,6 +31,9 @@
 #include <QSplitter>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QTimer>
+#include <QTabBar>
+#include <QElapsedTimer>
 #ifdef Q_OS_WIN
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -54,14 +59,8 @@ bool mouseButton(bool down) {
     Q_UNUSED(down); return false;
 #endif
 }
-void movePointer(const QPoint& destination) {
-    const QPoint start = QCursor::pos();
-    for (int i = 1; i <= 12; ++i) {
-        QCursor::setPos(start + (destination - start) * i / 12);
-        QTest::qWait(16);
-    }
-}
-bool drag(QWidget* handle, const QPoint& destination, const std::function<void()>& held = {}) {
+bool drag(QWidget* handle, const QPoint& destination, const std::function<void()>& held = {},
+          const std::function<QPoint()>& currentDestination = {}) {
     if (!handle || !handle->isVisible()) {
         qWarning() << "Unavailable drag handle:" << handle;
         return false;
@@ -72,12 +71,24 @@ bool drag(QWidget* handle, const QPoint& destination, const std::function<void()
     QCursor::setPos(start); QTest::qWait(40);
     if (!mouseButton(true)) return false;
     const auto release = qScopeGuard([] { mouseButton(false); });
-    QTest::qWait(30);
-    movePointer(start + QPoint(-32, 20));
-    movePointer(destination);
-    QTest::qWait(80);
-    if (held) held();
-    return true;
+    // OLE runs a nested event loop during a shared-tab drag. Continue physical
+    // pointer motion from a timer so that loop also receives the release.
+    bool finished = false;
+    int step = 0;
+    QTimer motion;
+    QObject::connect(&motion, &QTimer::timeout, &motion, [&] {
+        ++step;
+        const QPoint target = currentDestination ? currentDestination() : destination;
+        QCursor::setPos(start + (target - start) * qMin(step, 20) / 20);
+        if (step == 24) {
+            if (held) held();
+            mouseButton(false); finished = true; motion.stop();
+        }
+    });
+    motion.start(16);
+    QElapsedTimer elapsed; elapsed.start();
+    while (!finished && elapsed.elapsed() < 5000) QTest::qWait(20);
+    return finished;
 }
 }
 
@@ -91,6 +102,7 @@ class WorkspaceDockingTest final : public QObject {
 private slots:
     void initTestCase() {
         QVERIFY(profile.isValid());
+        QCoreApplication::setOrganizationName("ZeroSlackWorkspaceDockingTest");
         QCoreApplication::setApplicationName("ZeroSlack-Workspace-Docking-Test");
         QSettings::setDefaultFormat(QSettings::IniFormat);
         QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, profile.path());
@@ -143,6 +155,9 @@ private slots:
         const auto editor = TemporaryEditorContextProvider::resourceForLocation(location, workspace.path());
         QVERIFY(context->openResource(editor, pinned));
         auto* host = context->dockHost();
+        auto* registry = panels->tabHostController(); QVERIFY(registry);
+        auto* primaryGroup = registry->regionGroup("bottom"); QVERIFY(primaryGroup);
+        auto* primaryPage = primaryGroup->currentWidget(); QVERIFY(primaryPage);
         const QString xipsKey = xips.stableKey(), editorKey = editor.stableKey();
         QPointer<QWidget> xipsView = context->viewForResource(xipsKey);
         QPointer<QWidget> editorView = context->viewForResource(editorKey);
@@ -151,27 +166,26 @@ private slots:
         settle(window);
         capture(&window, prefix + "-start");
         const auto detach = [&](const QString& key) {
-            bool dragging = false;
             auto* grip = host->sectionDragHandle(key);
-            const QPoint destination = window.centralWidget()->mapToGlobal(window.centralWidget()->rect().center());
-            const bool sent = drag(grip, destination, [&] {
-                auto* floating = context->floatingWindow();
-                dragging = floating && floating->hasResource() && floating->isDockDragging();
-                if (floating) capture(floating, prefix + "-floating");
-            });
+            if (!grip || !grip->isVisible()) return false;
+            QCursor::setPos(grip->mapToGlobal(grip->rect().center()));
+            const bool sent = mouseButton(true); QTest::qWait(30); mouseButton(false);
             settle(window);
-            qInfo() << "detach" << key << "Win32 input" << sent << "native drag active" << dragging;
-            return sent && dragging;
+            auto* group = qobject_cast<ElaTabWidget*>(registry->groupForPage(host->sectionWidget(key)));
+            const bool floated = group && group->isFloatingTabWidget() && group->window()->isVisible();
+            if (floated) capture(group->window(), prefix + "-floating");
+            qInfo() << "float" << key << "Win32 input" << sent << "shared floating group" << floated;
+            return sent && floated;
         };
         panels->setBottomCollapsed(true);
         QVERIFY(detach(xipsKey));
         QVERIFY(panels->isBottomCollapsed());
-        auto* floating = context->floatingWindow();
-        QVERIFY(floating && floating->isFloating() && floating->isVisible());
-        QCOMPARE(floating->view(), xipsView.data());
+        auto* floating = qobject_cast<ElaTabWidget*>(registry->groupForPage(host->sectionWidget(xipsKey)));
+        QVERIFY(floating && floating->isFloatingTabWidget() && floating->window()->isVisible());
+        QVERIFY(floating->isAncestorOf(xipsView.data()));
         QCOMPARE(host->viewForResource(editorKey), editorView.data());
         auto* navigationDock = window.findChild<QDockWidget*>("navigationDock"); QVERIFY(navigationDock);
-        QVERIFY(drag(floating->titleBar(), navigationDock->mapToGlobal(navigationDock->rect().center())));
+        QVERIFY(drag(floating->tabBar(), navigationDock->mapToGlobal(navigationDock->rect().center())));
         settle(window);
         QCOMPARE(host->resourceArea(xipsKey), Qt::LeftDockWidgetArea);
         QCOMPARE(host->viewForResource(xipsKey), xipsView.data());
@@ -195,50 +209,62 @@ private slots:
         panels->setBottomCollapsed(true);
         QVERIFY(detach(xipsKey));
         QVERIFY(panels->isBottomCollapsed());
-        floating = context->floatingWindow(); QVERIFY(floating);
-        QVERIFY(drag(floating->titleBar(), primary->mapToGlobal(primary->rect().center())));
+        floating = qobject_cast<ElaTabWidget*>(registry->groupForPage(host->sectionWidget(xipsKey))); QVERIFY(floating);
+        panels->setBottomCollapsed(false); settle(window);
+        const auto primaryEdge = [=] { return primaryGroup->mapToGlobal(QPoint(primaryGroup->width() - 1, primaryGroup->height() / 2)); };
+        QVERIFY(drag(floating->tabBar(), primaryEdge(), {}, primaryEdge));
         settle(window);
         QCOMPARE(host->resourceArea(xipsKey), Qt::BottomDockWidgetArea);
         QCOMPARE(host->viewForResource(xipsKey), xipsView.data());
-        QVERIFY(primary->isVisible()); QCOMPARE(panels->activeBottomPanelId(), activePanel);
+        QVERIFY(primary->isVisible()); QCOMPARE(primaryGroup->currentWidget(), primaryPage);
         QVERIFY(detach(editorKey));
-        floating = context->floatingWindow(); QVERIFY(floating);
-        QVERIFY(drag(floating->titleBar(), host->bottomWidget()->mapToGlobal(host->bottomWidget()->rect().center())));
+        floating = qobject_cast<ElaTabWidget*>(registry->groupForPage(host->sectionWidget(editorKey))); QVERIFY(floating);
+        auto* bottomTarget = registry->groupForPage(host->sectionWidget(xipsKey)); QVERIFY(bottomTarget);
+        const auto bottomEdge = [=] { return bottomTarget->mapToGlobal(QPoint(bottomTarget->width() - 1, bottomTarget->height() / 2)); };
+        QVERIFY(drag(floating->tabBar(), bottomEdge(), {}, bottomEdge));
         settle(window);
         QCOMPARE(host->areaResourceCount(true), 2);
         QCOMPARE(host->viewForResource(editorKey), editorView.data());
-        auto* outer = window.findChild<QSplitter*>("bottomWorkspaceSplitter");
-        auto* inner = window.findChild<QSplitter*>("contextBottomSplitter");
-        QVERIFY(outer && inner); QCOMPARE(outer->orientation(), Qt::Horizontal); QCOMPARE(inner->orientation(), Qt::Horizontal);
-        QCOMPARE(outer->count(), 2); QCOMPARE(inner->count(), 2);
-        const QRect primaryRect(primary->mapToGlobal(QPoint()), primary->size());
-        const QRect contextRect(host->bottomWidget()->mapToGlobal(QPoint()), host->bottomWidget()->size());
-        QVERIFY(primaryRect.right() <= contextRect.left());
+        QVERIFY(!context->dockWidget()->isVisible());
+        auto* xipsGroup = registry->groupForPage(host->sectionWidget(xipsKey));
+        auto* editorGroup = registry->groupForPage(host->sectionWidget(editorKey));
+        auto* outer = qobject_cast<QSplitter*>(primaryGroup->parentWidget());
+        QVERIFY(outer && xipsGroup && editorGroup); QCOMPARE(outer->orientation(), Qt::Horizontal);
+        QCOMPARE(outer->count(), 3); QCOMPARE(xipsGroup->parentWidget(), outer); QCOMPARE(editorGroup->parentWidget(), outer);
+        const QRect primaryRect(primaryGroup->mapToGlobal(QPoint()), primaryGroup->size());
+        const QRect contextRect(xipsGroup->mapToGlobal(QPoint()), xipsGroup->size());
+        QVERIFY(!primaryRect.intersects(contextRect));
         QCOMPARE(primaryRect.top(), contextRect.top());
         QCOMPARE(primaryRect.height(), contextRect.height());
         const auto outerBefore = outer->sizes();
         auto* divider = outer->handle(1);
         QVERIFY(drag(divider, divider->mapToGlobal(divider->rect().center()) + QPoint(-70, 0)));
         settle(window); QVERIFY(outer->sizes() != outerBefore);
-        const auto innerBefore = inner->sizes();
-        divider = inner->handle(1);
+        const auto innerBefore = outer->sizes();
+        divider = outer->handle(2);
         QVERIFY(drag(divider, divider->mapToGlobal(divider->rect().center()) + QPoint(55, 0)));
-        settle(window); QVERIFY(inner->sizes() != innerBefore);
+        settle(window); QVERIFY(outer->sizes() != innerBefore);
         capture(&window, prefix + "-bottom-horizontal");
         session.ui.contextWorkspace = context->captureState();
         session.ui.panelLayout = panels->layoutState();
+        session.ui.pageLayout = registry->savePageLayout();
         QVERIFY(store.save(session).saved);
         restored = store.load(workspace.path()); QVERIFY(restored.loaded);
         QCOMPARE(restored.state.ui.contextWorkspace.bottomSplitState, session.ui.contextWorkspace.bottomSplitState);
+        QCOMPARE(restored.state.ui.pageLayout, session.ui.pageLayout);
         QCOMPARE(restored.state.ui.contextWorkspace.dockSections, session.ui.contextWorkspace.dockSections);
         const auto sizes = outer->sizes();
         context->clearResources();
-        QVERIFY(primary->isVisible()); QCOMPARE(panels->activeBottomPanelId(), activePanel);
+        QVERIFY(primary->isVisible()); QCOMPARE(primaryGroup->currentWidget(), primaryPage);
         panels->restoreLayoutState(restored.state.ui.panelLayout);
         QCOMPARE(context->restoreState(restored.state.ui.contextWorkspace).restoredResources, 2);
+        QVERIFY(registry->restorePageLayout(restored.state.ui.pageLayout).isEmpty());
         settle(window);
         QCOMPARE(host->areaResourceCount(true), 2);
-        QVERIFY(qAbs(outer->sizes()[0] - sizes[0]) <= 2);
+        outer = qobject_cast<QSplitter*>(registry->regionGroup("bottom")->parentWidget()); QVERIFY(outer);
+        QCOMPARE(outer->sizes().size(), sizes.size());
+        qInfo() << "Restored split sizes" << outer->sizes() << "saved" << sizes;
+        for (int i = 0; i < sizes.size(); ++i) QVERIFY(qAbs(outer->sizes()[i] - sizes[i]) <= 2);
         QVERIFY(context->viewForResource(xipsKey)->findChild<QWidget*>("xipsBrowser"));
         capture(&window, prefix + "-restored");
         panels->setBottomCollapsed(true);
@@ -257,17 +283,19 @@ private slots:
         panels->setBottomCollapsed(false); settle(window);
         QVERIFY(host->bottomWidget()->isVisible());
         QCOMPARE(host->areaResourceCount(true), 2);
+        auto* restoredContextGroup = registry->groupForPage(host->sectionWidget(xipsKey)); QVERIFY(restoredContextGroup);
         const int fullHeight = primary->height();
         panels->setAnimationsEnabled(true);
         panels->setBottomCollapsed(true);
         QTest::qWait(60);
         QVERIFY(primary->height() > 0 && primary->height() < fullHeight);
-        QCOMPARE(primary->height(), host->bottomWidget()->height());
+        QCOMPARE(primaryGroup->height(), restoredContextGroup->height());
         panels->setBottomCollapsed(false);
         QTRY_COMPARE(primary->height(), fullHeight);
-        QCOMPARE(primary->height(), host->bottomWidget()->height());
+        QCOMPARE(primaryGroup->height(), restoredContextGroup->height());
         panels->setAnimationsEnabled(false);
-        panels->restoreBottomSplitState({});
+        registry->setActiveGroup(registry->regionGroup("bottom")); registry->equalizeSplitSizes();
+        outer = qobject_cast<QSplitter*>(registry->regionGroup("bottom")->parentWidget()); QVERIFY(outer);
         QVERIFY(qAbs(outer->sizes()[0] - outer->sizes()[1]) <= 2);
         // Restore a left-side session as well, retaining the Files/Design dock.
         auto leftState = session.ui.contextWorkspace;

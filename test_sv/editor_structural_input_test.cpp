@@ -1319,7 +1319,9 @@ int main(int argc, char* argv[])
     const auto expectPairedEnter = [&](const char* label, const QString& prefix,
                                        int column) {
         MyCodeEditor editor;
-        typeRtl(editor, prefix);
+        // Slash + space enters a literal slash under the current search contract.
+        typeRtl(editor, prefix.endsWith(QStringLiteral("*/")) ? prefix + QLatin1Char(' ') : prefix);
+        if (prefix.endsWith(QStringLiteral("*/"))) QTest::keyClick(&editor, Qt::Key_Backspace);
         const QString before = editor.toPlainText();
         const int beforeCaret = editor.textCursor().position();
         const bool pairedCloserPresent = beforeCaret < before.size()
@@ -1333,6 +1335,9 @@ int main(int argc, char* argv[])
         const bool undid = editor.toPlainText() == before
             && editor.textCursor().position() == beforeCaret;
         editor.redo();
+        if (!(pairedCloserPresent && inserted && undid && editor.toPlainText() == expected
+               && editor.textCursor().position() == beforeCaret + newline.size()))
+            std::printf("Paired diagnostic: %s before=[%s] caret=%d expected=[%s] actual=[%s] after=%d paired=%d inserted=%d undid=%d\n", label, qPrintable(before), beforeCaret, qPrintable(expected), qPrintable(editor.toPlainText()), editor.textCursor().position(), pairedCloserPresent, inserted, undid);
         expect(label, pairedCloserPresent && inserted && undid && editor.toPlainText() == expected
                && editor.textCursor().position() == beforeCaret + newline.size());
     };

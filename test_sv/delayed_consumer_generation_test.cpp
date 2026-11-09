@@ -5,6 +5,7 @@
 #include "panellayoutcontroller.h"
 #include "semanticindex.h"
 #include "tabmanager.h"
+#include "editorsplitcontroller.h"
 #include "temporaryeditorcontextprovider.h"
 #include "temporaryeditorcontextview.h"
 #include "liveinsightscontextprovider.h"
@@ -175,6 +176,10 @@ private slots:
         view->surfaceForTest()->setStatusHandler([&](const QString& message, int) { messages.append(message); });
         auto* tree = view->findChild<QTreeWidget*>("rtlInsightsTree");
         QVERIFY(tree);
+        auto* registry=window.tabManager->editorSplitController();
+        QPointer<QWidget> activeBeforeFailure=registry->activeGroup()->currentWidget();
+        auto* initialEditor=window.tabManager->contextEditor();
+        QVERIFY(initialEditor);
         // A retained action row uses the presenter's role contract. Navigation
         // remains the registered MainWindow route; only status is observed.
         auto* row = new QTreeWidgetItem(tree, {"target"});
@@ -191,7 +196,8 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(tree, "itemDoubleClicked", Qt::DirectConnection,
             Q_ARG(QTreeWidgetItem*, row), Q_ARG(int, 0)));
         dismiss.stop();
-        QVERIFY(EditorFileIdentity::same(window.tabManager->getCurrentDocument().fileName, initial));
+        QCOMPARE(registry->activeGroup()->currentWidget(),activeBeforeFailure.data());
+        QVERIFY(EditorFileIdentity::same(window.tabManager->getDocumentForEditor(initialEditor).fileName, initial));
         bool reported = false;
         for (const auto& message : messages)
             reported |= message.contains("jump failed");
@@ -258,6 +264,8 @@ private slots:
         QCOMPARE(output->toPlainText().count(expected), 1);
         if (transition == "clear") QVERIFY(!output->toPlainText().contains(first));
         QCOMPARE(service->unreadCount(), 0);
+        if (service->events().size()!=1)
+            for (const auto& event:service->events()) qWarning()<<"activity-event"<<event.message;
         QCOMPARE(service->events().size(), 1);
         QVERIFY(window->close());
         service->clear();

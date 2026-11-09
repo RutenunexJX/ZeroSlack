@@ -10,6 +10,7 @@
 #include <QPointer>
 #include <QTimer>
 #include <QUrl>
+#include <QWindow>
 #include <atomic>
 #include <utility>
 
@@ -72,6 +73,7 @@ public:
     ICoreWebView2Controller* controller = nullptr;
     ICoreWebView2* web = nullptr;
     bool boundsUpdatePending = false;
+    QList<QPointer<QWidget>> ancestors;
     EventRegistrationToken messageToken{}, resourceToken{}, navigationToken{}, frameToken{},
         popupToken{}, permissionToken{}, loadedToken{}, focusToken{}, acceleratorToken{};
 
@@ -88,8 +90,24 @@ public:
         // Qt can deliver resize/show before a hidden native child gets its new geometry.
         QTimer::singleShot(0, q, [this] {
             boundsUpdatePending = false;
-            if (*alive) resize();
+            if (!*alive) return;
+            if (auto* native = q->windowHandle()) {
+                if (auto* parent = q->nativeParentWidget()) {
+                    const QRect geometry(q->mapTo(parent, QPoint()), q->size());
+                    if (native->geometry() != geometry) native->setGeometry(geometry);
+                }
+            }
+            resize();
+            if (controller) controller->NotifyParentWindowPositionChanged();
         });
+    }
+    void watchAncestors() {
+        for (const auto& parent : ancestors) if (parent) parent->removeEventFilter(q);
+        ancestors.clear();
+        for (auto* parent = q->parentWidget(); parent; parent = parent->parentWidget()) {
+            ancestors.append(parent); parent->installEventFilter(q);
+            if (parent->isWindow()) break;
+        }
     }
     WebEditorResource resource(const QUrl& url) {
         if (url.scheme() != QStringLiteral("https") || !url.userInfo().isEmpty()
@@ -223,6 +241,11 @@ public:
                 COREWEBVIEW2_KEY_EVENT_KIND kind{}; args->get_KeyEventKind(&kind);
                 if (kind != COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN && kind != COREWEBVIEW2_KEY_EVENT_KIND_SYSTEM_KEY_DOWN) return S_OK;
                 UINT key = 0; args->get_VirtualKey(&key);
+                if ((GetKeyState(VK_CONTROL) & 0x8000) && key == 'F' && entry.path() == QStringLiteral("/pdf/index.html")) {
+                    args->put_Handled(TRUE);
+                    QTimer::singleShot(0, q, [this, valid] { if (valid()) emit q->commandRequested(QStringLiteral("find")); });
+                    return S_OK;
+                }
                 if ((GetKeyState(VK_CONTROL) & 0x8000) && (key == 'S' || key == 'O' || key == 'N' || key == 'Z' || key == 'Y')) {
                     args->put_Handled(TRUE);
                     const QString command = key == 'Z' ? (GetKeyState(VK_SHIFT) & 0x8000 ? QStringLiteral("redo") : QStringLiteral("undo"))
@@ -279,13 +302,19 @@ public:
 WebEditorContainer::WebEditorContainer(const QString& runtimeDirectory, const QString& profileDirectory,
                                      const QString& editorKind, QWidget* parent)
     : QWidget(parent), d(std::make_unique<Private>(this)) {
-    setFocusPolicy(Qt::StrongFocus); setAttribute(Qt::WA_NativeWindow);
+    setFocusPolicy(Qt::StrongFocus);
+    // Only the WebView needs a native host; native dock ancestors retain stale size constraints.
+    setAttribute(Qt::WA_DontCreateNativeAncestors);
+    setAttribute(Qt::WA_NativeWindow);
+#ifdef Q_OS_WIN
+    d->watchAncestors();
+#endif
     d->runtimeRoot = QFileInfo(runtimeDirectory).canonicalFilePath();
     d->profile = QDir::toNativeSeparators(QDir(profileDirectory).absolutePath());
     d->entry = QUrl(QStringLiteral("https://editor.zeroslack.invalid/%1/index.html").arg(editorKind));
     QTimer::singleShot(0, this, [this, editorKind] {
         if (!*d->alive) return;
-        if ((editorKind != QStringLiteral("markdown") && editorKind != QStringLiteral("blocks"))
+        if ((editorKind != QStringLiteral("markdown") && editorKind != QStringLiteral("blocks") && editorKind != QStringLiteral("pdf"))
             || d->runtimeRoot.isEmpty() || !QFileInfo::exists(QDir(d->runtimeRoot).filePath(editorKind + QStringLiteral("/index.html")))) {
             emit initializationFailed(QStringLiteral("The document editor resources are missing. Restore resources/document-editors from the application package.")); return;
         }
@@ -301,6 +330,8 @@ void WebEditorContainer::shutdown() {
     if (!*d->alive) return;
     *d->alive = false; d->initialized = false; d->assets = {};
 #ifdef Q_OS_WIN
+    for (const auto& parent : d->ancestors) if (parent) parent->removeEventFilter(this);
+    d->ancestors.clear();
     if (d->controller) d->controller->Close();
     if (d->web) { d->web->Release(); d->web = nullptr; }
     if (d->controller) { d->controller->Release(); d->controller = nullptr; }
@@ -318,6 +349,14 @@ bool WebEditorContainer::postMessage(const QJsonObject& message) {
     Q_UNUSED(message);
 #endif
     return false;
+}
+void WebEditorContainer::focusContent() {
+    setFocus(Qt::OtherFocusReason);
+#ifdef Q_OS_WIN
+    // Qt focus may already point here from before the asynchronous controller creation.
+    if (d->controller && !IsChild(reinterpret_cast<HWND>(winId()), GetFocus()))
+        d->controller->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
+#endif
 }
 void WebEditorContainer::setAssetResolver(AssetResolver resolver) { d->assets = std::move(resolver); }
 void WebEditorContainer::setZoomFactor(double value) {
@@ -352,12 +391,25 @@ void WebEditorContainer::focusInEvent(QFocusEvent* e) { QWidget::focusInEvent(e)
 bool WebEditorContainer::event(QEvent* e) {
     const bool result = QWidget::event(e);
 #ifdef Q_OS_WIN
+    if (d && e->type() == QEvent::ParentChange) d->watchAncestors();
     if (d && d->controller) {
         if (e->type() == QEvent::WinIdChange)
             d->controller->put_ParentWindow(reinterpret_cast<HWND>(winId()));
         if (e->type() == QEvent::WinIdChange || e->type() == QEvent::ParentChange
-            || e->type() == QEvent::DevicePixelRatioChange) d->scheduleBoundsUpdate();
+            || e->type() == QEvent::Move || e->type() == QEvent::DevicePixelRatioChange) d->scheduleBoundsUpdate();
     }
 #endif
     return result;
+}
+bool WebEditorContainer::eventFilter(QObject* watched, QEvent* e) {
+#ifdef Q_OS_WIN
+    if (d && *d->alive) {
+        if (e->type() == QEvent::ParentChange) d->watchAncestors();
+        if (e->type() == QEvent::Move || e->type() == QEvent::Resize
+            || e->type() == QEvent::ParentChange || e->type() == QEvent::Show
+            || e->type() == QEvent::LayoutRequest || e->type() == QEvent::DevicePixelRatioChange)
+            d->scheduleBoundsUpdate();
+    }
+#endif
+    return QWidget::eventFilter(watched, e);
 }

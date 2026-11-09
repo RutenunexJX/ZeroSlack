@@ -22,6 +22,7 @@
 #include "workspacesessionstateservice.h"
 #include "workspacefileoperationservice.h"
 #include "webdocumentpage.h"
+#include "pdfdocumentpage.h"
 
 enum class TabGroupingMode {
     None,
@@ -43,7 +44,8 @@ struct CrashRecoveryApplyResult :
 class DocumentRecoveryQueue;
 
 struct WorkspacePathMutation {
-    struct WebDocument { QPointer<WebDocumentPage> page; QString path; quint64 revision = 0; std::shared_ptr<void> lock; };
+    struct WebDocument { QPointer<WebDocumentPage> page; QString path; quint64 revision = 0; std::shared_ptr<void> lock; QString target; };
+    struct PdfDocument { QPointer<PdfDocumentPage> page; QString path; QString target; };
     struct Document {
         QPointer<SharedDocument> document;
         QString identity;
@@ -53,6 +55,7 @@ struct WorkspacePathMutation {
     QPointer<QObject> owner;
     QList<Document> documents;
     QList<WebDocument> webDocuments;
+    QList<PdfDocument> pdfDocuments;
 };
 
 class ZEROSLACK_API TabManager : public QObject
@@ -73,8 +76,12 @@ public:
     // Tab operations
     void createNewTab();
     WebDocumentPage* createWebDocument(WebDocumentPage::Kind kind, const QString& initialText = QString());
+    WebDocumentPage* createWebDocumentFile(WebDocumentPage::Kind kind, const QString& path = {}, const QString& region = {}, QString* error = nullptr);
+    bool openFileInRegion(const QString& path, const QString& region);
     WebDocumentPage* currentWebDocument() const;
     QList<WebDocumentPage*> webDocuments() const;
+    PdfDocumentPage* currentPdfDocument() const;
+    QList<PdfDocumentPage*> pdfDocuments() const;
     bool hasCurrentDocument() const;
     bool importMarkdownDocument(const QString& sourcePath = QString());
     bool openFileInTab(const QString& fileName);
@@ -153,6 +160,10 @@ public:
     DocumentSnapshot getCurrentDocument() const;
     // Metadata-only: text is empty and no cached editor text is copied.
     DocumentSnapshot getCurrentDocumentMetadata() const;
+    // Tool activation keeps the last document's insight context; edit commands
+    // still use the focused page through editorActionTarget().
+    MyCodeEditor* contextEditor() const;
+    DocumentSnapshot contextDocumentMetadata() const;
     DocumentSnapshot getDocumentForEditor(MyCodeEditor* editor) const;
     bool activateOpenFile(const QString& fileName);
     QWidget* toolPage(const QString& stableId) const;
@@ -189,7 +200,8 @@ public:
         WorkspacePathMutation* prepared,
         QWidget* dialogParent = nullptr,
         QString* failureReason = nullptr,
-        const WorkspacePathMutationGuard& guard = {});
+        const WorkspacePathMutationGuard& guard = {},
+        const QString& renameTarget = {});
     bool validateWorkspacePathMutation(const WorkspacePathMutation& prepared,
                                        QString* failureReason = nullptr) const;
     bool finalizeWorkspacePathMutation(
@@ -222,6 +234,7 @@ public:
     void clearCrashRecoveryAfterNormalClose();
     QList<WorkspaceSessionTabState> workspaceSessionTabs(
         const QString& workspaceRoot) const;
+    QJsonObject workspaceSessionPageLayout(const QString& workspaceRoot) const;
     QStringList restoreWorkspaceSessionTabs(
         const QString& workspaceRoot,
         const QList<WorkspaceSessionTabState>& tabs,
@@ -276,8 +289,13 @@ private:
         QJsonObject associations;
         SharedDocumentViewState viewState;
         int groupIndex = 0;
+        QString regionId;
+        QString groupId;
+        Qt::Orientation splitOrientation = Qt::Horizontal;
         bool locked = false;
         bool webDocument = false;
+        bool pdfDocument = false;
+        QJsonObject pdfState;
         WebDocumentPage::Kind webKind = WebDocumentPage::Kind::Markdown;
     };
 
@@ -315,8 +333,11 @@ private:
     QStringList scopedWorkspaceRoots;
     QString activeWorkspaceRoot;
     QPointer<MyCodeEditor> previousActiveEditor;
+    QPointer<MyCodeEditor> lastActionEditor;
+    QPointer<QWidget> contextDocumentPage;
     QPointer<WebDocumentPage> previousActiveWebDocument;
-    QHash<WebDocumentPage*, QList<CrashRecoveryDocumentKey>> webRecoveryKeys;
+    QHash<WebDocumentSession*, QList<CrashRecoveryDocumentKey>> webRecoveryKeys;
+    QSet<WebDocumentSession*> observedWebDocuments;
     QHash<QString, QPointer<MyCodeEditor>> lastWorkspaceEditors;
     bool changingWorkspaceScope = false;
     bool groupingTabs = false;
@@ -411,11 +432,13 @@ private:
     bool closeEditorsAtomically(
         const QList<MyCodeEditor*>& editors);
     std::function<bool(MyCodeEditor*)> editorTransitionGuard;
-    int groupIndex(QTabWidget* group) const;
-    QTabWidget* ensureGroupIndex(int index);
-    WebDocumentPage* openWebDocument(const QString& fileName, QTabWidget* group = nullptr);
+    void rememberClosedGroup(ClosedTabState& state, QTabWidget* group) const;
+    QTabWidget* closedTabGroup(const ClosedTabState& state);
+    WebDocumentPage* openWebDocument(const QString& fileName, QTabWidget* group = nullptr, const QString& viewId = {}, const QString& documentId = {}, QString* error = nullptr);
     void registerWebDocument(WebDocumentPage* page, QTabWidget* group);
     bool closeWebDocument(WebDocumentPage* page, bool confirm = true, bool remember = true);
+    PdfDocumentPage* openPdfDocument(const QString& fileName, QTabWidget* group = nullptr, const QString& viewId = {}, QString* error = nullptr);
+    bool closePdfDocument(PdfDocumentPage* page, bool remember = true);
     bool confirmWebDocuments(const QList<WebDocumentPage*>& pages);
     void checkpointWebRecovery(WebDocumentPage* page);
     void clearWebRecovery(WebDocumentPage* page);

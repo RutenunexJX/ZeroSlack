@@ -20,6 +20,7 @@
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QSettings>
+#include <QScopeGuard>
 #include <QSignalSpy>
 #include <QStandardPaths>
 #include <QTabBar>
@@ -197,6 +198,7 @@ private slots:
         QCOMPARE(moved.count(), 2); // Source -> live floating group -> destination.
         QCOMPARE(split.groupCount(), area == 0 ? 2 : 3);
         QVERIFY(split.groupForPage(page) != initial);
+        QCOMPARE(split.groupForPage(page)->currentWidget(),page);
         QCOMPARE(initial->widget(0), second);
 
         QWidget otherHost;
@@ -207,6 +209,41 @@ private slots:
         QVERIFY(!source->transferHostedTab(page, qobject_cast<ElaTabWidget*>(other)));
         QVERIFY(source->indexOf(page) >= 0);
         QCOMPARE(other->count(), 0);
+    }
+
+    void releaseDuringNativeReparentCompletesDrop() {
+        if (QGuiApplication::platformName() != QStringLiteral("windows"))
+            QSKIP("Requires the native Windows drag startup path");
+        QWidget host;
+        auto* initial = UiControls::editorTabWidget(&host);
+        EditorSplitController split(initial);
+        split.setHost(&host);
+        auto* page = new QWidget;
+        initial->addTab(page, "source");
+        initial->addTab(new QWidget, "keep");
+        auto* destination = split.createSplit(initial, EditorSplitDirection::Right);
+        destination->addTab(new QWidget, "destination");
+        host.resize(1000, 700);
+        host.show(); host.raise(); host.activateWindow();
+        QVERIFY(QTest::qWaitForWindowActive(&host));
+        const QPoint previousCursor = QCursor::pos();
+        const auto restoreCursor = qScopeGuard([previousCursor] { QCursor::setPos(previousCursor); });
+        QSignalSpy moved(&split, &EditorSplitController::pageMoved);
+        connect(qobject_cast<ElaTabWidget*>(initial), &ElaTabWidget::hostedTabDragStarted,
+                &host, [destination] {
+            // QTest's gesture has no native button held: this is the state after
+            // a real release arrives while the live page is being reparented.
+            QCursor::setPos(destination->mapToGlobal(destination->rect().center()));
+        });
+        QTabBar* bar = initial->tabBar();
+        const QPoint press = bar->tabRect(0).center();
+        QTest::mousePress(bar, Qt::LeftButton, Qt::NoModifier, press);
+        sendMouse(bar, QEvent::MouseMove, press + QPoint(0, 80), Qt::NoButton, Qt::LeftButton);
+        QTest::mouseRelease(bar, Qt::LeftButton, Qt::NoModifier, press);
+        QCOMPARE(split.groupForPage(page), destination);
+        QCOMPARE(destination->currentWidget(), page);
+        QCOMPARE(moved.count(), 2);
+        QCOMPARE(split.groupCount(), 2);
     }
 
     void emptyDragSourceLivesUntilCompletion() {
@@ -237,8 +274,10 @@ private slots:
         sendMouse(bar, QEvent::MouseMove, press + QPoint(0, 80), Qt::NoButton, Qt::LeftButton);
         if (bar) QTest::mouseRelease(bar, Qt::LeftButton, Qt::NoModifier, press);
         QVERIFY(sourceAliveDuringDrop);
-        QTRY_VERIFY(initial.isNull());
-        QCOMPARE(split.groupCount(), 1);
+        QVERIFY(initial);
+        QCOMPARE(initial->count(), 0);
+        QCOMPARE(split.regionGroup(QStringLiteral("main")), initial.data());
+        QCOMPARE(split.groupCount(), 2);
         QCOMPARE(split.groupForPage(page), destination);
         QVERIFY(destination->isVisible());
     }

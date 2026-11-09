@@ -10,7 +10,7 @@
 #include "workspacemanager.h"
 #include "projectmodel.h"
 #include "editorfileidentity.h"
-#include "../simulation/simdock/ui/workbench.h"
+#include "../workspace/designprojectservice.h"
 
 #include <QDir>
 #include <QFileInfo>
@@ -109,8 +109,8 @@ bool NavigationManager::updateDesignHierarchyData(bool force)
         return false;
     const auto token = navigationService->semanticSnapshotToken();
     const auto files = normalizedDesignScopeFiles(getSystemVerilogFiles());
-    if (connectedWorkbench && connectedWorkbench->workspace() == context.currentWorkspacePath
-        && !connectedWorkbench->designMigrationCompleted() && connectedWorkspaceManager && token.revision > 0
+    if (designProjects && designProjects->workspace() == context.currentWorkspacePath
+        && !designProjects->designMigrationCompleted() && connectedWorkspaceManager && token.revision > 0
         && connectedWorkspaceManager->getProjectModel()->snapshot().sourceDiscoveryComplete
         && semanticAnalysisContext.stage == SemanticAnalysisStage::Publication) {
         const auto legacy = connectedWorkspaceManager->workspaceConfiguration().topModule;
@@ -122,15 +122,15 @@ bool NavigationManager::updateDesignHierarchyData(bool force)
             }
         // Never turn inferred candidates into saved projects. A name-only
         // legacy selection remains unresolved when its source is ambiguous.
-        if (legacy.isEmpty() || !connectedWorkbench->designRoots().isEmpty()
-            || connectedWorkbench->addDesignProject(matches == 1 ? definition : QString(), legacy, true).isEmpty())
-            connectedWorkbench->markDesignMigrationCompleted();
+        if (legacy.isEmpty() || !designProjects->designRoots().isEmpty()
+            || designProjects->addDesignProject(matches == 1 ? definition : QString(), legacy, true).isEmpty())
+            designProjects->markDesignMigrationCompleted();
     }
     const auto roots = currentDesignRoots();
     const auto candidateFiles = context.currentWorkspacePath.isEmpty() ? QStringList() : getSystemVerilogFiles();
     navigationWidget->setDesignCandidateContext(candidateFiles, !roots.isEmpty(),
         connectedWorkspaceManager && connectedWorkspaceManager->isWorkspaceScanActive());
-    const auto top = connectedWorkbench ? connectedWorkbench->activeProjectId() : QString();
+    const auto top = designProjects ? designProjects->activeProjectId() : QString();
     if (!force && caches.designHierarchyValid && caches.designSnapshotGeneration == token.revision
         && caches.designFileScope == files && caches.activeProjectId == top && caches.designRoots == roots)
         return false;
@@ -186,7 +186,7 @@ void NavigationManager::launchPendingDesignWork()
         activeDesignRequest.reset();
         watcher->deleteLater();
         const auto currentToken = navigationService ? navigationService->semanticSnapshotToken() : SemanticSnapshotToken{};
-        const QString currentTop = connectedWorkbench ? connectedWorkbench->activeProjectId() : QString();
+        const QString currentTop = designProjects ? designProjects->activeProjectId() : QString();
         if (!designShuttingDown && request.generation == designRequestGeneration
             && navigationWidget && navigationWidget->isVisible()
             && context.currentWorkspacePath == request.workspace && currentTop == request.selectedTop && currentDesignRoots() == request.roots

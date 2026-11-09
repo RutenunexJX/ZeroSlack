@@ -1,4 +1,5 @@
 #include "workspacesessionstateservice.h"
+#include "automationservice.h"
 #include "tabfileio.h"
 #include "../src/simulation/simdock/core/simulationevents.h"
 #include <QCryptographicHash>
@@ -9,6 +10,21 @@
 class AutomationServiceTest : public QObject {
     Q_OBJECT
 private slots:
+    void webDocumentKindsDoNotEnterTextAutomation() {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        ZeroSlackAutomationService service;
+        for (const auto& name : {"notes.md", "notes.zblock", "reading.pdf"}) {
+            QFile file(root.filePath(name)); QVERIFY(file.open(QIODevice::WriteOnly));
+            file.write("owned fixture"); file.close();
+            for (const auto& command : {"document.open", "document.inspect", "document.format"}) {
+                const auto result = service.execute({{"command", command}, {"workspace", root.path()}, {"file", name}});
+                QVERIFY(!result.value("ok").toBool());
+                QCOMPARE(result.value("error").toObject().value("code").toString(), QStringLiteral("unsupported_document_kind"));
+            }
+            QVERIFY(file.open(QIODevice::ReadOnly)); QCOMPARE(file.readAll(), QByteArray("owned fixture"));
+        }
+    }
     void nativeSourcePathInStructuredEvent() {
         simdock::SimulationEventDecoder decoder;
         decoder.reset("run");

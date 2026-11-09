@@ -10,6 +10,7 @@
 #include "insightvisualstyle.h"
 #include "mainwindow.h"
 #include "contextdockhost.h"
+#include "editorsplitcontroller.h"
 #include "liveinsightscontextview.h"
 #include "liveinsighttoolpage.h"
 #include "liveinsightscontextprovider.h"
@@ -195,7 +196,7 @@ private slots:
         QWidget* ancestor=context;
         while (ancestor && !qobject_cast<QDockWidget*>(ancestor)) ancestor=ancestor->parentWidget();
         auto* contextDock=qobject_cast<QDockWidget*>(ancestor);QVERIFY(contextDock);contextDock->show();
-        const auto groups=window.findChildren<QTabWidget*>(QRegularExpression("editorTabGroup.*"));QVERIFY(!groups.isEmpty());
+        const auto groups=window.tabManager->editorSplitController()->groups(QStringLiteral("main"));QVERIFY(!groups.isEmpty());
         auto* group=groups.first();
         group->setCurrentIndex(group->addTab(new LiveInsightToolPage(LiveInsightKind::Hotspot),"Signal Hotspot"));
         window.resize(1900,1040); QTest::qWait(100);
@@ -230,7 +231,7 @@ private slots:
         QVERIFY(manager);
         auto* controller = manager->editorSplitController();
         QVERIFY(controller);
-        QCOMPARE(controller->groupCount(), 1);
+        QCOMPARE(controller->groups(QStringLiteral("main")).size(), 1);
         auto* initial = controller->initialGroup();
         QVERIFY(initial && initial->inherits("ElaTabWidget"));
         QVERIFY(initial->tabBar()->inherits("ElaTabBar"));
@@ -250,7 +251,7 @@ private slots:
         QTest::qWait(100);
         QJsonArray evidence;
         auto verifyGroups = [&](const QString& phase) {
-            for (auto* group : controller->groups()) {
+            for (auto* group : controller->groups(QStringLiteral("main"))) {
                 QVERIFY(group->inherits("ElaTabWidget"));
                 auto* bar = group->tabBar();
                 QVERIFY(bar->inherits("ElaTabBar"));
@@ -286,7 +287,7 @@ private slots:
                 QVERIFY(scrollVisible);
                 QVERIFY(!bar->rect().contains(bar->tabRect(0)));
                 evidence.append(QJsonObject{{"phase", phase}, {"group", group->objectName()},
-                    {"groupCount", controller->groupCount()}, {"theme", int(theme.mode())},
+                    {"groupCount", controller->groups(QStringLiteral("main")).size()}, {"theme", int(theme.mode())},
                     {"barClass", bar->metaObject()->className()}, {"localQssEmpty", bar->styleSheet().isEmpty()},
                     {"barWidth", bar->width()}, {"barHeight", bar->height()},
                     {"actualDpr", bar->devicePixelRatioF()}, {"shortestPaintedText", shortestPaintedText},
@@ -298,7 +299,7 @@ private slots:
                 QSignalSpy created(manager, &TabManager::tabGroupCreated);
                 QVERIFY(manager->splitCurrentView(EditorSplitDirection::Right));
                 QCOMPARE(created.count(), 1);
-                QCOMPARE(controller->groupCount(), 2);
+                QCOMPARE(controller->groups(QStringLiteral("main")).size(), 2);
                 auto* second = controller->activeGroup();
                 QVERIFY(second && second != initial);
                 QCOMPARE(qvariant_cast<QTabWidget*>(created.first().first()), second);
@@ -312,7 +313,7 @@ private slots:
             QHash<QTabWidget*, QList<QSize>> tabSizes;
             QHash<QTabWidget*, QWidget*> selectedPages;
             QHash<QTabWidget*, QStringList> tabTexts;
-            for (auto* group : controller->groups()) {
+            for (auto* group : controller->groups(QStringLiteral("main"))) {
                 selectedPages[group] = group->currentWidget();
                 for (int i = 0; i < group->count(); ++i) {
                     tabSizes[group].append(group->tabBar()->tabRect(i).size());
@@ -322,7 +323,7 @@ private slots:
             for (auto mode : {otherTheme, startTheme}) {
                 theme.setMode(mode);
                 QTest::qWait(80);
-                for (auto* group : controller->groups()) {
+                for (auto* group : controller->groups(QStringLiteral("main"))) {
                     QCOMPARE(group->currentWidget(), selectedPages[group]);
                     for (int i = 0; i < group->count(); ++i) {
                         QCOMPARE(group->tabBar()->tabRect(i).size(), tabSizes[group].at(i));
@@ -510,8 +511,8 @@ private slots:
             QVERIFY(host.moveResourceToArea(keys.last(),dockArea));
         }
         QTest::qWait(30);
-        auto* splitter=surface->findChild<QSplitter*>(bottom?"contextBottomSplitter"
-            : dockArea==Qt::LeftDockWidgetArea?"contextLeftSplitter":"contextSideSplitter");
+        auto* splitter=qobject_cast<QSplitter*>(host.pageRegistry()->regionRoot(bottom ? QStringLiteral("bottom")
+            : dockArea==Qt::LeftDockWidgetArea ? QStringLiteral("left") : QStringLiteral("right")));
         QVERIFY(splitter);
         auto setRequest=[&](int i,int value){
             return bottom ? host.setSectionWidth(keys[i],value) : host.setSectionHeight(keys[i],value);
@@ -548,6 +549,8 @@ private slots:
         QTest::qWait(20);
         auto* scroll=qobject_cast<QScrollArea*>(splitter->parentWidget()->parentWidget()->parentWidget());
         QVERIFY(scroll);
+        qInfo()<<"overflow extents"<<splitter->sizes()<<splitter->minimumSizeHint()<<splitter->parentWidget()->size()
+            <<"minimum"<<minimum0<<minimum1;
         QVERIFY((bottom?scroll->horizontalScrollBar():scroll->verticalScrollBar())->maximum()>0);
         QVERIFY(splitter->sizes()[0]>=minimum0 && splitter->sizes()[1]>=minimum1);
     }
@@ -581,6 +584,11 @@ private slots:
         QVERIFY(bottom?host.moveResourceToArea(resource.stableKey(),true,1):host.moveResource(resource.stableKey(),1));
         QTest::qWait(30);
         const auto actual=globalRect(host.sectionWidget(resource.stableKey()));
+        for(const auto& key:host.resourceKeys()) {
+            auto* frame=host.sectionWidget(key);auto* group=host.pageRegistry()->groupForPage(frame);
+            qInfo()<<"projection section"<<key<<frame->size()<<frame->minimumSize()<<frame->minimumSizeHint()
+                <<"header"<<host.sectionHeader(key)->size()<<"group"<<group->size()<<group->minimumSizeHint();
+        }
         qInfo()<<"extent projection"<<bottom<<"DPR"<<surface->devicePixelRatioF()<<predicted<<actual;
         QCOMPARE(predicted,actual);
     }

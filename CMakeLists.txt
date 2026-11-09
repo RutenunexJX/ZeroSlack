@@ -748,6 +748,9 @@ target_sources(zeroslack_core PRIVATE
     src/ui/linkedcontextstate.cpp src/ui/linkedcontextstate.h
     src/documents/webeditorcontainer.cpp src/documents/webeditorcontainer.h
     src/documents/webdocumentpage.cpp src/documents/webdocumentpage.h
+    src/documents/webdocumentsession.cpp src/documents/webdocumentsession.h
+    src/documents/pdfdocumentpage.cpp src/documents/pdfdocumentpage.h
+    src/documents/tabmanagerpdf.cpp
     src/documents/tabmanagerweb.cpp)
 set(ZEROSLACK_WEBVIEW2_SDK_DIR "" CACHE PATH "Pinned WebView2 SDK 1.0.4314.35 directory")
 set(ZEROSLACK_DOCUMENT_EDITORS_DIR "" CACHE PATH "Built offline Muya and BlockSuite resources")
@@ -1417,24 +1420,13 @@ if(BUILD_TESTING)
         PRIVATE zeroslack_core Qt6::Test Qt6::Widgets)
 
     add_executable(navigation_virtual_source_group_test
-        test_sv/navigation_virtual_source_group_test.cpp
-        src/ui/uicontrols.cpp
-        src/ui/applicationthememanager.cpp
-        src/ui/elabackend.cpp
-        src/ui/uitooltips.cpp
-        src/ui/insightvisualstyle.cpp
-        src/ui/navigationwidget.cpp
-        src/ui/navigationwidgettrees.cpp
-        src/ui/navigationwidgetdesign.cpp
-        src/ui/navigationwidgetpresentation.cpp
-        src/editor/editorfileidentity.cpp
-        src/semantic/symboltaxonomy.cpp)
+        test_sv/navigation_virtual_source_group_test.cpp)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(navigation_virtual_source_group_test PRIVATE
             "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
     endif()
     target_link_libraries(navigation_virtual_source_group_test
-        PRIVATE Qt6::Widgets insightgraph::core Ela::WidgetTools)
+        PRIVATE zeroslack_core Qt6::Widgets)
 
     add_executable(workspace_virtual_source_group_ui_test
         test_sv/workspace_virtual_source_group_ui_test.cpp)

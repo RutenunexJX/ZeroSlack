@@ -362,7 +362,7 @@ private slots:
         if (existing) {
             if (bottom) {
                 for (const auto& key : h.keys) dock->moveResourceToArea(key, true);
-                h.drawer->setBottomCompanionVisible(true);
+                h.drawer->setBottomCollapsed(false);
                 h.drawer->setPanelHeight(h.drawer->activeBottomPanelId(), 250);
             } else h.context->setDockVisible(true);
         }
@@ -394,7 +394,7 @@ private slots:
             dock->moveResourceToArea(key, area == Qt::BottomDockWidgetArea, 0);
             auto* target = bottom ? bottomDock : side;
             if (bottom) {
-                h.drawer->setBottomCompanionVisible(true);
+                h.drawer->setBottomCollapsed(false);
                 h.drawer->setPanelHeight(h.drawer->activeBottomPanelId(), 280);
             } else {
                 target->show();
@@ -407,7 +407,7 @@ private slots:
 #else
         QVERIFY(dock->addResource(resource, source.takeView()));
         dock->moveResourceToArea(key, bottom, 0);
-        if (bottom) h.drawer->setBottomCompanionVisible(true);
+        if (bottom) h.drawer->setBottomCollapsed(false);
         else side->show();
 #endif
         QVERIFY(!h.window.findChild<ContextDockTransition*>());
@@ -583,7 +583,7 @@ private slots:
             resource.uri = QUrl("motion:bottom-boundary"); resource.title = "Retained bottom content";
             QVERIFY(context->dockHost()->addResource(resource, new QLabel("Companion content")));
             QVERIFY(context->dockHost()->moveResourceToArea(resource.stableKey(), Qt::BottomDockWidgetArea));
-            panels->setBottomCompanionVisible(true);
+            panels->setBottomCollapsed(false);
         }
         panels->setAnimationsEnabled(false);
         QVERIFY(panels->restorePanel("problems"));

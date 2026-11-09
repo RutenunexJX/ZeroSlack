@@ -32,6 +32,13 @@
 #include <QTabWidget>
 #include <QWidget>
 #include <QVBoxLayout>
+#include <QUuid>
+#include <QSignalBlocker>
+#include <QJsonArray>
+#include <QScopedValueRollback>
+#include <QScreen>
+#include <QSet>
+#include <QStyle>
 
 #include <algorithm>
 #include <utility>
@@ -73,7 +80,10 @@ EditorSplitController::EditorSplitController(
     , firstGroup(initial)
     , currentGroup(initial)
 {
+    qApp->installEventFilter(this);
     if (initial) {
+        regionHosts.insert(QStringLiteral("main"), {nullptr, initial, initial, initial, {}});
+        groupRegions.insert(initial, QStringLiteral("main"));
         tabGroups.append(initial);
         configureGroup(initial);
     }
@@ -88,24 +98,393 @@ EditorSplitController::~EditorSplitController()
 
 void EditorSplitController::setHost(QWidget* hostWidget)
 {
-    if (splitHost != hostWidget && dropPreview) {
-        clearDropPreview();
-        delete dropPreview.data();
-    }
     splitHost = hostWidget;
-    if (!splitHost || !firstGroup)
-        return;
-    if (!splitHost->layout()) {
-        auto* layout = new QVBoxLayout(splitHost);
-        layout->setContentsMargins(0, 0, 0, 0);
-        layout->setSpacing(0);
+    registerRegion(QStringLiteral("main"), hostWidget, firstGroup);
+}
+
+QTabWidget* EditorSplitController::registerRegion(const QString& id, QWidget* hostWidget, QTabWidget* initial)
+{
+    if (id.isEmpty() || !hostWidget) return nullptr;
+    auto found = regionHosts.find(id);
+    if (found != regionHosts.end() && found->host && found->host != hostWidget) return nullptr;
+    if (initial && tabGroups.contains(initial) && groupRegions.value(initial) != id) return nullptr;
+    auto& region = regionHosts[id];
+    region.host = hostWidget;
+    if (!hostWidget->layout()) {
+        auto* layout = new QVBoxLayout(hostWidget);
+        layout->setContentsMargins(0, 0, 0, 0); layout->setSpacing(0);
     }
-    if (!qobject_cast<QSplitter*>(firstGroup->parentWidget())
-        && splitHost->layout()->indexOf(firstGroup) < 0) {
-        splitHost->layout()->addWidget(firstGroup);
+    if (!region.anchor) {
+        auto* created = initial ? initial : UiControls::editorTabWidget(hostWidget);
+        region.anchor = created; region.root = created; region.current = created;
+        groupRegions.insert(created,id);
+        if (!tabGroups.contains(created)) {
+            tabGroups.append(created); configureGroup(created); emit groupCreated(created);
+        }
     }
-    rootWidget = firstGroup;
-    bindDropTarget(splitHost);
+    if (!region.root) region.root = region.anchor;
+    if (hostWidget->layout()->indexOf(region.root) < 0)
+        hostWidget->layout()->addWidget(region.root);
+    if (id == QStringLiteral("main")) {
+        firstGroup = region.anchor; splitHost = hostWidget; rootWidget = region.root;
+    }
+    bindDropTarget(hostWidget);
+    return region.anchor;
+}
+
+QJsonObject EditorSplitController::savePageLayout(const std::function<bool(QWidget*)>& include) const
+{
+    const auto included = [&](QWidget* page) { return page && (!include || include(page)); };
+    const auto groupState = [&](QTabWidget* group) {
+        QJsonArray order;
+        for (int i = 0; i < group->count(); ++i)
+            if (included(group->widget(i))) order.append(pageId(group->widget(i)));
+        return QJsonObject{{"id", groupId(group)}, {"pages", order},
+            {"current", included(group->currentWidget()) ? pageId(group->currentWidget()) : QString()},
+            {"anchor", regionGroup(regionForGroup(group)) == group}};
+    };
+    std::function<QJsonObject(QWidget*)> tree = [&](QWidget* node) -> QJsonObject {
+        if (auto* group = qobject_cast<QTabWidget*>(node)) return groupState(group);
+        auto* splitter = qobject_cast<QSplitter*>(node);
+        if (!splitter) return {};
+        QJsonArray children, sizes;
+        for (int i = 0; i < splitter->count(); ++i) children.append(tree(splitter->widget(i)));
+        for (int size : savedSplitterSizes.value(splitter, splitter->sizes())) sizes.append(size);
+        return {{"orientation", splitter->orientation() == Qt::Horizontal ? "horizontal" : "vertical"},
+                {"children", children}, {"sizes", sizes}};
+    };
+    QJsonArray areas, floating, hidden;
+    QJsonObject types;
+    for (auto it = pages.cbegin(); it != pages.cend(); ++it)
+        if (included(it.key())) types.insert(it->id, it.key()->property("pageKind").toString());
+    for (const auto& id : regions()) {
+        const auto region = regionHosts.value(id);
+        areas.append(QJsonObject{{"id", id}, {"tree", tree(region.root)}, {"activeGroup", groupId(region.current)}});
+    }
+    for (auto* group : groups()) if (isFloatingGroup(group)) {
+        auto state = groupState(group);
+        if (state.value("pages").toArray().isEmpty()) continue;
+        const auto rect = group->window()->geometry();
+        state.insert("region", regionForGroup(group));
+        state.insert("geometry", QJsonArray{rect.x(), rect.y(), rect.width(), rect.height()});
+        floating.append(state);
+    }
+    for (auto it = pages.cbegin(); it != pages.cend(); ++it)
+        if (!groupForPage(it.key()) && included(it.key()) && !it->returnGroup.isEmpty())
+            hidden.append(QJsonObject{{"id", it->id}, {"group", it->returnGroup}, {"index", it->returnIndex}});
+    return {{"version", 1}, {"regions", areas}, {"floating", floating}, {"hidden", hidden}, {"pageTypes", types},
+        {"activePage", currentGroup && included(currentGroup->currentWidget()) ? pageId(currentGroup->currentWidget()) : QString()},
+        {"maximizedGroup", groupMaximized ? groupId(currentGroup) : QString()}};
+}
+
+QStringList EditorSplitController::restorePageLayout(const QJsonObject& layout)
+{
+    QStringList warnings;
+    if (layout.isEmpty()) return warnings;
+    if (layout.value("version").toInt() != 1) return {QStringLiteral("Unsupported page layout")};
+    const QPointer<QWidget> previousActive=currentGroup ? currentGroup->currentWidget() : nullptr;
+    QSet<QString> identities, restoredPages;
+    int nodes = 0;
+    std::function<QJsonObject(const QJsonObject&, int)> validate = [&](const QJsonObject& node, int depth) -> QJsonObject {
+        if (++nodes > 512 || depth > 16) { warnings.append(QStringLiteral("Page layout limit exceeded")); return {}; }
+        const auto id = node.value("id").toString();
+        if (!id.isEmpty() && id.size() <= 128 && !identities.contains(id)) {
+            identities.insert(id); return node;
+        }
+        if (node.contains("children") && (node.value("orientation") == "horizontal" || node.value("orientation") == "vertical")) {
+            QJsonArray children;
+            for (const auto& value : node.value("children").toArray()) {
+                const auto child = validate(value.toObject(), depth + 1);
+                if (!child.isEmpty()) children.append(child);
+            }
+            if (children.size() == 1) return children.first().toObject();
+            if (!children.isEmpty()) { auto result = node; result.insert("children", children); return result; }
+        }
+        warnings.append(QStringLiteral("Invalid or duplicate page group skipped")); return {};
+    };
+    QJsonArray validRegions;
+    QSet<QString> regionIds;
+    for (const auto& value : layout.value("regions").toArray()) {
+        auto region = value.toObject(); const auto id = region.value("id").toString();
+        if (!regionHosts.contains(id) || regionIds.contains(id)) { warnings.append(QStringLiteral("Unknown page region skipped")); continue; }
+        const auto tree = validate(region.value("tree").toObject(), 0);
+        if (!tree.isEmpty()) { region.insert("tree", tree); validRegions.append(region); regionIds.insert(id); }
+    }
+    if (validRegions.isEmpty()) return warnings;
+    if (groupMaximized) restoreGroupLayout();
+    const QScopedValueRollback restoring(restoringPageLayout, true);
+    QList<QPair<QPointer<QTabWidget>, QJsonObject>> leaves;
+    QList<QPair<QPointer<QSplitter>, QList<int>>> restoredSizes;
+    for (const auto& value : validRegions) {
+        const auto state = value.toObject(); const auto id = state.value("id").toString();
+        auto& region = regionHosts[id];
+        QPointer<QWidget> oldRoot = region.root;
+        const auto oldGroups = groups(id);
+        QSet<QTabWidget*> used;
+        bool anchorUsed = false;
+        std::function<QWidget*(const QJsonObject&)> build = [&](const QJsonObject& node) -> QWidget* {
+            if (node.contains("id")) {
+                QTabWidget* group = nullptr;
+                const auto identity = node.value("id").toString();
+                if (node.value("anchor").toBool() && !anchorUsed) group = region.anchor;
+                if (!group) {
+                    auto* existing = groupById(identity);
+                    if (existing && regionForGroup(existing) == id && !isFloatingGroup(existing) && !used.contains(existing)) group = existing;
+                }
+                if (!group) group = createGroup(id);
+                if (group == region.anchor) anchorUsed = true;
+                used.insert(group); group->setProperty("pageGroupId", identity);
+                leaves.append({group, node}); return group;
+            }
+            auto* splitter = new QSplitter(node.value("orientation") == "horizontal" ? Qt::Horizontal : Qt::Vertical);
+            splitter->setObjectName(QStringLiteral("editorSplit")); splitter->setChildrenCollapsible(false);
+            connect(splitter, &QSplitter::splitterMoved, this, [this, splitter] { emit splitterResized(splitter); emit layoutChanged(); });
+            for (const auto& child : node.value("children").toArray()) { auto* widget = build(child.toObject()); splitter->addWidget(widget); widget->show(); }
+            QList<int> sizes;
+            for (const auto& size : node.value("sizes").toArray()) sizes.append(qBound(1, size.toInt(1), 100000));
+            if (sizes.size() == splitter->count()) restoredSizes.append({splitter, sizes});
+            return splitter;
+        };
+        QWidget* root = build(state.value("tree").toObject());
+        if (!anchorUsed) {
+            // Keep the fixed region's public anchor even when a damaged record
+            // lost its leaf. Existing page pointers and navigation owners survive.
+            auto* wrapper = new QSplitter(Qt::Horizontal);
+            wrapper->setObjectName(QStringLiteral("editorSplit")); wrapper->setChildrenCollapsible(false);
+            connect(wrapper, &QSplitter::splitterMoved, this, [this, wrapper] { emit splitterResized(wrapper); emit layoutChanged(); });
+            wrapper->addWidget(region.anchor); wrapper->addWidget(root); region.anchor->show(); root->show();
+            used.insert(region.anchor); root = wrapper;
+        }
+        if (oldRoot) region.host->layout()->removeWidget(oldRoot);
+        region.host->layout()->addWidget(root); updateRegionRoot(id, root); root->show();
+        for (auto* group : oldGroups) {
+            if (used.contains(group) || isFloatingGroup(group)) continue;
+            while (group->count()) {
+                if (!movePage(group->widget(0), region.anchor)) { warnings.append(QStringLiteral("Page transfer failed during layout restore")); break; }
+            }
+            if (!group->count()) { group->setParent(nullptr); delete group; }
+        }
+        if (oldRoot && oldRoot != root && qobject_cast<QSplitter*>(oldRoot.data())) delete oldRoot;
+    }
+    for (const auto& value : layout.value("floating").toArray()) {
+        const auto state = validate(value.toObject(), 0); const auto id = state.value("region").toString();
+        if (state.isEmpty() || !regionHosts.contains(id)) continue;
+        auto* group = groupById(state.value("id").toString());
+        if (!group || !isFloatingGroup(group)) {
+            QWidget* first = nullptr;
+            for (const auto& name : state.value("pages").toArray()) if ((first = pageById(name.toString()))) break;
+            if (!first) continue;
+            group = floatPage(first, QGuiApplication::primaryScreen()->availableGeometry().topLeft());
+            if (!group) continue;
+        }
+        groupRegions[group] = id; group->setProperty("pageGroupId", state.value("id").toString());
+        const auto geometry = state.value("geometry").toArray();
+        if (geometry.size() == 4) {
+            const auto available = group->screen()->availableGeometry();
+            const int width = qBound(180, geometry[2].toInt(640), available.width());
+            const int height = qBound(150, geometry[3].toInt(480), available.height());
+            group->window()->setGeometry(qBound(available.left(), geometry[0].toInt(), available.right() - width + 1),
+                qBound(available.top(), geometry[1].toInt(), available.bottom() - height + 1), width, height);
+        }
+        leaves.append({group, state});
+    }
+    for (const auto& [guard, state] : leaves) {
+        if (!guard) continue;
+        int index = 0;
+        for (const auto& name : state.value("pages").toArray()) {
+            const auto identity = name.toString(); auto* page = pageById(identity);
+            if (!page || restoredPages.contains(identity)) continue;
+            restoredPages.insert(identity);
+            if (!groupForPage(page) && !restorePage(page, guard, false)) continue;
+            movePage(page, guard, index++);
+        }
+    }
+    for (const auto& value : layout.value("hidden").toArray()) {
+        const auto state = value.toObject(); auto* page = pageById(state.value("id").toString());
+        if (!page || !pages.contains(page)) continue;
+        if (groupForPage(page)) parkPage(page);
+        auto& stored = pages[page]; stored.returnGroup = state.value("group").toString(); stored.returnIndex = qMax(0, state.value("index").toInt());
+    }
+    // Moving later pages can change the current tab of an earlier group.
+    // Apply every selection only after all placements and parking are complete.
+    for (const auto& [guard, state] : leaves) {
+        auto* selected = pageById(state.value("current").toString());
+        if (guard && selected && guard->indexOf(selected) >= 0) {
+            const QSignalBlocker block(guard);
+            guard->setCurrentWidget(selected);
+        }
+    }
+    for (const auto& value : validRegions) {
+        const auto state = value.toObject(); const auto id = state.value("id").toString();
+        auto& region = regionHosts[id];
+        region.current = groupById(state.value("activeGroup").toString());
+        if (!region.current || regionForGroup(region.current) != id) region.current = region.anchor;
+    }
+    if (auto* active = pageById(layout.value("activePage").toString()); active && groupForPage(active)) {
+        activatePage(active, false);
+    } else if (previousActive && groupForPage(previousActive)) {
+        activatePage(previousActive,false);
+    } else if (!currentGroup) setActiveGroup(firstGroup);
+    // Empty/reparented groups have transient minimum sizes. Restore ratios only
+    // after their pages and the region layout are in their final positions.
+    for (const auto& value : validRegions) {
+        const auto& region = regionHosts[value.toObject().value("id").toString()];
+        if (region.host->window()->layout()) region.host->window()->layout()->activate();
+        if (region.host->layout()) region.host->layout()->activate();
+    }
+    for (auto it = restoredSizes.crbegin(); it != restoredSizes.crend(); ++it)
+        if (it->first) it->first->setSizes(it->second);
+    if (auto* group = groupById(layout.value("maximizedGroup").toString())) { setActiveGroup(group); toggleActiveGroupMaximized(); }
+    syncFloatingVisibility(); emit layoutChanged();
+    warnings.removeDuplicates(); return warnings;
+}
+
+QStringList EditorSplitController::regions() const
+{
+    auto ids = regionHosts.keys(); ids.sort(); return ids;
+}
+QString EditorSplitController::regionForGroup(QTabWidget* group) const { return groupRegions.value(group); }
+QTabWidget* EditorSplitController::regionGroup(const QString& id) const { return regionHosts.value(id).anchor; }
+QTabWidget* EditorSplitController::regionActiveGroup(const QString& id) const
+{
+    const auto region=regionHosts.value(id);
+    return region.current && tabGroups.contains(region.current) ? region.current.data() : region.anchor.data();
+}
+QWidget* EditorSplitController::regionRoot(const QString& id) const { return regionHosts.value(id).root; }
+QWidget* EditorSplitController::regionHost(const QString& id) const { return regionHosts.value(id).host; }
+bool EditorSplitController::regionHasPages(const QString& id) const
+{
+    for (auto* group : groups(id)) if (group->count()) return true;
+    return false;
+}
+bool EditorSplitController::takePage(QWidget* page)
+{
+    if (!page) return false;
+    if (auto* group=groupForPage(page)) {
+        group->removeTab(group->indexOf(page));
+        page->hide();
+    }
+    unregisterPage(page);
+    removeEmptyGroups();
+    emit pageVisibilityChanged(page,false); emit layoutChanged();
+    return true;
+}
+QList<QTabWidget*> EditorSplitController::groups(const QString& id) const
+{
+    QList<QTabWidget*> result;
+    for (auto* group : groups()) if (regionForGroup(group) == id) result.append(group);
+    return result;
+}
+QString EditorSplitController::groupId(QTabWidget* group) const
+{
+    return group && tabGroups.contains(group) ? group->property("pageGroupId").toString() : QString();
+}
+QTabWidget* EditorSplitController::groupById(const QString& id) const
+{
+    if (id.isEmpty()) return nullptr;
+    for (auto* group : groups()) if (groupId(group) == id) return group;
+    return nullptr;
+}
+QString EditorSplitController::pageId(QWidget* page) const
+{
+    if (!page) return {};
+    QString id = page->property("pageId").toString();
+    if (id.isEmpty()) {
+        id = page->property("editorViewId").toString();
+        if (id.isEmpty()) id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        page->setProperty("pageId", id);
+    }
+    return id;
+}
+QWidget* EditorSplitController::pageById(const QString& id) const
+{
+    if (id.isEmpty()) return nullptr;
+    for (auto it=pages.cbegin(); it!=pages.cend(); ++it) if (it->id==id) return it.key();
+    for (auto* group : groups())
+        for (int i=0;i<group->count();++i) if (pageId(group->widget(i))==id) return group->widget(i);
+    return nullptr;
+}
+bool EditorSplitController::registerPage(QWidget* page, const QString& id, const QString& kind,
+                                         std::function<bool()> close)
+{
+    if (!page) return false;
+    const QString identity=id.isEmpty() ? pageId(page) : id;
+    if (auto* other=pageById(identity); other && other!=page) return false;
+    if (!pages.contains(page)) connect(page, &QObject::destroyed, this, [this,page] { pages.remove(page); });
+    auto& entry=pages[page]; entry.id=identity;
+    page->setProperty("pageId",identity);
+    if (!kind.isEmpty()) page->setProperty("pageKind",kind);
+    if (close) entry.close=std::move(close);
+    return true;
+}
+void EditorSplitController::unregisterPage(QWidget* page)
+{
+    pages.remove(page);
+}
+bool EditorSplitController::parkPage(QWidget* page)
+{
+    auto* group=groupForPage(page); if (!group) return false;
+    if (!pages.contains(page) && !registerPage(page)) return false;
+    const int index = group->indexOf(page);
+    auto& entry=pages[page]; entry.returnGroup=groupId(group); entry.returnIndex=index;
+    entry.presentation=takePagePresentation(group,index,nullptr);
+    if (!parkedPages) {
+        parkedPages=new QWidget(splitHost ? splitHost->window() : regionHosts.value(regionForGroup(group)).host->window());
+        parkedPages->setObjectName(QStringLiteral("parkedToolPages")); parkedPages->hide();
+    }
+    group->removeTab(index);
+    page->hide(); page->setParent(parkedPages);
+    removeEmptyGroups();
+    emit pageVisibilityChanged(page,false); emit layoutChanged();
+    return true;
+}
+bool EditorSplitController::restorePage(QWidget* page, QTabWidget* fallback, bool activate)
+{
+    if (!page || !pages.contains(page)) return false;
+    if (groupForPage(page)) return activate ? activatePage(page) : true;
+    const auto entry=pages.value(page);
+    auto* group=groupById(entry.returnGroup); if (!group) group=fallback;
+    if (!group || !tabGroups.contains(group)) return false;
+    {
+        const QSignalBlocker block(group);
+        const int previous=group->currentIndex();
+        insertPage(group,page,entry.presentation,entry.returnIndex);
+        if (!activate && previous>=0) group->setCurrentIndex(previous);
+    }
+    emit pageVisibilityChanged(page,true); emit layoutChanged();
+    return activate ? activatePage(page) : true;
+}
+bool EditorSplitController::hasPageCloseHandler(QWidget* page) const { return bool(pages.value(page).close); }
+bool EditorSplitController::requestPageClose(QWidget* page)
+{
+    const auto callback=pages.value(page).close;
+    return callback && callback();
+}
+void EditorSplitController::setRegionRevealHandler(const QString& id,std::function<void()> reveal)
+{
+    if (regionHosts.contains(id)) regionHosts[id].reveal=std::move(reveal);
+}
+void EditorSplitController::revealGroup(QTabWidget* group)
+{
+    if (restoringPageLayout) return;
+    if (isFloatingGroup(group)) { group->window()->show(); return; }
+    const auto reveal=regionHosts.value(regionForGroup(group)).reveal;
+    if (reveal) reveal();
+}
+bool EditorSplitController::activatePage(QWidget* page,bool focus)
+{
+    auto* group=groupForPage(page); if (!group) return false;
+    revealGroup(group);
+    { const QSignalBlocker block(group); group->setCurrentWidget(page); }
+    if (currentGroup == group) emit pageActivated(page);
+    else setActiveGroup(group);
+    if (focus) page->setFocus(Qt::OtherFocusReason);
+    return true;
+}
+void EditorSplitController::updateRegionRoot(const QString& id,QWidget* root)
+{
+    regionHosts[id].root=root;
+    if (id==QStringLiteral("main")) rootWidget=root;
 }
 
 QWidget* EditorSplitController::host() const
@@ -130,17 +509,22 @@ void EditorSplitController::setActiveGroup(QTabWidget* group)
         return;
     }
     currentGroup = group;
+    regionHosts[regionForGroup(group)].current = group;
     emit activeGroupChanged(group);
+    emit pageActivated(group->currentWidget());
 }
 
 QList<QTabWidget*> EditorSplitController::groups() const
 {
     QList<QTabWidget*> result;
-    result.reserve(tabGroups.size());
-    for (const QPointer<QTabWidget>& group : tabGroups) {
-        if (group)
-            result.append(group.data());
-    }
+    const std::function<void(QWidget*)> visit=[&](QWidget* widget) {
+        if (auto* group=qobject_cast<QTabWidget*>(widget); group && tabGroups.contains(group)) result.append(group);
+        else if (auto* splitter=qobject_cast<QSplitter*>(widget))
+            for (int i=0;i<splitter->count();++i) visit(splitter->widget(i));
+    };
+    for (const auto& id : {QStringLiteral("main"),QStringLiteral("left"),QStringLiteral("right"),QStringLiteral("bottom")})
+        visit(regionRoot(id));
+    for (const auto& group : tabGroups) if (group && !result.contains(group)) result.append(group);
     return result;
 }
 
@@ -168,10 +552,12 @@ QTabWidget* EditorSplitController::createSplit(
         || direction == EditorSplitDirection::Center || isFloatingGroup(source)) {
         return nullptr;
     }
-    if (!splitHost)
-        return nullptr;
+    const QString regionId = regionForGroup(source);
+    const auto region = regionHosts.value(regionId);
+    if (!region.host) return nullptr;
+    if (groupMaximized) restoreGroupLayout();
 
-    QTabWidget* created = createGroup();
+    QTabWidget* created = createGroup(regionId);
     const Qt::Orientation orientation =
         orientationForDirection(direction);
     const bool before = directionComesBefore(direction);
@@ -188,13 +574,14 @@ QTabWidget* EditorSplitController::createSplit(
         auto* nested = new QSplitter(orientation);
         nested->setObjectName(QStringLiteral("editorSplit"));
         nested->setChildrenCollapsible(false);
+        connect(nested,&QSplitter::splitterMoved,this,[this,nested] { emit splitterResized(nested); emit layoutChanged(); });
         if (parentSplitter) {
             const int sourceIndex =
                 parentSplitter->indexOf(source);
             parentSplitter->replaceWidget(sourceIndex, nested);
-        } else if (splitHost->layout()) {
-            delete splitHost->layout()->replaceWidget(source, nested);
-            rootWidget = nested;
+        } else if (region.host->layout()) {
+            delete region.host->layout()->replaceWidget(source, nested);
+            updateRegionRoot(regionId, nested);
         }
         if (before) {
             nested->addWidget(created);
@@ -206,6 +593,10 @@ QTabWidget* EditorSplitController::createSplit(
     }
     bindGroupDropTargets(source);
     bindGroupDropTargets(created);
+    // Reparenting a visible QWidget hides it. Both sides of a new split must
+    // be shown explicitly before QSplitter allocates their shared geometry.
+    if (auto* splitter = qobject_cast<QSplitter*>(created->parentWidget())) splitter->show();
+    source->show(); created->show();
     setActiveGroup(created);
     equalizeSplitSizes();
     emit layoutChanged();
@@ -225,10 +616,17 @@ bool EditorSplitController::movePage(
     const int sourceIndex = source->indexOf(page);
     if (sourceIndex < 0)
         return false;
+    if (source==destination) {
+        if (destinationIndex>=0) source->tabBar()->moveTab(sourceIndex,qBound(0,destinationIndex,source->count()-1));
+        activatePage(page,false); emit layoutChanged(); return true;
+    }
 #ifdef ZEROSLACK_ENABLE_ELA
     if (auto* elaSource = qobject_cast<ElaTabWidget*>(source)) {
-        if (elaSource->hasHostedTabs())
-            return elaSource->transferHostedTab(page, qobject_cast<ElaTabWidget*>(destination), destinationIndex);
+        if (elaSource->hasHostedTabs()) {
+            const bool moved=elaSource->transferHostedTab(page,qobject_cast<ElaTabWidget*>(destination),destinationIndex);
+            if (moved && source==destination) { activatePage(page,false); emit layoutChanged(); }
+            return moved;
+        }
     }
 #endif
 
@@ -237,12 +635,29 @@ bool EditorSplitController::movePage(
         takePagePresentation(source, sourceIndex, &takenPage);
     if (!takenPage)
         return false;
+    QPointer<QWidget> pageGuard(takenPage), focused(QApplication::focusWidget());
+    QPointer<QTabWidget> sourceGuard(source), targetGuard(destination);
+    QSignalBlocker sourceBlock(source), targetBlock(destination);
     source->removeTab(sourceIndex);
-    insertPage(destination,
-               takenPage,
-               presentation,
-               destinationIndex);
-    setActiveGroup(destination);
+    if (!sourceGuard) sourceBlock.dismiss();
+    if (!targetGuard) targetBlock.dismiss();
+    if (!pageGuard || !sourceGuard || !targetGuard) {
+        if (sourceGuard && pageGuard) insertPage(sourceGuard,pageGuard,presentation,sourceIndex);
+        if (focused) focused->setFocus(Qt::OtherFocusReason);
+        return false;
+    }
+    insertPage(destination,takenPage,presentation,destinationIndex);
+    const bool moved=targetGuard && pageGuard && targetGuard->indexOf(pageGuard)>=0;
+    if (!sourceGuard) sourceBlock.dismiss();
+    if (!targetGuard) targetBlock.dismiss();
+    if (!moved) {
+        if (sourceGuard && pageGuard) insertPage(sourceGuard,pageGuard,presentation,sourceIndex);
+        if (focused) focused->setFocus(Qt::OtherFocusReason);
+        return false;
+    }
+    sourceBlock.unblock(); targetBlock.unblock();
+    activatePage(page,false);
+    if (focused && (focused==page || page->isAncestorOf(focused))) focused->setFocus(Qt::OtherFocusReason);
     emit pageMoved(page, source, destination);
     removeEmptyGroups();
     emit layoutChanged();
@@ -289,14 +704,30 @@ bool EditorSplitController::mergeGroup(
     return true;
 }
 
+bool EditorSplitController::retainGroup(QTabWidget* group)
+{
+    if (!group || !tabGroups.contains(group)) return false;
+    ++retainedGroups[group];
+    return true;
+}
+
+void EditorSplitController::releaseGroup(QTabWidget* group)
+{
+    auto it=retainedGroups.find(group);
+    if (it==retainedGroups.end()) return;
+    if (--it.value()==0) retainedGroups.erase(it);
+    removeEmptyGroups();
+}
+
 void EditorSplitController::removeEmptyGroups()
 {
-    if (tabGroups.size() <= 1)
+    if (restoringPageLayout || tabGroups.size() <= 1)
         return;
     const QList<QPointer<QTabWidget>> snapshot = tabGroups;
     for (const QPointer<QTabWidget>& groupPointer : snapshot) {
         QTabWidget* group = groupPointer;
-        if (!group || group->count() != 0
+        if (!group || group->count() != 0 || retainedGroups.contains(group)
+            || regionHosts.value(regionForGroup(group)).anchor == group
             || tabGroups.size() <= 1) {
             continue;
         }
@@ -306,7 +737,7 @@ void EditorSplitController::removeEmptyGroups()
 #endif
         QTabWidget* replacement = nullptr;
         for (QTabWidget* candidate : groups()) {
-            if (candidate != group && !isFloatingGroup(candidate)) {
+            if (candidate != group && !isFloatingGroup(candidate) && regionForGroup(candidate)==regionForGroup(group)) {
                 replacement = candidate;
                 break;
             }
@@ -318,10 +749,11 @@ void EditorSplitController::removeEmptyGroups()
         QSplitter* parentSplitter =
             qobject_cast<QSplitter*>(group->parentWidget());
         tabGroups.removeAll(group);
+        groupRegions.remove(group);
         if (firstGroup == group)
             firstGroup = replacement;
         if (currentGroup == group)
-            currentGroup = firstGroup;
+            setActiveGroup(replacement ? replacement : firstGroup.data());
 #ifdef ZEROSLACK_ENABLE_ELA
         if (auto* ela = qobject_cast<ElaTabWidget*>(group); ela && ela->isFloatingTabWidget()) {
             ela->disposeEmptyFloatingWindow();
@@ -376,9 +808,10 @@ void EditorSplitController::toggleActiveGroupMaximized()
 
     savedSplitterSizes.clear();
     savedGroupVisibility.clear();
-    collectSplitterSizes(rootWidget);
+    maximizedRegion = regionForGroup(active);
+    collectSplitterSizes(regionRoot(maximizedRegion));
     for (QTabWidget* group : groups()) {
-        if (isFloatingGroup(group))
+        if (isFloatingGroup(group) || regionForGroup(group) != maximizedRegion)
             continue;
         savedGroupVisibility.insert(group, group->isVisible());
         if (group != active)
@@ -394,12 +827,13 @@ void EditorSplitController::restoreGroupLayout()
     if (!groupMaximized)
         return;
     for (QTabWidget* group : groups()) {
-        if (isFloatingGroup(group))
+        if (isFloatingGroup(group) || !savedGroupVisibility.contains(group))
             continue;
         group->setVisible(
             savedGroupVisibility.value(group, true));
     }
-    restoreSplitterSizes(rootWidget);
+    restoreSplitterSizes(regionRoot(maximizedRegion));
+    maximizedRegion.clear();
     savedSplitterSizes.clear();
     savedGroupVisibility.clear();
     groupMaximized = false;
@@ -408,7 +842,7 @@ void EditorSplitController::restoreGroupLayout()
 
 void EditorSplitController::equalizeSplitSizes()
 {
-    equalizeSplitter(rootWidget);
+    equalizeSplitter(regionRoot(regionForGroup(activeGroup())));
     emit layoutChanged();
 }
 
@@ -424,6 +858,18 @@ bool EditorSplitController::eventFilter(
     QObject* watched,
     QEvent* event)
 {
+    if (event->type()==QEvent::LayoutRequest)
+        updateGroupMinimumWidth(groupForObject(watched));
+    if (event->type()==QEvent::FocusIn || event->type()==QEvent::MouseButtonPress) {
+        if (auto* group=groupForObject(watched)) {
+            setActiveGroup(group);
+        }
+    }
+    QTabBar* bar=qobject_cast<QTabBar*>(watched);
+    if (bar) {
+        auto* owner=groupForObject(bar);
+        if (!owner || owner->tabBar()!=bar) return QObject::eventFilter(watched,event);
+    }
 #ifdef ZEROSLACK_ENABLE_ELA
     if (auto* ela = qobject_cast<ElaTabWidget*>(groupForObject(watched)); ela && ela->hasHostedTabs()) {
         if (auto* bar = qobject_cast<QTabBar*>(watched); bar && event->type() == QEvent::ContextMenu) {
@@ -434,7 +880,7 @@ bool EditorSplitController::eventFilter(
     }
 #endif
     if (event->type() == QEvent::ChildAdded
-        && qobject_cast<QStackedWidget*>(watched)) {
+        && qobject_cast<QStackedWidget*>(watched) && groupForObject(watched)) {
         auto* childEvent = static_cast<QChildEvent*>(event);
         if (auto* childWidget =
                 qobject_cast<QWidget*>(childEvent->child())) {
@@ -442,7 +888,6 @@ bool EditorSplitController::eventFilter(
         }
     }
 
-    QTabBar* bar = qobject_cast<QTabBar*>(watched);
     if (bar && event->type() == QEvent::MouseButtonPress) {
         auto* mouse = static_cast<QMouseEvent*>(event);
         if (mouse->button() == Qt::LeftButton) {
@@ -541,9 +986,10 @@ bool EditorSplitController::eventFilter(
     return QObject::eventFilter(watched, event);
 }
 
-QTabWidget* EditorSplitController::createGroup()
+QTabWidget* EditorSplitController::createGroup(const QString& regionId)
 {
-    auto* group = UiControls::editorTabWidget(splitHost);
+    auto* group = UiControls::editorTabWidget(regionHosts.value(regionId).host);
+    groupRegions.insert(group, regionId);
     configureGroup(group);
     tabGroups.append(group);
     emit groupCreated(group);
@@ -554,6 +1000,11 @@ void EditorSplitController::configureGroup(QTabWidget* group)
 {
     if (!group)
         return;
+    if (group->property("pageGroupId").toString().isEmpty())
+        group->setProperty("pageGroupId", QUuid::createUuid().toString(QUuid::WithoutBraces));
+    connect(group,&QObject::destroyed,this,[this,group] {
+        groupRegions.remove(group); retainedGroups.remove(group); tabGroups.removeAll(group); tabGroups.removeAll(nullptr);
+    });
 #ifdef ZEROSLACK_ENABLE_ELA
     if (auto* ela = qobject_cast<ElaTabWidget*>(group)) {
         ela->setHostedTabs(this,
@@ -575,8 +1026,9 @@ void EditorSplitController::configureGroup(QTabWidget* group)
                 }
                 return nullptr;
             });
-        ela->setHostedTabBar(qobject_cast<ElaTabBar*>(UiControls::tabBar(group)));
-        connect(ela, &ElaTabWidget::floatingTabWidgetCreated, this, [this](ElaTabWidget* floating) {
+        if (!group->count()) ela->setHostedTabBar(qobject_cast<ElaTabBar*>(UiControls::tabBar(group)));
+        connect(ela, &ElaTabWidget::floatingTabWidgetCreated, this, [this,group](ElaTabWidget* floating) {
+            groupRegions.insert(floating, regionForGroup(group));
             tabGroups.append(floating);
             configureGroup(floating);
             if (splitHost) {
@@ -590,25 +1042,31 @@ void EditorSplitController::configureGroup(QTabWidget* group)
         connect(ela, &ElaTabWidget::hostedTabMoved, this,
             [this](QWidget* page, ElaTabWidget* source, ElaTabWidget* target) {
                 bindGroupDropTargets(target);
-                setActiveGroup(target);
+                registerPage(page);
+                activatePage(page,false);
                 emit pageMoved(page, source, target);
                 removeEmptyGroups();
                 emit layoutChanged();
             });
+        connect(ela, &ElaTabWidget::hostedTabDragStarted, this, &EditorSplitController::tabDragStarted);
         connect(ela, &ElaTabWidget::hostedTabDragFinished, this, [this] {
+            emit tabDragFinished();
             removeEmptyGroups();
             emit layoutChanged();
         });
     }
 #endif
-    group->setObjectName(
-        QStringLiteral("editorTabGroup%1")
-            .arg(tabGroups.size() + 1));
+    if (group->objectName().isEmpty()) group->setObjectName(
+        QStringLiteral("editorTabGroup%1").arg(tabGroups.size()+1));
     group->setDocumentMode(true);
+    // Hidden tool pages must not dictate the width of another active page.
+    group->setSizePolicy(QSizePolicy::Ignored,QSizePolicy::Preferred);
+    group->setMinimumWidth(120);
     group->setTabsClosable(true);
     group->setMovable(true);
     group->setElideMode(Qt::ElideMiddle);
     group->tabBar()->setProperty("editorFileTabs", true);
+    group->tabBar()->setProperty("currentLabelTabs", false);
     group->tabBar()->setExpanding(false);
     group->tabBar()->setUsesScrollButtons(true);
     if (!group->tabBar()->property("zeroslackElaControl").toBool())
@@ -618,9 +1076,13 @@ void EditorSplitController::configureGroup(QTabWidget* group)
             &QTabWidget::currentChanged,
             this,
             [this, group](int index) {
-                if (index >= 0)
+                if (index >= 0) {
                     bindDropTarget(group->widget(index));
-                setActiveGroup(group);
+                    registerPage(group->widget(index));
+                }
+                updateGroupMinimumWidth(group);
+                if (activeGroup() == group)
+                    emit pageActivated(index >= 0 ? group->widget(index) : nullptr);
             });
     connect(group,
             &QTabWidget::tabCloseRequested,
@@ -628,6 +1090,16 @@ void EditorSplitController::configureGroup(QTabWidget* group)
             [this, group](int index) {
                 emit tabCloseRequested(group, index);
             });
+}
+
+void EditorSplitController::updateGroupMinimumWidth(QTabWidget* group)
+{
+    if (!group) return;
+    // Ignore hidden pages' size hints, while retaining the visible page's
+    // explicit minimum so a scrollable region can expose it without clipping.
+    const auto* page=group->currentWidget();
+    const int chrome=2*group->style()->pixelMetric(QStyle::PM_DefaultFrameWidth,nullptr,group);
+    group->setMinimumWidth(qMax(120,page ? page->minimumWidth()+chrome : 0));
 }
 
 void EditorSplitController::bindGroupDropTargets(
@@ -692,9 +1164,7 @@ QWidget* EditorSplitController::pageForViewId(
 
 QString EditorSplitController::viewIdForPage(QWidget* page) const
 {
-    return page
-        ? page->property("editorViewId").toString()
-        : QString();
+    return pageId(page);
 }
 
 EditorSplitController::PagePresentation
@@ -714,6 +1184,10 @@ EditorSplitController::takePagePresentation(
     presentation.icon = group->tabIcon(index);
     presentation.toolTip = group->tabToolTip(index);
     presentation.data = group->tabBar()->tabData(index);
+    presentation.whatsThis = group->tabWhatsThis(index);
+    presentation.color = group->tabBar()->tabTextColor(index);
+    presentation.enabled = group->isTabEnabled(index);
+    presentation.visible = group->isTabVisible(index);
     return presentation;
 }
 
@@ -736,7 +1210,11 @@ void EditorSplitController::insertPage(
         presentation.text);
     group->setTabToolTip(inserted, presentation.toolTip);
     group->tabBar()->setTabData(inserted, presentation.data);
-    group->setCurrentIndex(inserted);
+    group->setTabWhatsThis(inserted, presentation.whatsThis);
+    group->tabBar()->setTabTextColor(inserted, presentation.color);
+    group->setTabEnabled(inserted, presentation.enabled);
+    group->setTabVisible(inserted, presentation.visible);
+    if (presentation.visible) group->setCurrentIndex(inserted);
 }
 
 void EditorSplitController::collapseRedundantSplitter(
@@ -752,11 +1230,13 @@ void EditorSplitController::collapseRedundantSplitter(
     if (parentSplitter) {
         const int index = parentSplitter->indexOf(splitter);
         parentSplitter->replaceWidget(index, survivor);
-    } else if (splitHost && splitHost->layout()) {
-        delete splitHost->layout()->replaceWidget(splitter, survivor);
-        survivor->setParent(splitHost);
-        survivor->show();
-        rootWidget = survivor;
+    } else {
+        for (const auto& id : regions()) {
+            const auto region = regionHosts.value(id);
+            if (region.root != splitter || !region.host || !region.host->layout()) continue;
+            delete region.host->layout()->replaceWidget(splitter, survivor);
+            survivor->setParent(region.host); survivor->show(); updateRegionRoot(id,survivor); break;
+        }
     }
     splitter->setParent(nullptr);
     splitter->deleteLater();
@@ -767,7 +1247,7 @@ QTabWidget* EditorSplitController::fallbackMergeDestination(
     QTabWidget* source) const
 {
     for (QTabWidget* group : groups()) {
-        if (group != source)
+        if (group != source && regionForGroup(group) == regionForGroup(source))
             return group;
     }
     return nullptr;
@@ -800,7 +1280,8 @@ void EditorSplitController::equalizeSplitter(QWidget* widget)
     auto* splitter = qobject_cast<QSplitter*>(widget);
     if (!splitter)
         return;
-    splitter->setSizes(QList<int>(splitter->count(), 1));
+    const int extent=splitter->orientation()==Qt::Horizontal ? splitter->width() : splitter->height();
+    splitter->setSizes(QList<int>(splitter->count(),qMax(100,extent/qMax(1,splitter->count()))));
     for (int index = 0; index < splitter->count(); ++index)
         equalizeSplitter(splitter->widget(index));
 }
@@ -1047,7 +1528,11 @@ EditorSplitController::tabContextActions(
         item.enabled =
             (!spec.requiresTab || hasTab)
             && (!spec.requiresMultipleGroups
-                || tabGroups.size() > 1);
+                || groups(regionForGroup(group)).size() > 1);
+        if (page && page->property("toolPage").toBool()
+            && (item.actionId==QLatin1String(ActionIds::ViewEditorTabDuplicate)
+                || item.actionId==QLatin1String(ActionIds::ViewEditorTabToggleLocked)
+                || item.actionId==QLatin1String(ActionIds::ViewTemporaryEditorOpen))) item.enabled=false;
         item.separatorBefore =
             spec.separatorBefore;
         result.append(item);

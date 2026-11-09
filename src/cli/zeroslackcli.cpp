@@ -229,74 +229,6 @@ QString suiteRevision(const QString& workspaceRoot,
         + QString::fromLatin1(hash.result().toHex());
 }
 
-bool pathIsIgnored(const QString& path, const QStringList& ignored)
-{
-    const QString candidate = pathKey(path);
-    for (const QString& ignoredPath : ignored) {
-        const QString key = pathKey(ignoredPath);
-        if (candidate == key
-            || candidate.startsWith(key + QLatin1Char('/'))) {
-            return true;
-        }
-    }
-    return false;
-}
-
-bool extensionMatches(const QFileInfo& info,
-                      const QStringList& extensions)
-{
-    const QString suffix = QLatin1Char('.') + info.suffix().toLower();
-    for (QString extension : extensions) {
-        extension = extension.trimmed().toLower();
-        if (!extension.startsWith(QLatin1Char('.')))
-            extension.prepend(QLatin1Char('.'));
-        if (suffix == extension)
-            return true;
-    }
-    return false;
-}
-
-QStringList discoverSourceFiles(const WorkspaceConfiguration& configuration)
-{
-    QStringList result;
-    QStringList pending{configuration.workspaceRoot};
-    const QString gitDirectory = QDir(configuration.workspaceRoot)
-        .absoluteFilePath(QStringLiteral(".git"));
-    QStringList ignored = configuration.ignoredDirs;
-    ignored.append(gitDirectory);
-
-    while (!pending.isEmpty()) {
-        const QString directoryPath = pending.takeLast();
-        if (pathIsIgnored(directoryPath, ignored))
-            continue;
-        const QDir directory(directoryPath);
-        const QFileInfoList entries = directory.entryInfoList(
-            QDir::AllEntries | QDir::NoDotAndDotDot
-                | QDir::Readable | QDir::Hidden | QDir::System,
-            QDir::DirsFirst | QDir::Name | QDir::IgnoreCase);
-        for (const QFileInfo& entry : entries) {
-            if (entry.isSymLink())
-                continue;
-            if (entry.isDir()) {
-                if (!pathIsIgnored(entry.absoluteFilePath(), ignored))
-                    pending.append(entry.absoluteFilePath());
-                continue;
-            }
-            if (entry.isFile()
-                && extensionMatches(entry, configuration.fileExtensions)) {
-                result.append(normalizedPath(entry.absoluteFilePath()));
-            }
-        }
-    }
-
-    std::sort(result.begin(), result.end(), [](const QString& left,
-                                                const QString& right) {
-        return left.compare(right, Qt::CaseInsensitive) < 0;
-    });
-    result.removeDuplicates();
-    return result;
-}
-
 QJsonObject configurationJson(const WorkspaceConfiguration& configuration)
 {
     QJsonArray includeDirs;
@@ -345,7 +277,8 @@ WorkspaceState inspectWorkspace(const QString& requestedRoot)
         return state;
     }
 
-    const QStringList files = discoverSourceFiles(state.configuration);
+    const QStringList files = WorkspaceConfigurationService::discoverSourceFiles(state.configuration, &state.failureReason);
+    if (!state.failureReason.isEmpty()) return state;
     state.files.reserve(files.size());
     for (const QString& path : files) {
         QString failure;

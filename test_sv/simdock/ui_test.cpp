@@ -1,6 +1,9 @@
 #include "../testuistyle.h"
 #include "../../src/simulation/simdock/ui/workbench.h"
 #include "support/mainwindow.h"
+#include "../../src/simulation/simdock/core/simulationbuildplanner.h"
+#include <QVBoxLayout>
+#include <QAction>
 #include "../../src/simulation/simdock/core/questasession.h"
 #include <QTableWidget>
 #include <algorithm>
@@ -60,34 +63,24 @@
 #endif
 using namespace simdock;
 
-static bool waitForCompilation(MainWindow& window, const QString& root, const QDeadlineTimer& deadline)
+static std::shared_ptr<const SimulationBuildPlan> planFor(MainWindow& window,const QString& root)
 {
-    auto* workbench = window.findChild<Workbench*>();
-    auto* dut = window.findChild<ElaComboBox*>(QStringLiteral("dutSelector"));
-    if (!workbench || !dut) return false;
-    const auto ready = [&] {
-        const auto projects = loadProjects(root);
-        return projects.size() == 1
-            && !workbench->automationProjectState(projects.first()).value("compilationPending").toBool();
-    };
-    if (ready()) return true;
-    if (deadline.hasExpired()) return false;
-    QEventLoop loop;
-    QTimer timeout;
-    timeout.setSingleShot(true);
-    QObject::connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
-    // refreshCompilationOrder rebuilds the DUT model after applying the plan.
-    // A queued observation runs after updateControls, without resubmitting work.
-    QObject::connect(dut->model(), &QAbstractItemModel::rowsInserted, &loop,
-        [&] { if (ready()) loop.quit(); }, Qt::QueuedConnection);
-    timeout.start(int(deadline.remainingTime()));
-    loop.exec();
-    return ready();
+    QString error;
+    auto request=SimulationBuildPlanner::workspaceRequest(root,window.findChild<Workbench*>()->controller()->target(),&error);
+    if(!error.isEmpty())qWarning().noquote()<<error;
+    return SimulationBuildPlanner::plan(request);
+}
+static bool waitForCompilation(MainWindow& window,const QString& root,const QDeadlineTimer& deadline)
+{
+    if(deadline.hasExpired())return false;
+    const auto plan=planFor(window,root);
+    if(!plan->valid())qWarning().noquote()<<plan->error();
+    return plan->valid();
 }
 
 static bool chooseExistingTb(MainWindow& window, const QString& file)
 {
-    auto* button = window.findChild<QAbstractButton*>("chooseTb");
+    auto* button = window.findChild<QAction*>("chooseTb");
     if (!button || !button->isEnabled()) return false;
     bool accepted = false;
     QTimer::singleShot(0, &window, [&] {
@@ -97,7 +90,7 @@ static bool chooseExistingTb(MainWindow& window, const QString& file)
         dialog->selectFile(file);
         accepted = QMetaObject::invokeMethod(dialog, "accept");
     });
-    button->click();
+    button->trigger();
     return accepted;
 }
 
@@ -202,7 +195,7 @@ private slots:
             .value(QStringLiteral("ok")).toBool());
         QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 1, 10000);
         QCOMPARE(w.workspace(), QFileInfo(workspace.path()).canonicalFilePath());
-        QCOMPARE(w.findChild<ElaListView*>(QStringLiteral("projectList"))->currentIndex().data().toString(), project.name);
+        QCOMPARE(w.findChild<Workbench*>()->controller()->legacyProjectId(), project.id);
         const auto invalid = roundTrip([&] { return client.resolveResource(QStringLiteral("simdock://workspace?path=../missing")); });
         QCOMPARE(invalid.value(QStringLiteral("error")).toObject().value(QStringLiteral("code")).toString(), QStringLiteral("workspace_not_found"));
         const auto rejected = roundTrip([&] { return client.invokeAction(QStringLiteral("simdock.simulation.run"), {}, uri, QStringLiteral("simdock")); });
@@ -259,15 +252,15 @@ private slots:
         QVERIFY(suite.handle(SuiteApp::makeRequest(QStringLiteral("action.invoke"), params)).value(QStringLiteral("ok")).toBool());
         QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 1, 10000);
         QCOMPARE(w.workspace(), QFileInfo(workspace.path()).canonicalFilePath());
-        auto* projects = w.findChild<ElaListView*>(QStringLiteral("projectList"));
-        QCOMPARE(projects->currentIndex().data().toString(), QStringLiteral("Second"));
+        auto* controller = w.findChild<Workbench*>()->controller();
+        QCOMPARE(controller->legacyProjectId(), second.id);
         params.insert(QStringLiteral("actionId"), QStringLiteral("simdock.simulation.run"));
         QVERIFY(!suite.handle(SuiteApp::makeRequest(QStringLiteral("action.invoke"), params)).value(QStringLiteral("ok")).toBool());
         params.insert(QStringLiteral("resourceUri"), QStringLiteral("simdock://project?workspace=../outside&id=missing"));
         QVERIFY(!suite.handle(SuiteApp::makeRequest(QStringLiteral("resource.resolve"), params)).value(QStringLiteral("ok")).toBool());
         params.insert(QStringLiteral("resourceUri"), QStringLiteral("zeroslack://source?file=anything"));
         QVERIFY(!suite.handle(SuiteApp::makeRequest(QStringLiteral("resource.resolve"), params)).value(QStringLiteral("ok")).toBool());
-        QCOMPARE(projects->currentIndex().data().toString(), QStringLiteral("Second"));
+        QCOMPARE(controller->legacyProjectId(), second.id);
         w.close();
     }
 #endif
@@ -300,32 +293,14 @@ private slots:
         const QDeadlineTimer operationDeadline(15000);
         w.openWorkspace(workspace.path());
         QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 1, 15000);
-        QVERIFY(w.createProject(QStringLiteral("Counter demo")));
-        auto* list = w.findChild<QListView*>(QStringLiteral("sourceList"));
-        QVERIFY(list);
-        auto* model = qobject_cast<QStandardItemModel*>(list->model());
-        QCOMPARE(model->rowCount(), 2);
-        QTest::qWait(100);
-        const auto firstRow = list->visualRect(model->index(0, 0));
-        QStyleOptionViewItem itemOption;
-        itemOption.initFrom(list);
-        itemOption.rect = firstRow;
-        itemOption.features = QStyleOptionViewItem::HasCheckIndicator | QStyleOptionViewItem::HasDisplay;
-        itemOption.text = model->item(0)->text();
-        const auto indicator = list->style()->subElementRect(QStyle::SE_ItemViewItemCheckIndicator, &itemOption, list);
-        QVERIFY(indicator.isValid());
-        QTest::mouseClick(list->viewport(), Qt::LeftButton, Qt::NoModifier, indicator.center());
-        QCOMPARE(model->item(0)->checkState(), Qt::Checked);
-        auto* dut = w.findChild<ElaComboBox*>(QStringLiteral("dutSelector"));
-        QCOMPARE(dut->count(), 1);
         QVERIFY(chooseExistingTb(w, workspace.filePath("manual.sv")));
         QVERIFY(waitForCompilation(w, workspace.path(), operationDeadline));
         QVERIFY(w.findChild<ElaPushButton*>(QStringLiteral("startSimulation"))->isEnabled());
-        QCOMPARE(w.findChild<ElaLineEdit*>("tbFile")->text(), QString("manual.sv"));
+        QCOMPARE(w.findChild<Workbench*>()->controller()->target().file, QString("manual.sv"));
         QVERIFY(!w.findChild<QAction*>("createTb"));
         w.openWorkspace(workspace.path());
-        QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 2, 15000);
-        QVERIFY(!w.findChild<ElaLineEdit*>(QStringLiteral("tbFile"))->text().isEmpty());
+        QCOMPARE(scanned.size(), 1);
+        QVERIFY(!w.findChild<Workbench*>()->controller()->target().isEmpty());
         const QString screenshots = qEnvironmentVariable("SIMDOCK_SCREENSHOT_DIR");
         if (!screenshots.isEmpty()) {
             QDir().mkpath(screenshots);
@@ -347,71 +322,41 @@ private slots:
         }
         QTemporaryDir second;
         w.openWorkspace(second.path());
-        QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 3, 15000);
-        QCOMPARE(qobject_cast<QStandardItemModel*>(list->model())->rowCount(), 0);
-        QVERIFY(!w.findChild<ElaPushButton*>(QStringLiteral("startSimulation"))->isEnabled());
+        QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 2, 15000);
+        QVERIFY(w.findChild<Workbench*>()->controller()->target().isEmpty());
+        QVERIFY(w.findChild<ElaPushButton*>(QStringLiteral("startSimulation"))->isEnabled());
         w.close();
     }
-    void waveThemeSettings()
+    void compactSimulationSettings()
     {
-        QSettings().remove(QStringLiteral("waveform/theme"));
-        QTemporaryDir simulator;
+        QTemporaryDir workspace, simulator;
         for (const auto& name : {QStringLiteral("vsim.exe"), QStringLiteral("vlog.exe")}) {
             QFile file(simulator.filePath(name));
             QVERIFY(file.open(QIODevice::WriteOnly));
         }
-        MainWindow window;
-        window.setSimulator(simulator.filePath(QStringLiteral("vsim.exe")));
-        auto* settingsButton = window.findChild<QToolButton*>(QStringLiteral("openSettings"));
-        QVERIFY(settingsButton);
-        bool changed = false;
-        QTimer::singleShot(50, &window, [&] {
-            auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget());
-            if (!dialog) return;
-            auto* selector = dialog->findChild<ElaComboBox*>(QStringLiteral("waveThemeSelector"));
-            auto* save = dialog->findChild<ElaPushButton*>(QStringLiteral("saveSettings"));
-            if (selector && save) {
-                changed = selector->count() == 4 && selector->currentData() == QStringLiteral("default");
-                selector->setCurrentIndex(selector->findData(QStringLiteral("mocha")));
-                save->click();
-            } else dialog->reject();
-        });
-        settingsButton->click();
-        QVERIFY(changed);
-        QCOMPARE(QSettings().value(QStringLiteral("waveform/theme")).toString(), QStringLiteral("mocha"));
+        QVERIFY(QDir(workspace.path()).mkpath("include"));
+        WorkspaceSimulationController controller;
+        QVERIFY(controller.setWorkspace(workspace.path()).isEmpty());
+        bool configured = false;
+        SettingsDialog dialog(simulator.filePath("vsim.exe"), nullptr, false, &controller,
+                              [&] { configured = true; });
+        QVERIFY(!dialog.findChild<QWidget*>("themeSelector"));
+        QVERIFY(!dialog.findChild<QWidget*>("waveThemeSelector"));
+        auto* includes = dialog.findChild<QPlainTextEdit*>("simulationIncludes");
+        auto* mappings = dialog.findChild<QPlainTextEdit*>("simulationDefinitionSources");
+        auto* configuration = dialog.findChild<QPushButton*>("simulationWorkspaceConfiguration");
+        QVERIFY(includes && mappings && configuration);
+        configuration->click(); QVERIFY(configured);
+        includes->setPlainText("include");
+        dialog.findChild<QPushButton*>("saveSettings")->click();
+        QCOMPARE(dialog.result(), int(QDialog::Accepted));
+        QCOMPARE(controller.includeDirectories(), QStringList{"include"});
 
-        SettingsDialog reopened(simulator.filePath(QStringLiteral("vsim.exe")), &window, true);
-        auto* selector = reopened.findChild<ElaComboBox*>(QStringLiteral("waveThemeSelector"));
-        auto* preview = reopened.findChild<QLabel*>(QStringLiteral("waveThemePreview"));
-        QVERIFY(selector && preview);
-        QCOMPARE(reopened.waveTheme(), WaveTheme::Mocha);
-        QVERIFY(selector->isEnabled());
-        const auto mochaImage = preview->pixmap().toImage();
-        QCOMPARE(mochaImage.pixelColor(0, 0), QColor(QStringLiteral("#1e1e2e")));
-        selector->setCurrentIndex(selector->findData(QStringLiteral("solarized-light")));
-        QCOMPARE(reopened.waveTheme(), WaveTheme::SolarizedLight);
-        QCOMPARE(preview->pixmap().toImage().pixelColor(0, 0), QColor(QStringLiteral("#fdf6e3")));
-        reopened.reject();
-        QCOMPARE(QSettings().value(QStringLiteral("waveform/theme")).toString(), QStringLiteral("mocha"));
-
-        bool restored = false;
-        QTimer::singleShot(50, &window, [&] {
-            auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget());
-            if (!dialog) return;
-            auto* combo = dialog->findChild<ElaComboBox*>(QStringLiteral("waveThemeSelector"));
-            if (combo) {
-                combo->setCurrentIndex(combo->findData(QStringLiteral("default")));
-                restored = true;
-                dialog->accept();
-            } else dialog->reject();
-        });
-        settingsButton->click();
-        QVERIFY(restored);
-        QCOMPARE(QSettings().value(QStringLiteral("waveform/theme")).toString(), QStringLiteral("default"));
-        QSettings().setValue(QStringLiteral("waveform/theme"), QStringLiteral("obsolete-theme"));
-        SettingsDialog invalid(simulator.filePath(QStringLiteral("vsim.exe")));
-        QCOMPARE(invalid.waveTheme(), WaveTheme::QuestaDefault);
-        QSettings().remove(QStringLiteral("waveform/theme"));
+        SettingsDialog cancelled(simulator.filePath("vsim.exe"), nullptr, true, &controller);
+        QVERIFY(!cancelled.findChild<QLineEdit*>("simulatorPath")->isEnabled());
+        cancelled.findChild<QPlainTextEdit*>("simulationIncludes")->setPlainText("missing");
+        cancelled.reject();
+        QCOMPARE(controller.includeDirectories(), QStringList{"include"});
     }
     void namedTypeExistingTb()
     {
@@ -433,158 +378,64 @@ private slots:
         const QDeadlineTimer operationDeadline(15000);
         w.openWorkspace(workspace.path());
         QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 1, 15000);
-        QVERIFY(w.createProject(QStringLiteral("Named types")));
-        auto* model = qobject_cast<QStandardItemModel*>(w.findChild<QListView*>(QStringLiteral("sourceList"))->model());
-        QVERIFY(model);
-        for (int row = 0; row < model->rowCount(); ++row)
-            if (model->item(row)->data(Qt::UserRole).toString() == QStringLiteral("dut.sv")
-                || model->item(row)->data(Qt::UserRole).toString() == QStringLiteral("types.sv"))
-                model->item(row)->setCheckState(Qt::Checked);
         QVERIFY(chooseExistingTb(w, workspace.filePath("manual.sv")));
         QVERIFY(waitForCompilation(w, workspace.path(), operationDeadline));
         QVERIFY(w.findChild<ElaPushButton*>(QStringLiteral("startSimulation"))->isEnabled());
-        const auto projects = loadProjects(workspace.path());
-        QCOMPARE(projects.size(), 1);
-        const auto& project = projects.first();
-        QVERIFY(project.sources.indexOf(QStringLiteral("types.sv")) < project.sources.indexOf(QStringLiteral("dut.sv")));
-        QCOMPARE(project.tbFile, QString("manual.sv")); QCOMPARE(project.tbName, QString("tb_typed_dut"));
-        QFile existing(workspace.filePath(project.tbFile)); QVERIFY(existing.open(QIODevice::ReadOnly));
+        const auto plan=planFor(w,workspace.path());QVERIFY2(plan->valid(),qPrintable(plan->error()));
+        const auto files=plan->compilation.files;
+        QVERIFY(files.indexOf(SemanticInputCapture::pathKey(package.fileName()))<files.indexOf(SemanticInputCapture::pathKey(source.fileName())));
+        QCOMPARE(w.findChild<Workbench*>()->controller()->target().top,QString("tb_typed_dut"));
+        QVERIFY(loadProjects(workspace.path(),nullptr,false).isEmpty());
+        QFile existing(tb.fileName());QVERIFY(existing.open(QIODevice::ReadOnly));
         QCOMPARE(existing.readAll(), handwritten);
     }
     void firstSourceClickCreatesProject()
     {
+        // The former project prompt is retired; selecting a TB writes only the target record.
         QTemporaryDir workspace;
-        QFile file(workspace.filePath(QStringLiteral("counter.sv")));
-        QVERIFY(file.open(QIODevice::WriteOnly));
-        file.write("module counter(input logic clk, output logic ready); endmodule\n");
-        file.close();
-        MainWindow w;
-        w.show();
-        QSignalSpy scanned(&w, &MainWindow::scanFinished);
-        w.openWorkspace(workspace.path());
-        QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 1, 15000);
-        auto* list = w.findChild<QListView*>(QStringLiteral("sourceList"));
-        auto* projects = w.findChild<ElaListView*>(QStringLiteral("projectList"));
-        QVERIFY(list && projects);
-        auto* model = qobject_cast<QStandardItemModel*>(list->model());
-        const auto clickSource = [&] {
-            const auto rect = list->visualRect(model->index(0, 0));
-            const auto point = list->viewport()->mapTo(&w, QPoint(rect.left() + 18, rect.center().y()));
-            QTest::mouseClick(w.windowHandle(), Qt::LeftButton, Qt::NoModifier, point);
-        };
-        bool cancelPrompt = false;
-        QTimer::singleShot(100, &w, [&] {
-            auto* dialog = w.findChild<QDialog*>(QStringLiteral("newProjectDialog"));
-            cancelPrompt = dialog && dialog->isVisible();
-            if (dialog) dialog->reject();
-        });
-        clickSource();
-        QTRY_VERIFY_WITH_TIMEOUT(cancelPrompt, 1000);
-        QCOMPARE(projects->model()->rowCount(), 0);
-        QCOMPARE(model->item(0)->checkState(), Qt::Unchecked);
-        bool createPrompt = false;
-        QTimer::singleShot(100, &w, [&] {
-            auto* dialog = w.findChild<QDialog*>(QStringLiteral("newProjectDialog"));
-            createPrompt = dialog && dialog->isVisible();
-            if (!dialog) return;
-            auto* name = dialog->findChild<ElaLineEdit*>(QStringLiteral("projectNameInput"));
-            auto* create = dialog->findChild<ElaPushButton*>(QStringLiteral("confirmCreateProject"));
-            if (!name || !create) { dialog->reject(); return; }
-            name->setText(QStringLiteral("Click regression"));
-            QTest::mouseClick(create, Qt::LeftButton);
-        });
-        clickSource();
-        QTRY_COMPARE_WITH_TIMEOUT(projects->model()->rowCount(), 1, 1000);
-        QVERIFY(createPrompt);
-        QCOMPARE(model->item(0)->checkState(), Qt::Checked);
-        QCOMPARE(loadProjects(workspace.path()).first().sources, QStringList{QStringLiteral("counter.sv")});
-        clickSource();
-        QCOMPARE(model->item(0)->checkState(), Qt::Unchecked);
-        clickSource();
-        QCOMPARE(model->item(0)->checkState(), Qt::Checked);
-        w.openWorkspace(workspace.path());
-        QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 2, 15000);
-        QCOMPARE(model->item(0)->checkState(), Qt::Checked);
-        QVERIFY(w.createProject(QStringLiteral("Second project")));
-        QCOMPARE(model->item(0)->checkState(), Qt::Unchecked);
-        projects->setCurrentIndex(projects->model()->index(0, 0));
-        QCOMPARE(model->item(0)->checkState(), Qt::Checked);
-        clickSource();
-        QCOMPARE(model->item(0)->checkState(), Qt::Unchecked);
+        QFile file(workspace.filePath("counter.sv")); QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("module counter; initial $finish; endmodule\n"); file.close();
+        MainWindow w; w.show(); w.openWorkspace(workspace.path());
+        auto* view=w.findChild<Workbench*>(); QVERIFY(view);
+        QVERIFY(view->controller()->target().isEmpty());
+        QVERIFY(!w.findChild<QWidget*>("sourceList")); QVERIFY(!w.findChild<QWidget*>("projectList"));
+        auto* choose=w.findChild<QAction*>("chooseTb"); QVERIFY(choose);
+        bool cancelled=false;
+        QTimer::singleShot(0,&w,[&] { auto* dialog=w.findChild<QFileDialog*>(); cancelled=dialog; if(dialog)dialog->reject(); });
+        choose->trigger(); QVERIFY(cancelled); QVERIFY(view->controller()->target().isEmpty());
+        QVERIFY(loadProjects(workspace.path(),nullptr,false).isEmpty());
+        QVERIFY(chooseExistingTb(w,file.fileName()));
+        QCOMPARE(view->controller()->target().file,QString("counter.sv")); QCOMPARE(view->controller()->target().top,QString("counter"));
+        QVERIFY(loadProjects(workspace.path(),nullptr,false).isEmpty());
+        QTemporaryDir second; w.openWorkspace(second.path()); QVERIFY(view->controller()->target().isEmpty());
+        w.openWorkspace(workspace.path()); QCOMPARE(view->controller()->target().top,QString("counter"));
         w.close();
     }
     void selectingSourceAddsDependencies()
     {
         QTemporaryDir workspace;
-        const QList<QPair<QString, QByteArray>> inputs{
-            {QStringLiteral("a_top.sv"), QByteArrayLiteral("module top; child u(); endmodule")},
-            {QStringLiteral("child.sv"), QByteArrayLiteral("module child; import types_pkg::*; endmodule")},
-            {QStringLiteral("types.sv"), QByteArrayLiteral("package types_pkg; endpackage")},
-            {QStringLiteral("other.sv"), QByteArrayLiteral("module other; endmodule")}};
-        for (const auto& input : inputs) {
-            QFile file(workspace.filePath(input.first));
-            QVERIFY(file.open(QIODevice::WriteOnly));
-            file.write(input.second);
-        }
-        MainWindow w;
-        w.show();
-        QSignalSpy scanned(&w, &MainWindow::scanFinished);
-        w.openWorkspace(workspace.path());
-        QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 1, 15000);
-        auto* list = w.findChild<QListView*>(QStringLiteral("sourceList"));
-        auto* model = qobject_cast<QStandardItemModel*>(list->model());
-        auto* dut = w.findChild<ElaComboBox*>(QStringLiteral("dutSelector"));
-        const auto findSource = [&](const QString& path) -> QStandardItem* {
-            for (int row=0; row<model->rowCount(); ++row)
-                if (model->item(row)->data(Qt::UserRole).toString() == path) return model->item(row);
-            return nullptr;
+        const auto put=[&](const QString& name,const QByteArray& text) {
+            QFile file(workspace.filePath(name)); return file.open(QIODevice::WriteOnly)&&file.write(text)==text.size();
         };
-        QTimer::singleShot(100, &w, [&] {
-            auto* dialog = w.findChild<QDialog*>(QStringLiteral("newProjectDialog"));
-            if (!dialog) return;
-            dialog->findChild<ElaLineEdit*>(QStringLiteral("projectNameInput"))->setText(QStringLiteral("Dependencies"));
-            dialog->findChild<ElaPushButton*>(QStringLiteral("confirmCreateProject"))->click();
-        });
-        const QDeadlineTimer selectionDeadline(2000);
-        const auto rect = list->visualRect(findSource(QStringLiteral("a_top.sv"))->index());
-        QTest::mouseClick(list->viewport(), Qt::LeftButton, Qt::NoModifier, QPoint(rect.left()+18, rect.center().y()));
-        QTRY_COMPARE_WITH_TIMEOUT(loadProjects(workspace.path()).size(), 1, 2000);
-        // The historical case name is retained. Since 0.32.9, inputs are explicit;
-        // package references determine compilation order, not module instances.
-        QVERIFY(waitForCompilation(w, workspace.path(), selectionDeadline));
-        const auto missing = w.findChild<Workbench*>()->automationProjectState(loadProjects(workspace.path()).first());
-        QVERIFY(missing.value("compilationDiagnostics").toString().contains("child"));
-        QCOMPARE(findSource(QStringLiteral("child.sv"))->checkState(), Qt::Unchecked);
-        QCOMPARE(findSource(QStringLiteral("types.sv"))->checkState(), Qt::Unchecked);
-        findSource(QStringLiteral("child.sv"))->setCheckState(Qt::Checked);
-        findSource(QStringLiteral("types.sv"))->setCheckState(Qt::Checked);
-        const QStringList expected{QStringLiteral("a_top.sv"), QStringLiteral("types.sv"), QStringLiteral("child.sv")};
-        for (const auto& project : loadProjects(workspace.path()))
-            qInfo() << "diag.dependencies-before-order" << w.findChild<Workbench*>()->automationProjectState(project);
-        QVERIFY(waitForCompilation(w, workspace.path(), selectionDeadline));
-        for (const auto& project : loadProjects(workspace.path()))
-            qInfo() << "diag.dependencies-after-plan" << w.findChild<Workbench*>()->automationProjectState(project);
-        QCOMPARE(loadProjects(workspace.path()).first().sources, expected);
-        QCOMPARE(dut->currentData().toStringList(), (QStringList{QStringLiteral("a_top.sv"), QStringLiteral("top")}));
-        for (const auto& path : expected) QCOMPARE(findSource(path)->checkState(), Qt::Checked);
-        QCOMPARE(findSource(QStringLiteral("other.sv"))->checkState(), Qt::Unchecked);
-        list->setCurrentIndex(findSource(QStringLiteral("child.sv"))->index());
-        QTest::keyClick(list, Qt::Key_Space);
-        QCOMPARE(findSource(QStringLiteral("child.sv"))->checkState(), Qt::Unchecked);
-        findSource(QStringLiteral("other.sv"))->setCheckState(Qt::Checked);
-        QCOMPARE(findSource(QStringLiteral("child.sv"))->checkState(), Qt::Unchecked);
-        dut->setCurrentIndex(dut->findData(QStringList{QStringLiteral("other.sv"), QStringLiteral("other")}));
-        dut->setCurrentIndex(dut->findData(QStringList{QStringLiteral("a_top.sv"), QStringLiteral("top")}));
-        QCOMPARE(findSource(QStringLiteral("child.sv"))->checkState(), Qt::Unchecked);
-        findSource(QStringLiteral("child.sv"))->setCheckState(Qt::Checked);
-        QVERIFY(waitForCompilation(w, workspace.path(), selectionDeadline));
-        QCOMPARE(findSource(QStringLiteral("child.sv"))->checkState(), Qt::Checked);
-        findSource(QStringLiteral("a_top.sv"))->setCheckState(Qt::Unchecked);
-        QCOMPARE(findSource(QStringLiteral("child.sv"))->checkState(), Qt::Checked);
-        w.openWorkspace(workspace.path());
-        QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 2, 15000);
-        QCOMPARE(findSource(QStringLiteral("child.sv"))->checkState(), Qt::Checked);
-        QCOMPARE(findSource(QStringLiteral("a_top.sv"))->checkState(), Qt::Unchecked);
+        QVERIFY(put("a_top.sv","module top; child u(); endmodule\n"));
+        QVERIFY(put("child.sv","module child; import types_pkg::*; endmodule\n"));
+        QVERIFY(put("types.sv","package types_pkg; endpackage\n"));
+        QVERIFY(put("other.sv","module other; unavailable u(); endmodule\n"));
+        auto legacy=newProject("Old explicit inputs"); legacy.sources={"a_top.sv"}; QString error;
+        QVERIFY(saveProject(workspace.path(),legacy,&error)); const auto before=projectJson(legacy);
+        MainWindow w; w.show(); w.openWorkspace(workspace.path());
+        QVERIFY(chooseExistingTb(w,workspace.filePath("a_top.sv")));
+        const auto plan=[&] { return planFor(w,workspace.path()); };
+        auto selected=plan(); QVERIFY2(selected->valid(),qPrintable(selected->error()));
+        QStringList names;for(const auto& path:selected->compilation.files)names<<QFileInfo(path).fileName();
+        QCOMPARE(names.size(),3); QVERIFY(names.contains("a_top.sv")); QVERIFY(names.contains("child.sv"));
+        QVERIFY(names.indexOf("types.sv")<names.indexOf("child.sv")); QVERIFY(!names.contains("other.sv"));
+        QVERIFY(QFile::remove(workspace.filePath("child.sv")));
+        auto missing=plan(); QVERIFY(!missing->valid()); QVERIFY(missing->error().contains("child"));
+        QVERIFY(put("child.sv","module child; import types_pkg::*; endmodule\n"));
+        QVERIFY(plan()->valid()); QCOMPARE(projectJson(loadProjects(workspace.path(),nullptr,false).first()),before);
+        QTemporaryDir other; w.openWorkspace(other.path());w.openWorkspace(workspace.path());
+        QCOMPARE(w.findChild<Workbench*>()->controller()->target().top,QString("top"));QVERIFY(plan()->valid());
         w.close();
     }
     void sourceListWheelScrolling_data()
@@ -596,20 +447,13 @@ private slots:
     void sourceListWheelScrolling()
     {
         QFETCH(bool, hasProject);
-        QTemporaryDir workspace;
-        for (int i = 0; i < 80; ++i) {
-            QFile file(workspace.filePath(QStringLiteral("source_%1.sv").arg(i, 3, 10, QLatin1Char('0'))));
-            QVERIFY(file.open(QIODevice::WriteOnly));
-            file.write(QStringLiteral("module source_%1; endmodule\n").arg(i).toUtf8());
-        }
-        MainWindow w;
-        w.show();
-        QSignalSpy scanned(&w, &MainWindow::scanFinished);
-        w.openWorkspace(workspace.path());
-        QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 1, 15000);
-        if (hasProject) QVERIFY(w.createProject(QStringLiteral("Wheel regression")));
-        auto* list = w.findChild<QListView*>(QStringLiteral("sourceList"));
-        QVERIFY(list);
+        QWidget w;w.resize(420,400);auto* layout=new QVBoxLayout(&w);
+        auto* list=new ElaListView(&w);auto* model=new QStandardItemModel(list);
+        for(int i=0;i<80;++i){auto* item=new QStandardItem(QString("source_%1.sv").arg(i));item->setCheckable(true);model->appendRow(item);}
+        list->setModel(model);list->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+        Ui::smoothScrolling(list);
+        list->setSelectionMode(hasProject?QAbstractItemView::ExtendedSelection:QAbstractItemView::SingleSelection);
+        layout->addWidget(list);w.show();
         QTRY_VERIFY(list->verticalScrollBar()->maximum() > 0);
         w.raise(); w.activateWindow();
         QVERIFY(QTest::qWaitForWindowActive(&w));
@@ -665,8 +509,6 @@ private slots:
         QTest::qWait(180);
         QCOMPARE(bar->value(), afterKey);
         bar->setValue(0);
-        auto* model = qobject_cast<QStandardItemModel*>(list->model());
-        if (!hasProject) QVERIFY(w.createProject(QStringLiteral("Wheel selection")));
         const auto index = model->index(0, 0);
         QStyleOptionViewItem option;
         option.initFrom(list);
@@ -688,65 +530,31 @@ private slots:
     }
     void sourceNativeInputAndMissingFileRefresh()
     {
-        QTemporaryDir workspace;
-        const QString path = workspace.filePath(QStringLiteral("source.sv"));
-        const auto writeSource = [&] { QFile f(path); return f.open(QIODevice::WriteOnly) && f.write("module source; endmodule") > 0; };
-        QVERIFY(writeSource());
-        MainWindow w;
-        w.show();
-        QSignalSpy scans(&w, &MainWindow::scanFinished);
-        w.openWorkspace(workspace.path());
-        QTRY_COMPARE(scans.size(), 1);
-        QVERIFY(w.createProject(QStringLiteral("Native input")));
-        auto* view = w.findChild<QListView*>(QStringLiteral("sourceList"));
-        auto* model = qobject_cast<QStandardItemModel*>(view->model());
-        const auto index = model->index(0, 0);
-        const auto row = view->visualRect(index);
-        const auto check = QPoint(row.left() + 18, row.center().y());
-        QTest::mouseClick(view->viewport(), Qt::LeftButton, Qt::NoModifier, row.center());
-        QCOMPARE(model->item(0)->checkState(), Qt::Unchecked);
-        QTest::mouseClick(view->viewport(), Qt::RightButton, Qt::NoModifier, check);
-        QCOMPARE(model->item(0)->checkState(), Qt::Unchecked);
-        QTest::mousePress(view->viewport(), Qt::LeftButton, Qt::NoModifier, check);
-        QTest::mouseRelease(view->viewport(), Qt::LeftButton, Qt::NoModifier, row.center());
-        QCOMPARE(model->item(0)->checkState(), Qt::Unchecked);
-        QVERIFY(!model->setData(index, Qt::PartiallyChecked, Qt::CheckStateRole));
-        QVERIFY(model->setData(index, Qt::Checked, Qt::CheckStateRole));
-        QCOMPARE(loadProjects(workspace.path()).first().sources, QStringList{QStringLiteral("source.sv")});
-        QVERIFY(QFile::remove(path));
-        w.openWorkspace(workspace.path());
-        QTRY_COMPARE(scans.size(), 2);
-        QVERIFY(model->item(0)->text().contains(QStringLiteral("File missing")));
-        QVERIFY(writeSource());
-        w.openWorkspace(workspace.path());
-        QTRY_COMPARE(scans.size(), 3);
-        QCOMPARE(model->item(0)->text(), QStringLiteral("source.sv"));
-        QCOMPARE(model->item(0)->foreground().style(), Qt::NoBrush);
-        QCOMPARE(model->item(0)->checkState(), Qt::Checked);
-        w.close();
+        QTemporaryDir workspace; const QString path=workspace.filePath("source.sv");
+        const auto writeSource=[&] { QFile f(path); return f.open(QIODevice::WriteOnly)&&f.write("module actual_top; endmodule\n")>0; };
+        QVERIFY(writeSource());MainWindow w;w.show();w.openWorkspace(workspace.path());
+        QVERIFY(chooseExistingTb(w,path)); auto* view=w.findChild<Workbench*>();
+        QCOMPARE(view->controller()->target().top,QString("actual_top"));
+        QSignalSpy opened(view,&Workbench::openFileRequested);
+        auto* open=view->findChild<QAction*>("openTb");QVERIFY(open);open->trigger();
+        QCOMPARE(opened.size(),1);QCOMPARE(QFileInfo(opened.first()[0].toString()).canonicalFilePath(),QFileInfo(path).canonicalFilePath());
+        QVERIFY(QFile::remove(path));auto missing=planFor(w,workspace.path());QVERIFY(!missing->valid());
+        QCOMPARE(view->controller()->target().top,QString("actual_top")); // missing target cannot silently select another module
+        QVERIFY(writeSource());QVERIFY(planFor(w,workspace.path())->valid());
+        QFile changed(path);QVERIFY(changed.open(QIODevice::WriteOnly));changed.write("module replacement; endmodule\n");changed.close();
+        QVERIFY(!planFor(w,workspace.path())->valid());QCOMPARE(view->controller()->target().top,QString("actual_top"));
+        QVERIFY(chooseExistingTb(w,path));QCOMPARE(view->controller()->target().top,QString("replacement"));w.close();
     }
     void formOptionsRestoreWithoutLegacySections()
     {
-        QTemporaryDir workspace;
-        MainWindow w; w.show();
-        QSignalSpy scans(&w, &MainWindow::scanFinished);
-        w.openWorkspace(workspace.path());
-        QTRY_COMPARE(scans.size(), 1);
-        QVERIFY(w.createProject(QStringLiteral("Form state")));
-        QVERIFY(!w.findChild<QToolButton*>("waveOptionsToggle"));
-        QVERIFY(!w.findChild<QWidget*>("workbenchSection"));
-        QVERIFY(!w.findChild<QWidget*>("openWorkspace"));
-        QVERIFY(!w.findChild<ElaComboBox*>("waveScope"));
-        auto* field = w.findChild<ElaLineEdit*>("tbFile"); field->setText("tb/preserve.sv");
-        QPointer<ElaLineEdit> identity(field);
-        QCOMPARE(identity.data(), field); QCOMPARE(field->text(), QString("tb/preserve.sv"));
-        auto* workbench = w.findChild<Workbench*>(); QVERIFY(workbench);
-        auto state = workbench->saveState();
-        state.insert(QStringLiteral("layout/waveOptionsExpanded"), true);
-        QVERIFY(workbench->restoreState(state).isEmpty());
-        ApplicationThemeManager::instance().setMode(ThemeMode::Dark);
-        QCOMPARE(identity.data(), field);
-        w.close();
+        QTemporaryDir workspace;MainWindow w;w.show();w.openWorkspace(workspace.path());
+        for(const auto* name:{"waveOptionsToggle","workbenchSection","openWorkspace","waveScope","duration","projectList","sourceList"})
+            QVERIFY2(!w.findChild<QWidget*>(name),name);
+        auto* field=w.findChild<QToolButton*>("simulationTarget");QVERIFY(field);QPointer<QToolButton> identity(field);
+        auto* workbench=w.findChild<Workbench*>();auto state=workbench->saveState();
+        state.insert("layout/waveOptionsExpanded",true);QVERIFY(workbench->restoreState(state).isEmpty());
+        ApplicationThemeManager::instance().setMode(ThemeMode::Dark);QCOMPARE(identity.data(),field);
+        QCOMPARE(field->text(),QString("Current editor"));w.close();
     }
     void comboAndMenuInterruptions()
     {
@@ -975,51 +783,31 @@ private slots:
     }
     void workspaceSwapDiscardsStaleScan()
     {
-        QTemporaryDir first, second;
-        for (int i = 0; i < 350; ++i) {
-            QFile f(first.filePath(QStringLiteral("m%1.sv").arg(i)));
-            QVERIFY(f.open(QIODevice::WriteOnly));
-            f.write(QStringLiteral("module m%1; endmodule").arg(i).toUtf8());
-        }
-        QFile f(second.filePath(QStringLiteral("chosen.sv")));
-        QVERIFY(f.open(QIODevice::WriteOnly));
-        f.write("module chosen; endmodule");
-        f.close();
-        MainWindow w;
-        QSignalSpy scans(&w, &MainWindow::scanFinished);
-        w.openWorkspace(first.path());
-        w.openWorkspace(second.path());
-        QTRY_COMPARE(scans.size(), 1);
-        auto* model = w.findChild<QListView*>(QStringLiteral("sourceList"))->model();
-        QCOMPARE(model->rowCount(), 1);
-        QCOMPARE(model->index(0, 0).data(Qt::UserRole).toString(), QStringLiteral("chosen.sv"));
-        QTest::qWait(250);
-        QCOMPARE(scans.size(), 1);
-        auto* disposable = new MainWindow;
-        disposable->openWorkspace(first.path());
-        delete disposable;
+        QTemporaryDir first,second;
+        for(int i=0;i<350;++i){QFile f(first.filePath(QString("m%1.sv").arg(i)));QVERIFY(f.open(QIODevice::WriteOnly));f.write(QString("module m%1; endmodule").arg(i).toUtf8());}
+        QFile f(second.filePath("chosen.sv"));QVERIFY(f.open(QIODevice::WriteOnly));f.write("module chosen; endmodule");f.close();
+        MainWindow w;QSignalSpy scans(&w,&MainWindow::scanFinished);
+        w.openWorkspace(first.path());w.openWorkspace(second.path());
+        QCOMPARE(w.workspace(),QFileInfo(second.path()).canonicalFilePath());QCOMPARE(scans.size(),2);
+        QVERIFY(chooseExistingTb(w,f.fileName()));QVERIFY(planFor(w,second.path())->valid());
+        QTest::qWait(250);QCOMPARE(scans.size(),2);QCOMPARE(w.findChild<Workbench*>()->controller()->target().top,QString("chosen"));
+        QVERIFY(!w.findChild<QWidget*>("sourceList"));
+        auto* disposable=new MainWindow;disposable->openWorkspace(first.path());delete disposable;
     }
     void numericControlsAndSettingsKeys()
     {
-        QTemporaryDir workspace;
-        QVERIFY(workspace.isValid());
-        MainWindow window;
-        QSignalSpy scans(&window, &MainWindow::scanFinished);
-        window.openWorkspace(workspace.path());
-        window.show();
-        QTRY_COMPARE(scans.size(), 1);
-        QVERIFY(window.createProject(QStringLiteral("Numeric controls")));
-        auto* spin = window.findChild<ElaSpinBox*>("duration"); QVERIFY(spin);
-        QTRY_VERIFY(spin->isVisible() && spin->isEnabled());
-        spin->setValue(spin->maximum());
-        auto* edit = spin->findChild<QLineEdit*>(); QVERIFY(edit);
-        QTRY_VERIFY(edit->width() >= edit->fontMetrics().horizontalAdvance(edit->text()) + edit->textMargins().left() + edit->textMargins().right());
-        SettingsDialog dialog(QString(), &window, true); dialog.show();
-        auto* save = dialog.findChild<ElaPushButton*>("saveSettings"); QVERIFY(save); save->setFocus();
-        QTest::keyClick(save, Qt::Key_Return); QCOMPARE(dialog.result(), int(QDialog::Accepted));
-        SettingsDialog cancelled(QString(), &window, true); cancelled.show();
-        QTest::keyClick(&cancelled, Qt::Key_Escape); QCOMPARE(cancelled.result(), int(QDialog::Rejected));
-        QVERIFY(!cancelled.isVisible());
+        QTemporaryDir workspace;QVERIFY(workspace.isValid());MainWindow window;window.openWorkspace(workspace.path());window.show();
+        QVERIFY(!window.findChild<QWidget*>("duration"));
+        QScopedPointer<ElaSpinBox> number(Ui::spinBox(nullptr));auto& spin=*number;
+        spin.setRange(0,1000000);spin.resize(180,40);spin.show();spin.setValue(spin.maximum());
+        auto* edit=spin.findChild<QLineEdit*>();QVERIFY(edit);
+        QTRY_VERIFY(edit->width()>=edit->fontMetrics().horizontalAdvance(edit->text())+edit->textMargins().left()+edit->textMargins().right());
+        QTest::keyClick(&spin,Qt::Key_Up);QCOMPARE(spin.value(),spin.maximum());
+        SettingsDialog dialog(QString(),&window,true);dialog.show();
+        auto* save=dialog.findChild<ElaPushButton*>("saveSettings");QVERIFY(save);save->setFocus();
+        QTest::keyClick(save,Qt::Key_Return);QCOMPARE(dialog.result(),int(QDialog::Accepted));
+        SettingsDialog cancelled(QString(),&window,true);cancelled.show();QTest::keyClick(&cancelled,Qt::Key_Escape);
+        QCOMPARE(cancelled.result(),int(QDialog::Rejected));QVERIFY(!cancelled.isVisible());
     }
 };
 QTEST_MAIN(UiTest)

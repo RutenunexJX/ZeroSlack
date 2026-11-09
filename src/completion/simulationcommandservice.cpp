@@ -1,7 +1,6 @@
 #include "simulationcommandservice.h"
 #include "../integrations/native/nativecontextview.h"
 #include "../integrations/xips/xipscontextprovider.h"
-#include "../simulation/simdock/ui/workbench.h"
 #include "editorsemanticcontextservice.h"
 #include "mycodeeditor.h"
 #include "shareddocument.h"
@@ -17,9 +16,8 @@
 #include <QSaveFile>
 #include <QTemporaryDir>
 
-SimulationCommandService::SimulationCommandService(TabManager *t, WorkspaceManager *w, simdock::Workbench *b,
-                                                   QWidget *parent)
-    : QObject(parent), tabs(t), workspaces(w), buildInputs(b), owner(parent)
+SimulationCommandService::SimulationCommandService(TabManager *t, WorkspaceManager *w, QWidget *parent)
+    : QObject(parent), tabs(t), workspaces(w), owner(parent)
 {
     const auto changed = [this]
     {
@@ -79,9 +77,7 @@ SimulationCommandRequest SimulationCommandService::currentRequest() const
         context.documentInstance = shared->instanceSerial();
         context.documentTextRevision = shared->textRevision();
     }
-    if (buildInputs)
-        request.orderedFiles = buildInputs->activeCompilationInputs();
-    if (request.orderedFiles.isEmpty() && workspaces)
+    if (workspaces)
         request.orderedFiles = workspaces->projectSnapshot().designSourceFiles();
     if (!request.orderedFiles.contains(context.fileName))
         request.orderedFiles << context.fileName;

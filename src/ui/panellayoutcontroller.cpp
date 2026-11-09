@@ -1,7 +1,11 @@
 #include "uitypography.h"
 #include "panellayoutcontroller.h"
+#include "editorsplitcontroller.h"
+#include <QSignalBlocker>
+#include <QTabBar>
 #include "uicontrols.h"
 #include "deferredpanel.h"
+#include "compactlayout.h"
 #include "contextdocktransition.h"
 #include "applicationthememanager.h"
 #ifdef ZEROSLACK_ENABLE_ELA
@@ -122,9 +126,12 @@ QModelIndex modelIndexFromPath(QAbstractItemModel* model,
 
 PanelLayoutController::PanelLayoutController(
     QMainWindow* mainWindow,
-    QObject* parent)
+    QObject* parent,
+    EditorSplitController* registry)
     : QObject(parent)
     , window(mainWindow)
+    , pageRegistry(registry)
+    , ownsPageRegistry(!registry)
 {
 #ifdef ZEROSLACK_ENABLE_ELA
     animationsEnabledValue = true;
@@ -135,7 +142,13 @@ PanelLayoutController::PanelLayoutController(
         window->setCorner(Qt::BottomLeftCorner, Qt::LeftDockWidgetArea);
         window->setCorner(Qt::BottomRightCorner, Qt::RightDockWidgetArea);
     }
+    if (!pageRegistry) pageRegistry=new EditorSplitController(nullptr,this);
     buildDrawer();
+    connect(pageRegistry,&EditorSplitController::pageActivated,this,[this] { updateButtons(); });
+    connect(pageRegistry,&EditorSplitController::layoutChanged,this,[this] { updateButtons(); notifyStateChanged(); });
+    if (ownsPageRegistry) connect(pageRegistry,&EditorSplitController::tabCloseRequested,this,[this](QTabWidget* group,int index) {
+        pageRegistry->requestPageClose(group->widget(index));
+    });
     connect(&ApplicationThemeManager::instance(), &ApplicationThemeManager::animationsEnabledChanged,
         this, [this](bool enabled) { if (!enabled) applyDrawerState(false); });
     if (qApp)
@@ -190,21 +203,13 @@ void PanelLayoutController::buildDrawer()
     bottomResizeHandle->installEventFilter(this);
     rootLayout->addWidget(bottomResizeHandle);
 
-    QStackedWidget* contentStack = nullptr;
-    bottomContentSurface = UiControls::pageStack(contentStack, bottomDrawerRoot);
-    bottomContentStack = contentStack;
-    bottomContentStack->setObjectName(
-        QStringLiteral("bottomToolDrawerContent"));
-    bottomContentStack->setSizePolicy(
-        QSizePolicy::Ignored, QSizePolicy::Fixed);
+    bottomContentHost=new QWidget(bottomDrawerRoot);
+    bottomContentHost->setObjectName(QStringLiteral("bottomToolDrawerContent"));
+    bottomContentSurface=bottomContentHost;
+    pageRegistry->registerRegion(QStringLiteral("bottom"),bottomContentHost);
+    pageRegistry->setRegionRevealHandler(QStringLiteral("bottom"),[this] { setBottomCollapsed(false); });
     bottomContentSurface->setMinimumWidth(180);
     bottomContentSurface->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
-    bottomContentRow = new QSplitter(Qt::Horizontal, bottomDrawerRoot);
-    bottomContentRow->setObjectName(QStringLiteral("bottomWorkspaceSplitter"));
-    bottomContentRow->setChildrenCollapsible(false);
-    bottomContentRow->setHandleWidth(kResizeHandleHeight);
-    bottomContentRow->addWidget(bottomContentSurface);
-    connect(bottomContentRow, &QSplitter::splitterMoved, this, [this] { notifyStateChanged(); });
 #ifdef ZEROSLACK_ENABLE_ELA
     contentDrawer = new ElaDrawerArea(bottomDrawerRoot);
     contentDrawer->setObjectName(QStringLiteral("bottomPanelDrawer"));
@@ -212,13 +217,13 @@ void PanelLayoutController::buildDrawer()
     contentDrawer->setBorderRadius(0);
     contentDrawer->setDrawerEdge(Qt::BottomEdge);
     contentDrawer->setLiveResizeEnabled(true);
-    contentDrawer->addDrawer(bottomContentRow);
+    contentDrawer->addDrawer(bottomContentSurface);
     contentDrawer->setExpanded(true, false);
     rootLayout->addWidget(contentDrawer);
     connect(contentDrawer, &ElaDrawerArea::drawerProgressChanged,
             this, &PanelLayoutController::applyDrawerProgress);
 #else
-    rootLayout->addWidget(bottomContentRow);
+    rootLayout->addWidget(bottomContentSurface);
 #endif
 
     bottomButtonBar = new QFrame(bottomDrawerRoot);
@@ -232,14 +237,15 @@ void PanelLayoutController::buildDrawer()
         QStringLiteral("bottomToolDrawerButtonLayout"));
     buttonLayout->setContentsMargins(6, 0, 6, 0);
     buttonLayout->setSpacing(0);
-    buttonLayout->addStretch(1);
+    auto* buttons = new CompactOverflowToolbar(new QHBoxLayout, QStringLiteral("bottomPanel"), bottomButtonBar);
+    buttonLayout->addWidget(buttons);
     rootLayout->addWidget(bottomButtonBar);
 
     bottomDrawerDock->setWidget(bottomDrawerRoot);
     window->addDockWidget(Qt::BottomDockWidgetArea, bottomDrawerDock);
 
     auto* escapeShortcut = new QShortcut(
-        QKeySequence(Qt::Key_Escape), bottomContentStack);
+        QKeySequence(Qt::Key_Escape), bottomContentHost);
     escapeShortcut->setObjectName(
         QStringLiteral("bottomToolDrawerEscapeShortcut"));
     escapeShortcut->setContext(Qt::WidgetWithChildrenShortcut);
@@ -255,6 +261,8 @@ void PanelLayoutController::buildDrawer()
     collapsed = false;
     applyContentHeight(kDefaultContentHeight);
 }
+
+EditorSplitController* PanelLayoutController::tabHostController() const { return pageRegistry; }
 
 void PanelLayoutController::setNavigationDock(QDockWidget* dock)
 {
@@ -288,7 +296,7 @@ bool PanelLayoutController::registerBottomPanel(
     QDockWidget* dock)
 {
     const QString id = panelId.trimmed();
-    if (id.isEmpty() || !dock || !bottomContentStack
+    if (id.isEmpty() || !dock || !bottomContentHost
         || entryForId(id) || isBottomPanel(dock)) {
         return false;
     }
@@ -300,11 +308,20 @@ bool PanelLayoutController::registerBottomPanel(
         window->removeDockWidget(dock);
     dock->hide();
     dock->setWidget(nullptr);
-    content->setParent(bottomContentStack);
+    auto* group=pageRegistry->regionGroup(QStringLiteral("bottom"));
+    const bool startsInMain=id==QStringLiteral("connections") && pageRegistry->regionGroup(QStringLiteral("main"));
+    if (startsInMain) group=pageRegistry->regionGroup(QStringLiteral("main"));
+    content->setParent(group);
     content->setSizePolicy(
         QSizePolicy::Expanding, QSizePolicy::Expanding);
     content->setProperty("bottomDrawerPanelId", id);
-    bottomContentStack->addWidget(content);
+    content->setProperty("toolPage",true); content->setProperty("toolPageId",id);
+    pageRegistry->registerPage(content,QStringLiteral("tool:")+id,QStringLiteral("tool"),
+        [this,id] { return closePanel(id); });
+    { const QSignalBlocker block(group); group->addTab(content,panelIcon(id),panelLabel(id)); }
+    // Connections retains its original first-open region; later moves belong
+    // to the shared registry, so reopening does not force it back to Main.
+    if (startsInMain) pageRegistry->parkPage(content);
 
     PanelEntry entry;
     entry.id = id;
@@ -320,11 +337,6 @@ bool PanelLayoutController::registerBottomPanel(
         dock->property("bottomBadgeText").toString(),
         dock->property("bottomBadgeTone").toString());
 
-    if (activePanel.isEmpty()) {
-        activePanel = id;
-        lastPanel = id;
-        bottomContentStack->setCurrentWidget(content);
-    }
     dock->setProperty("bottomDrawerPanelId", id);
     connect(dock,
             &QDockWidget::windowTitleChanged,
@@ -363,8 +375,8 @@ void PanelLayoutController::buildButton(PanelEntry& entry)
 {
     if (!bottomButtonBar)
         return;
-    auto* layout = qobject_cast<QHBoxLayout*>(bottomButtonBar->layout());
-    if (!layout)
+    auto* toolbar = dynamic_cast<CompactOverflowToolbar*>(bottomButtonBar->findChild<QWidget*>("bottomPanelToolbar"));
+    if (!toolbar)
         return;
     auto* button = UiControls::badgedToolButton(bottomButtonBar);
     button->setProperty("panelMotionToggle", true);
@@ -388,9 +400,7 @@ void PanelLayoutController::buildButton(PanelEntry& entry)
     button->setIconSize(QSize(20, 20));
     button->setFocusPolicy(Qt::StrongFocus);
     entry.button = button;
-    int insertion = 0;
-    while (insertion < layout->count() && !layout->itemAt(insertion)->spacerItem()) ++insertion;
-    layout->insertWidget(insertion, button);
+    toolbar->insertInlineWidget(button, panels.size() - 1);
     connect(button,
             &QToolButton::clicked,
             this,
@@ -400,7 +410,7 @@ void PanelLayoutController::buildButton(PanelEntry& entry)
                     return;
                 if (!focusIsInsideDrawer())
                     focusBeforeDrawer = QApplication::focusWidget();
-                if (activePanel == id && !collapsed) {
+                if (activeBottomPanelId() == id && !collapsed) {
                     setBottomCollapsed(true);
                 } else {
                     activatePanel(*selected, false);
@@ -418,13 +428,9 @@ void PanelLayoutController::finalize()
             bottomDrawerDock->hide();
         return;
     }
-    if (!entryForId(activePanel))
-        activePanel = panels.constFirst().id;
-    if (!entryForId(lastPanel))
-        lastPanel = activePanel;
-    PanelEntry* entry = entryForId(activePanel);
+    PanelEntry* entry = entryForId(activeBottomPanelId());
     if (entry && entry->content) {
-        bottomContentStack->setCurrentWidget(entry->content);
+        selectPanelPage(entry->content);
         restorePanelViewState(*entry);
     }
     applyDrawerState(false);
@@ -435,9 +441,9 @@ PanelLayoutState PanelLayoutController::layoutState() const
 {
     PanelLayoutState state;
     state.version = PanelLayoutState::kVersion;
-    state.bottomPanelOrder = defaultOrder;
-    state.activeBottomPanel = activePanel;
-    state.lastBottomPanel = lastPanel;
+    state.bottomPanelOrder = bottomPanelIds();
+    state.activeBottomPanel = activeBottomPanelId();
+    state.lastBottomPanel = lastBottomPanelId();
     state.bottomCollapsed = collapsed;
     state.navigationVisible = navigationDock ? navigationDock->isVisible() : true;
     for (const PanelEntry& entry : panels) {
@@ -448,9 +454,9 @@ PanelLayoutState PanelLayoutController::layoutState() const
                 ? captureWidgetState(entry.content)
                 : entry.viewState);
     }
-    const PanelEntry* active = entryForId(activePanel);
+    const PanelEntry* active = entryForId(activeBottomPanelId());
     state.expandedBottomHeight = active
-        ? active->height : kDefaultContentHeight;
+        ? active->height : expandedContentHeight;
     state.valid = finalized;
     return state;
 }
@@ -521,21 +527,20 @@ void PanelLayoutController::restoreLayoutState(
 
     QString restoredActive = canonicalPanelId(
         state.activeBottomPanel);
-    if (mainAreaRequest && restoredActive == QStringLiteral("connections"))
-        restoredActive = QStringLiteral("problems");
     if (!entryForId(restoredActive))
         restoredActive = panels.constFirst().id;
     QString restoredLast = canonicalPanelId(state.lastBottomPanel);
     if (!entryForId(restoredLast))
         restoredLast = restoredActive;
-    activePanel = restoredActive;
-    lastPanel = restoredLast;
+    const auto order=state.bottomPanelOrder;
+    for (int i=0;i<order.size();++i) movePanel(order[i],i);
+    if (auto* selected=entryForId(restoredActive)) selectPanelPage(selected->content);
     collapsed = state.bottomCollapsed;
     if (navigationDock)
         navigationDock->setVisible(state.navigationVisible);
-    if (PanelEntry* entry = entryForId(activePanel)) {
+    if (PanelEntry* entry = entryForId(activeBottomPanelId())) {
         if (entry->content)
-            bottomContentStack->setCurrentWidget(entry->content);
+            selectPanelPage(entry->content);
         restorePanelViewState(*entry);
     }
     applying = false;
@@ -565,9 +570,14 @@ void PanelLayoutController::resetLayout()
             restoreWidgetState(deferred, {});
         }
     }
-    activePanel = panels.isEmpty()
-        ? QString() : panels.constFirst().id;
-    lastPanel = activePanel;
+    for (const auto& id : defaultOrder) {
+        auto* entry=entryForId(id);
+        if (!entry || !entry->content) continue;
+        if (!pageRegistry->groupForPage(entry->content))
+            pageRegistry->restorePage(entry->content,pageRegistry->regionGroup(QStringLiteral("bottom")),false);
+        pageRegistry->movePage(entry->content,pageRegistry->regionGroup(QStringLiteral("bottom")));
+    }
+    if (!panels.isEmpty()) selectPanelPage(panels.first().content);
     collapsed = false;
     if (navigationDock)
         navigationDock->show();
@@ -575,9 +585,9 @@ void PanelLayoutController::resetLayout()
         if (entry.dock)
             entry.dock->hide();
     }
-    if (PanelEntry* entry = entryForId(activePanel)) {
+    if (PanelEntry* entry = entryForId(activeBottomPanelId())) {
         if (entry->content)
-            bottomContentStack->setCurrentWidget(entry->content);
+            selectPanelPage(entry->content);
     }
     applying = false;
     applyDrawerState(false);
@@ -587,18 +597,22 @@ void PanelLayoutController::resetLayout()
 
 QStringList PanelLayoutController::bottomPanelIds() const
 {
-    return defaultOrder;
+    QStringList ids;
+    for (auto* group : pageRegistry->groups(QStringLiteral("bottom")))
+        for (int i=0;i<group->count();++i) {
+            const auto id=group->widget(i)->property("bottomDrawerPanelId").toString();
+            if (!id.isEmpty()) ids.append(id);
+        }
+    return ids;
 }
 
 QString PanelLayoutController::activeBottomPanelId() const
 {
-    return activePanel;
+    auto* group=pageRegistry ? pageRegistry->regionActiveGroup(QStringLiteral("bottom")) : nullptr;
+    return group && group->currentWidget() ? group->currentWidget()->property("bottomDrawerPanelId").toString() : QString();
 }
 
-QString PanelLayoutController::lastBottomPanelId() const
-{
-    return lastPanel;
-}
+QString PanelLayoutController::lastBottomPanelId() const { return activeBottomPanelId(); }
 
 bool PanelLayoutController::isBottomPanel(
     const QDockWidget* dock) const
@@ -622,12 +636,12 @@ QString PanelLayoutController::panelIdForDock(
     return {};
 }
 
-bool PanelLayoutController::isPanelOpen(
-    const QString& panelId) const
+bool PanelLayoutController::isPanelOpen(const QString& panelId) const
 {
-    const QString id = canonicalPanelId(panelId);
-    return !collapsed && activePanel == id
-        && entryForId(id);
+    const auto* entry=entryForId(panelId);
+    auto* group=entry && pageRegistry ? pageRegistry->groupForPage(entry->content) : nullptr;
+    return group && group->currentWidget()==entry->content
+        && (pageRegistry->regionForGroup(group)!=QStringLiteral("bottom") || !collapsed);
 }
 
 bool PanelLayoutController::isPanelPinned(const QString&) const
@@ -637,12 +651,13 @@ bool PanelLayoutController::isPanelPinned(const QString&) const
 
 bool PanelLayoutController::closePanel(const QString& panelId)
 {
-    const QString id = canonicalPanelId(panelId);
-    if (!entryForId(id))
-        return false;
-    if (activePanel == id && !collapsed)
-        setBottomCollapsed(true);
-    return true;
+    auto* entry=entryForId(panelId);
+    if (!entry || !entry->content) return false;
+    capturePanelViewState(*entry);
+    if (!pageRegistry->groupForPage(entry->content)) return true;
+    const bool parked=pageRegistry->parkPage(entry->content);
+    if (parked && !pageRegistry->regionHasPages(QStringLiteral("bottom"))) setBottomCollapsed(true);
+    return parked;
 }
 
 bool PanelLayoutController::restorePanel(const QString& panelId)
@@ -661,12 +676,13 @@ bool PanelLayoutController::setPanelPinned(
     return entryForId(panelId) != nullptr;
 }
 
-bool PanelLayoutController::movePanel(
-    const QString& panelId,
-    int destinationIndex)
+bool PanelLayoutController::movePanel(const QString& panelId,int destinationIndex)
 {
-    const int current = defaultOrder.indexOf(canonicalPanelId(panelId));
-    return current >= 0 && current == destinationIndex;
+    const auto* entry=entryForId(panelId);
+    if (!entry || !entry->content) return false;
+    auto* group=pageRegistry->groupForPage(entry->content);
+    if (!group || pageRegistry->regionForGroup(group)!=QStringLiteral("bottom")) return false;
+    return pageRegistry->movePage(entry->content,group,destinationIndex);
 }
 
 QList<BottomPanelContextAction>
@@ -721,14 +737,11 @@ void PanelLayoutController::setBottomCollapsed(bool shouldCollapse)
 {
     if (panels.isEmpty() || collapsed == shouldCollapse)
         return;
-    if (PanelEntry* entry = entryForId(activePanel))
+    if (PanelEntry* entry = entryForId(activeBottomPanelId()))
         capturePanelViewState(*entry);
     collapsed = shouldCollapse;
-    if (!collapsed && activePanel.isEmpty())
-        activePanel = !lastPanel.isEmpty()
-            ? lastPanel : panels.constFirst().id;
-    if (!collapsed)
-        lastPanel = activePanel;
+    if (!collapsed && !pageRegistry->regionActiveGroup(QStringLiteral("bottom"))->count() && !panels.isEmpty())
+        selectPanelPage(panels.first().content);
     applyDrawerState(true);
     updateButtons();
     if (collapsed)
@@ -744,7 +757,8 @@ void PanelLayoutController::toggleBottomCollapsed()
 int PanelLayoutController::panelHeight(const QString& panelId) const
 {
     const PanelEntry* entry = entryForId(panelId);
-    return entry ? boundedContentHeight(entry->height) : 0;
+    return entry ? boundedContentHeight(entry->height)
+        : panelId.isEmpty() ? boundedContentHeight(expandedContentHeight) : 0;
 }
 
 bool PanelLayoutController::setPanelHeight(
@@ -752,15 +766,24 @@ bool PanelLayoutController::setPanelHeight(
     int height)
 {
     PanelEntry* entry = entryForId(panelId);
+    if (!entry && panelId.isEmpty()) {
+        expandedContentHeight=boundedContentHeight(height);
+#ifdef ZEROSLACK_ENABLE_ELA
+        if (contentDrawer) contentDrawer->finishDrawerAnimation();
+#endif
+        if (!collapsed) applyContentHeight(expandedContentHeight);
+        notifyStateChanged();
+        return true;
+    }
     if (!entry)
         return false;
     const int bounded = boundedContentHeight(height);
     if (entry->height == bounded
-        && (activePanel != entry->id || collapsed)) {
+        && (activeBottomPanelId() != entry->id || collapsed)) {
         return true;
     }
     entry->height = bounded;
-    if (activePanel == entry->id && !collapsed)
+    if (activeBottomPanelId() == entry->id && !collapsed)
 #ifdef ZEROSLACK_ENABLE_ELA
     {
         expandedContentHeight = bounded;
@@ -784,8 +807,18 @@ int PanelLayoutController::maximumContentHeight() const
 {
     const int available = window
         ? window->contentsRect().height() : 900;
-    return qMax(kMinimumContentHeight,
-                available * kMaximumHeightPercent / 100);
+    int maximum = available * kMaximumHeightPercent / 100;
+    if (window && bottomDrawerDock && bottomDrawerDock->isVisible() && bottomButtonBar) {
+        if (auto* central = window->centralWidget()) {
+            // Side docks span this column; their minimum height is not part
+            // of the space reserved above the bottom drawer.
+            const int centralMinimum = qMax(central->minimumHeight(), central->minimumSizeHint().height());
+            const int columnHeight = central->height() + bottomDrawerDock->height();
+            maximum = qMin(maximum, columnHeight - centralMinimum
+                - bottomButtonBar->height() - kResizeHandleHeight);
+        }
+    }
+    return qMax(kMinimumContentHeight, maximum);
 }
 
 void PanelLayoutController::setPanelBadge(
@@ -804,6 +837,11 @@ void PanelLayoutController::setPanelBadge(
     }
     entry->badgeText = cleanText;
     entry->badgeTone = cleanTone;
+    if (auto* group=pageRegistry->groupForPage(entry->content)) {
+        const int index=group->indexOf(entry->content);
+        group->setTabText(index,entry->label+(cleanText.isEmpty() ? QString() : QStringLiteral(" (%1)").arg(cleanText)));
+        group->setTabToolTip(index,entry->label+(cleanText.isEmpty() ? QString() : QStringLiteral(": ")+cleanText));
+    }
     if (entry->button) {
         UiControls::setToolButtonBadge(entry->button, cleanText, cleanTone);
         entry->button->setAccessibleDescription(
@@ -859,7 +897,7 @@ QDockWidget* PanelLayoutController::drawerDock() const
 
 QWidget* PanelLayoutController::drawerContent() const
 {
-    return bottomContentStack;
+    return bottomContentHost;
 }
 
 QWidget* PanelLayoutController::resizeHandle() const
@@ -886,12 +924,13 @@ bool PanelLayoutController::eventFilter(
     if (!event)
         return QObject::eventFilter(watched, event);
 
-    if (watched == bottomButtonBar && event->type() == QEvent::LayoutRequest
+    if (watched == bottomButtonBar && (event->type() == QEvent::LayoutRequest || event->type() == QEvent::Resize)
         && bottomButtonBar->layout()) {
         const int height = qMax(kButtonBarHeight, bottomButtonBar->layout()->sizeHint().height() + 6);
         if (bottomButtonBar->height() != height) {
             bottomButtonBar->setFixedHeight(height);
-            applyContentHeight(bottomContentStack->height());
+            if (!collapsed) expandedContentHeight = panelHeight(activeBottomPanelId());
+            applyContentHeight(qMin(bottomContentHost->height(), expandedContentHeight));
         }
     }
 
@@ -899,7 +938,7 @@ bool PanelLayoutController::eventFilter(
         if (event->type() == QEvent::MouseButtonDblClick) {
             auto* mouseEvent = static_cast<QMouseEvent*>(event);
             if (mouseEvent->button() == Qt::LeftButton) {
-                resetPanelHeight(activePanel);
+                resetPanelHeight(activeBottomPanelId());
                 return true;
             }
         } else if (event->type() == QEvent::MouseButtonPress) {
@@ -909,7 +948,7 @@ bool PanelLayoutController::eventFilter(
                 dragging = true;
                 dragStartGlobalY =
                     qRound(mouseEvent->globalPosition().y());
-                dragStartHeight = panelHeight(activePanel);
+                dragStartHeight = panelHeight(activeBottomPanelId());
                 return true;
             }
         } else if (event->type() == QEvent::MouseMove && dragging) {
@@ -917,7 +956,7 @@ bool PanelLayoutController::eventFilter(
             const int globalY =
                 qRound(mouseEvent->globalPosition().y());
             setPanelHeight(
-                activePanel,
+                activeBottomPanelId(),
                 dragStartHeight + dragStartGlobalY - globalY);
             return true;
         } else if (event->type() == QEvent::MouseButtonRelease
@@ -959,12 +998,10 @@ bool PanelLayoutController::eventFilter(
         if (contentDrawer) contentDrawer->finishDrawerAnimation();
 #endif
         if (!collapsed) {
-            if (const PanelEntry* entry = entryForId(activePanel)) {
+            {
                 // Window bounds constrain geometry without changing the saved preference.
-                const int height = boundedContentHeight(entry->height);
-#ifdef ZEROSLACK_ENABLE_ELA
+                const int height = panelHeight(activeBottomPanelId());
                 expandedContentHeight = height;
-#endif
                 applyContentHeight(height);
             }
         }
@@ -1016,36 +1053,31 @@ int PanelLayoutController::boundedContentHeight(int height) const
 
 int PanelLayoutController::visibleContentHeight() const
 {
-    if (!bottomContentStack || !bottomContentStack->isVisible())
+    if (!bottomContentHost || !bottomContentHost->isVisible())
         return 0;
-    return qMax(0, bottomContentStack->height());
+    return qMax(0, bottomContentHost->height());
 }
 
-void PanelLayoutController::activatePanel(
-    PanelEntry& entry,
-    bool moveFocus)
+void PanelLayoutController::selectPanelPage(QWidget* page,bool activate)
 {
-#ifdef ZEROSLACK_ENABLE_ELA
-    if (activePanel != entry.id && contentDrawer) contentDrawer->finishDrawerAnimation();
-#endif
-    if (mainAreaRequest && entry.content && (entry.id == QStringLiteral("connections")
-        || entry.content->parentWidget() != bottomContentStack)) {
-        mainAreaRequest(entry.id, entry.content, bottomContentStack);
-        return;
+    if (!page) return;
+    if (!pageRegistry->groupForPage(page))
+        pageRegistry->restorePage(page,pageRegistry->regionGroup(QStringLiteral("bottom")),false);
+    if (activate) pageRegistry->activatePage(page,false);
+    else if (auto* group=pageRegistry->groupForPage(page)) {
+        const QSignalBlocker block(group); group->setCurrentWidget(page);
     }
-    if (PanelEntry* current = entryForId(activePanel))
-        capturePanelViewState(*current);
-    activePanel = entry.id;
-    lastPanel = entry.id;
-    collapsed = false;
-    if (bottomContentStack && entry.content)
-        UiControls::selectPage(bottomContentStack, bottomContentStack->indexOf(entry.content),
-                              animationsEnabledValue && visibleContentHeight() > 0);
+}
+void PanelLayoutController::activatePanel(PanelEntry& entry,bool moveFocus)
+{
+    if (auto* current=entryForId(activeBottomPanelId())) capturePanelViewState(*current);
+    selectPanelPage(entry.content,true);
     restorePanelViewState(entry);
-    applyDrawerState(true);
+    if (pageRegistry->regionForGroup(pageRegistry->groupForPage(entry.content))==QStringLiteral("bottom")) {
+        collapsed=false; applyDrawerState(true);
+    }
     updateButtons();
-    if (moveFocus && entry.content)
-        entry.content->setFocus(Qt::ShortcutFocusReason);
+    if (moveFocus && entry.content) entry.content->setFocus(Qt::ShortcutFocusReason);
     notifyStateChanged();
 }
 
@@ -1053,23 +1085,22 @@ void PanelLayoutController::applyDrawerState(bool animate)
 {
     if (!bottomDrawerDock || panels.isEmpty())
         return;
-    PanelEntry* entry = entryForId(activePanel);
-    if (!collapsed && !entry) return;
+    PanelEntry* entry = entryForId(activeBottomPanelId());
     if (auto* transition = window->findChild<ContextDockTransition*>()) transition->finish();
 #ifdef ZEROSLACK_ENABLE_ELA
     if (contentDrawer) {
         bottomDrawerDock->show();
-        if (entry) expandedContentHeight = boundedContentHeight(entry->height);
-        bottomContentRow->show();
+        expandedContentHeight = boundedContentHeight(entry ? entry->height : expandedContentHeight);
+        bottomContentSurface->show();
         applyDrawerProgress(contentDrawer->drawerProgress());
         contentDrawer->setExpanded(!collapsed, animate && animationsEnabled() && window->isVisible());
         if (!contentDrawer->isDrawerAnimating()) applyDrawerProgress(collapsed ? 0 : 1);
         return;
     }
 #endif
-    const int target = collapsed ? 0 : boundedContentHeight(entry->height);
+    const int target = collapsed ? 0 : boundedContentHeight(entry ? entry->height : expandedContentHeight);
     bottomDrawerDock->show();
-    bottomContentRow->setVisible(target > 0);
+    bottomContentSurface->setVisible(target > 0);
     bottomResizeHandle->setVisible(target > 0);
     applyContentHeight(target);
 }
@@ -1078,15 +1109,14 @@ void PanelLayoutController::applyContentHeight(
     int height,
     bool settleDock)
 {
-    if (!bottomContentStack || !bottomDrawerDock
+    if (!bottomContentHost || !bottomDrawerDock
         || applyingDrawerGeometry)
         return;
     applyingDrawerGeometry = true;
     const int safeHeight = qMax(0, height);
-    bottomContentStack->setMinimumHeight(safeHeight);
-    bottomContentStack->setMaximumHeight(safeHeight);
+    bottomContentHost->setMinimumHeight(safeHeight);
+    bottomContentHost->setMaximumHeight(safeHeight);
     bottomContentSurface->setFixedHeight(safeHeight);
-    bottomContentRow->setFixedHeight(safeHeight);
     const int handleHeight = qMin(kResizeHandleHeight, safeHeight);
     bottomResizeHandle->setFixedHeight(handleHeight);
     bottomResizeHandle->setVisible(handleHeight > 0);
@@ -1113,61 +1143,12 @@ void PanelLayoutController::applyDrawerProgress(qreal progress)
 }
 #endif
 
-void PanelLayoutController::attachBottomCompanion(QWidget* content)
-{
-    if (!content || !bottomContentRow || bottomCompanion == content) return;
-    bottomCompanion = content;
-    bottomContentRow->addWidget(content);
-    bottomContentRow->setStretchFactor(0, 1);
-    bottomContentRow->setStretchFactor(1, 1);
-    content->hide();
-}
-
-void PanelLayoutController::setBottomCompanionVisible(bool visible, bool expandDrawer)
-{
-    if (!bottomCompanion) return;
-    const bool wasVisible = !bottomCompanion->isHidden();
-    if (wasVisible && !visible) retainedBottomSplitState = bottomContentRow->saveState();
-    bottomCompanion->setVisible(visible);
-    if (visible) {
-        if (expandDrawer) setBottomCollapsed(false);
-        if (!wasVisible) {
-            if (retainedBottomSplitState.isEmpty()) {
-                const int half = qMax(1, bottomContentRow->width() / 2);
-                bottomContentRow->setSizes({half, half});
-            } else bottomContentRow->restoreState(retainedBottomSplitState);
-        }
-    }
-}
-
-bool PanelLayoutController::bottomCompanionVisible() const
-{
-    return bottomCompanion && !bottomCompanion->isHidden();
-}
-
-QByteArray PanelLayoutController::bottomSplitState() const
-{
-    return bottomCompanionVisible() && bottomContentRow ? bottomContentRow->saveState() : retainedBottomSplitState;
-}
-
-void PanelLayoutController::restoreBottomSplitState(const QByteArray& state)
-{
-    retainedBottomSplitState = state;
-    if (!bottomContentRow) return;
-    if (!state.isEmpty()) {
-        bottomContentRow->restoreState(state);
-    } else if (bottomCompanionVisible()) {
-        const int half = qMax(1, bottomContentRow->width() / 2);
-        bottomContentRow->setSizes({half, half});
-    }
-}
-
 void PanelLayoutController::updateButtons()
 {
     const bool expanded = !collapsed;
     for (PanelEntry& entry : panels) {
         if (entry.actionButton)
-            entry.actionButton->setVisible(expanded && entry.id == activePanel);
+            entry.actionButton->setVisible(expanded && entry.id == activeBottomPanelId());
         if (!entry.button)
             continue;
         entry.button->setVisible(entry.id == QStringLiteral("problems")
@@ -1175,14 +1156,14 @@ void PanelLayoutController::updateButtons()
             || entry.id == QStringLiteral("activity")
             || entry.id == QStringLiteral("simulationLog")
             || entry.id == QStringLiteral("simulationEvents")
-            || (entry.id != QStringLiteral("connections") && expanded && entry.id == activePanel));
-        entry.button->setChecked(expanded && entry.id == activePanel);
+            || (entry.id != QStringLiteral("connections") && expanded && entry.id == activeBottomPanelId()));
+        entry.button->setChecked(expanded && entry.id == activeBottomPanelId());
         entry.button->setProperty(
-            "activePanel", expanded && entry.id == activePanel);
+            "activePanel", expanded && entry.id == activeBottomPanelId());
         entry.button->setAccessibleDescription(
             entry.badgeText.isEmpty()
                 ? QStringLiteral("%1 the %2 bottom panel. Ctrl+J toggles the last panel.")
-                      .arg(expanded && entry.id == activePanel
+                      .arg(expanded && entry.id == activeBottomPanelId()
                                ? QStringLiteral("Close")
                                : QStringLiteral("Open"),
                            entry.label)
@@ -1200,7 +1181,8 @@ bool PanelLayoutController::setPanelAction(const QString& panelId, QAction* acti
         entry->actionButton->setObjectName(panelId + QStringLiteral("PanelActionButton"));
         entry->actionButton->setToolButtonStyle(Qt::ToolButtonIconOnly);
         entry->actionButton->setIconSize(QSize(18, 18));
-        qobject_cast<QHBoxLayout*>(bottomButtonBar->layout())->addWidget(entry->actionButton);
+        auto* toolbar = dynamic_cast<CompactOverflowToolbar*>(bottomButtonBar->findChild<QWidget*>("bottomPanelToolbar"));
+        if (toolbar) toolbar->insertInlineWidget(entry->actionButton);
     }
     entry->actionButton->setDefaultAction(action);
     entry->actionButton->setAccessibleName(action ? action->text() : QString());
@@ -1210,11 +1192,12 @@ bool PanelLayoutController::setPanelAction(const QString& panelId, QAction* acti
 
 bool PanelLayoutController::openPanelInMainArea(const QString& panelId)
 {
-    auto* entry = entryForId(panelId);
-    if (!entry || !entry->content || !mainAreaRequest) return false;
-    if (activePanel == entry->id) setBottomCollapsed(true);
-    mainAreaRequest(entry->id, entry->content, bottomContentStack);
-    return true;
+    auto* entry=entryForId(panelId);
+    auto* target=pageRegistry->regionActiveGroup(QStringLiteral("main"));
+    if (!entry || !entry->content || !target) return false;
+    if (!pageRegistry->groupForPage(entry->content))
+        pageRegistry->restorePage(entry->content,pageRegistry->regionGroup(QStringLiteral("bottom")),false);
+    return pageRegistry->movePage(entry->content,target);
 }
 
 void PanelLayoutController::setPanelStateHandlers(const QString& panelId,

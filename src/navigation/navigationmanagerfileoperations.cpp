@@ -788,7 +788,8 @@ NavigationManager::executeActionRoute(
                      &preparedMutation,
                      navigationWidget,
                      &pendingFailure,
-                     guard)) {
+                     guard,
+                     plan.kind == WorkspaceFileOperationKind::Rename ? plan.targetPath : QString())) {
             actionResult.failureReason =
                 pendingFailure;
             return actionResult;

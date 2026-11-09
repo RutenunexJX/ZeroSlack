@@ -22,6 +22,8 @@
 #include <QTemporaryDir>
 #include <QTextDocument>
 #include <QVBoxLayout>
+#include <QToolButton>
+#include <QMenu>
 #include <QtTest>
 #include <algorithm>
 
@@ -76,12 +78,11 @@ int main(int argc, char** argv)
     if (!provider.activateView(host, provider.activationResource(workspace.path())) || !host->isReady()) return 11;
     if (scanned.isEmpty() && !scanned.wait(30000)) return 4;
     const double scanMs = timer.nsecsElapsed() / 1e6;
-    if (!panel->createProject(QStringLiteral("First")) || !panel->createProject(QStringLiteral("Second"))) return 5;
-    auto* projects = window.findChild<ElaListView*>(QStringLiteral("projectList"));
-    auto* files = window.findChild<ElaListView*>(QStringLiteral("sourceList"));
-    auto* log = window.findChild<ElaPlainTextEdit*>(QStringLiteral("simulationLog"));
-    auto* session = window.findChild<simdock::QuestaSession*>();
-    if (!projects || !files || !log || !session || files->model()->rowCount() != count) return 6;
+    if(!panel->selectTarget(workspace.filePath("source_0000.sv")).isEmpty())return 5;
+    auto* target=window.findChild<QToolButton*>("simulationTarget");
+    auto* log=window.findChild<ElaPlainTextEdit*>("simulationLog");
+    auto* session=panel->controller()->session();
+    if(!target||!log||!session)return 6;
     QTest::qWait(100);
     Events events;
     events.root = &window;
@@ -94,26 +95,25 @@ int main(int argc, char** argv)
     QList<double> timings;
     for (int i = 0; i < 12; ++i) {
         timer.restart();
-        projects->setCurrentIndex(projects->model()->index(i % 2, 0));
+        if(!panel->selectTarget(workspace.filePath(QString("source_%1.sv").arg(i%2,4,10,QLatin1Char('0')))).isEmpty())return 7;
         app.processEvents();
         timings << timer.nsecsElapsed() / 1e6;
     }
     std::sort(timings.begin(), timings.end());
-    report.insert("projectSwitch", QJsonObject{{"medianMs", timings[6]}, {"p95Ms", timings[11]},
+    report.insert("tbTargetSwitch", QJsonObject{{"medianMs", timings[6]}, {"p95Ms", timings[11]},
         {"paints", events.paints}, {"layouts", events.layouts}, {"iterations", 12}});
     events.reset();
     timings.clear();
-    auto* source = qobject_cast<QStandardItemModel*>(files->model())->item(100);
+    auto* menu=target->menu();if(!menu)return 8;
     for (int i = 0; i < 12; ++i) {
         timer.restart();
-        const auto state = i % 2 ? Qt::Unchecked : Qt::Checked;
-        source->setCheckState(state);
+        target->setFocus();
         app.processEvents();
-        if (source->checkState() != state) return 9;
+        if(target->menu()!=menu)return 9;
         timings << timer.nsecsElapsed() / 1e6;
     }
     std::sort(timings.begin(), timings.end());
-    report.insert("sourceToggle", QJsonObject{{"medianMs", timings[6]}, {"p95Ms", timings[11]},
+    report.insert("targetFocus", QJsonObject{{"medianMs", timings[6]}, {"p95Ms", timings[11]},
         {"paints", events.paints}, {"layouts", events.layouts}, {"iterations", 12}});
     events.reset();
     log->clear();

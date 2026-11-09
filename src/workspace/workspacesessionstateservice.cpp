@@ -359,6 +359,12 @@ QJsonObject tabObject(
     object.insert(
         QStringLiteral("locked"),
         tab.locked);
+    object.insert("regionId", tab.regionId);
+    object.insert("groupId", tab.groupId);
+    object.insert("pageId", tab.pageId);
+    object.insert("kind", tab.kind);
+    object.insert("documentId", tab.documentId);
+    object.insert("viewState", tab.viewState);
     return object;
 }
 
@@ -408,6 +414,7 @@ QJsonObject sessionObject(
         QStringLiteral("tabs"), tabs);
 
     QJsonObject ui;
+    ui.insert("pageLayout", state.ui.pageLayout);
     ui.insert(
         QStringLiteral("mainWindowGeometry"),
         QString::fromLatin1(
@@ -666,6 +673,12 @@ void restoreTabs(
             object.value(
                 QStringLiteral("locked"))
                 .toBool(false);
+        tab.regionId = object.value("regionId").toString();
+        tab.groupId = object.value("groupId").toString();
+        tab.pageId = object.value("pageId").toString();
+        tab.kind = object.value("kind").toString();
+        tab.documentId = object.value("documentId").toString();
+        tab.viewState = object.value("viewState").toObject();
         tabs->append(tab);
     }
 }
@@ -676,6 +689,7 @@ void restoreUi(
 {
     if (!ui)
         return;
+    ui->pageLayout = object.value("pageLayout").toObject();
     ui->mainWindowGeometry =
         QByteArray::fromBase64(
             object.value(

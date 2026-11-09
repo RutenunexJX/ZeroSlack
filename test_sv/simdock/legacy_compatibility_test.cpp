@@ -81,22 +81,12 @@ int sessionPhase(const QString& mode, const QString& workspace, const QString& p
     if (host->saveState().value("workspace").toString() != workspace) return 14;
     if (host->saveState().value("preferences").toMap().value("waveform/theme") != "nord") return 15;
     if (host->saveState().value("legacyLayout").toMap().size() != 2) return 16;
-    window.resizeDocks({controller->dockWidget()}, {1100}, Qt::Horizontal);
-    QTest::qWait(150);
-    auto* options = window.findChild<QPushButton*>("projectsDisclosure");
-    if (!options || panel->findChild<QWidget*>("workbenchSection")) return 17;
+    if (window.findChild<QWidget*>("projectsDisclosure") || panel->findChild<QWidget*>("workbenchSection")) return 17;
     if (mode == "save") {
-        options->setChecked(false);
-        QTest::qWait(60);
-        auto state = host->saveState();
-        state.insert("test/projectsExpanded", options->isChecked());
-        if (!write(profile + "/expected-state.json", QJsonDocument(QJsonObject::fromVariantMap(state)).toJson())) return 18;
+        if (!write(profile + "/expected-state.json", QJsonDocument(QJsonObject::fromVariantMap(host->saveState())).toJson())) return 18;
     } else {
-        const auto expectedState = object(profile + "/expected-state.json").toVariantMap();
-        const auto expected = SimDockState::decode(expectedState);
+        const auto expected = SimDockState::decode(object(profile + "/expected-state.json").toVariantMap());
         const auto actual = SimDockState::decode(host->saveState());
-        if (!expectedState.contains("test/projectsExpanded")
-            || options->isChecked() != expectedState.value("test/projectsExpanded").toBool()) return 19;
         for (const auto& key : {"projectId", "preferences", "legacyLayout"}) {
             if (actual.value(key) != expected.value(key)) {
                 qCritical() << key << actual.value(key) << expected.value(key);

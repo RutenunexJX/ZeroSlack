@@ -48,6 +48,7 @@ public:
         }
         more->setPopupMode(QToolButton::InstantPopup);
         menu = more->menu();
+        menu->installEventFilter(this);
         popup = new QWidget;
         popup->setObjectName(name + QStringLiteral("OverflowContent"));
         popupLayout = new QVBoxLayout(popup);
@@ -94,6 +95,15 @@ public:
         widget->installEventFilter(this);
         schedule();
     }
+    void insertInlineWidget(QWidget* widget, int index = -1) {
+        if (index < 0) index = entries.size();
+        index = qMin(index, int(entries.size()));
+        entries.insert(index, {widget, 0,
+            !widget->testAttribute(Qt::WA_WState_ExplicitShowHide) || !widget->isHidden(), false});
+        widget->installEventFilter(this);
+        row->insertWidget(index, widget);
+        schedule();
+    }
     QSize minimumSizeHint() const override { return more->minimumSizeHint(); }
 protected:
     bool event(QEvent* event) override {
@@ -103,6 +113,14 @@ protected:
         return result;
     }
     bool eventFilter(QObject* watched, QEvent* event) override {
+        if (watched == menu && (event->type() == QEvent::Show
+            || (event->type() == QEvent::Resize && menu->isVisible()))) {
+            const QRect area = more->screen()->availableGeometry();
+            const QRect frame = menu->frameGeometry();
+            const QPoint bounded(qBound(area.left(), frame.left(), qMax(area.left(), area.right() - frame.width() + 1)),
+                                 qBound(area.top(), frame.top(), qMax(area.top(), area.bottom() - frame.height() + 1)));
+            if (bounded != frame.topLeft()) menu->move(menu->pos() + bounded - frame.topLeft());
+        }
         if (!arranging && (event->type() == QEvent::ShowToParent || event->type() == QEvent::HideToParent)) {
             for (auto& entry : entries) if (entry.widget == watched) entry.wanted = !entry.widget->isHidden();
             schedule();
@@ -176,7 +194,7 @@ private:
         // Reparenting can lay out buttons while More is still visible. Commit
         // the final visibility before returning from the owner arrangement.
         row->activate();
-        if (menu->isVisible()) sizePopup();
+        if (needsMore) sizePopup();
     }
     void sizePopup() {
         popupLayout->activate();

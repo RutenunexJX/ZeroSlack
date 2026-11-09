@@ -130,9 +130,16 @@ bool closeWorkspace(QTabBar* bar, const QString& path) {
     const QPoint point = bar->tabRect(index).center();
     QContextMenuEvent event(QContextMenuEvent::Mouse, point, bar->mapToGlobal(point));
     QApplication::sendEvent(bar, &event);
+    const bool shown=QTest::qWaitFor([] { return qobject_cast<QMenu*>(QApplication::activePopupWidget()) != nullptr; }, 1000);
     auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget());
-    auto* action = menu ? menu->findChild<QAction*>("closeWorkspaceAction") : nullptr;
-    if (!action) return false;
+    QAction* action=nullptr;
+    if (menu) for (auto* candidate:menu->actions())
+        if (candidate->objectName()=="closeWorkspaceAction") action=candidate;
+    if (!shown || !action) {
+        qWarning()<<"workspace close menu"<<index<<point<<bar->geometry()<<bar->tabAt(point)
+            <<bar->contextMenuPolicy()<<QApplication::activePopupWidget();
+        return false;
+    }
     action->trigger();
     menu->close();
     return true;
@@ -591,8 +598,10 @@ private slots:
             auto* more = controller->rail()->findChild<QAction*>("contextRail.toolbox"); QVERIFY(more);
             auto ids = controller->rail()->entryIds();
             ids.removeAll(QStringLiteral("toolbox"));
-            QCOMPARE(ids.size(), 8);
-            QVERIFY(ids.contains(QStringLiteral("simdock")));
+            QCOMPARE(ids.size(), 7);
+            QVERIFY(!ids.contains(QStringLiteral("simdock")));
+            QVERIFY(window.simulationWorkbench()->isVisible());
+            const auto retainedProvider=LiveInsightsContextProvider::providerIdForKind(LiveInsightKind::State);
             QCOMPARE(ids.size(), controller->providerIds().size());
             auto* pane = window.findChild<NavigationPaneCoordinator*>(); QVERIFY(pane);
             PanelLayoutController* panels = nullptr;
@@ -628,13 +637,13 @@ private slots:
                 const QDeadlineTimer activationDeadline(5000);
                 QVERIFY2(waitForContextIdle(window, *controller, activationDeadline), "Previous component must finish before replacement");
                 if (external(id)) {
-                    QVERIFY(controller->openTool(QStringLiteral("simdock")));
-                    QCOMPARE(controller->rail()->activeEntryId(), QStringLiteral("simdock"));
+                    QVERIFY(controller->openTool(retainedProvider));
+                    QCOMPARE(controller->rail()->activeEntryId(), retainedProvider);
                     closeExternal(id);
                 }
                 QVERIFY(controller->setDockVisible(false));
                 entry->trigger();
-                if (id == QStringLiteral("simdock"))
+                if (id == retainedProvider)
                     qInfo() << "diag.simdock-root" << controller->workspaceRoot()
                         << window.simulationWorkbench()->workspace()
                         << QFileInfo(controller->workspaceRoot()).canonicalFilePath();
@@ -645,7 +654,7 @@ private slots:
                     .arg(id).arg(controller->dockVisible()).arg(controller->dockHost()->currentResource().providerId)
                     .arg(controller->rail()->activeEntryId())), int(activationDeadline.remainingTime()));
                 if (external(id)) {
-                    QTRY_COMPARE(controller->dockHost()->currentResource().providerId, QStringLiteral("simdock"));
+                    QTRY_COMPARE(controller->dockHost()->currentResource().providerId, retainedProvider);
                     QCOMPARE(controller->rail()->activeEntryId(), QString());
                 } else {
                     QTRY_COMPARE(controller->dockHost()->currentResource().providerId, id);
@@ -663,7 +672,7 @@ private slots:
                 } else QTRY_VERIFY(!controller->dockVisible());
                 QVERIFY(controller->rail()->activeEntryId().isEmpty());
                 entry->trigger();
-                if (id == QStringLiteral("simdock"))
+                if (id == retainedProvider)
                     qInfo() << "diag.simdock-root" << controller->workspaceRoot()
                         << window.simulationWorkbench()->workspace()
                         << QFileInfo(controller->workspaceRoot()).canonicalFilePath();
@@ -687,8 +696,8 @@ private slots:
                     .arg(id).arg(controller->dockVisible()).arg(controller->dockHost()->currentResource().providerId)
                     .arg(controller->rail()->activeEntryId())));
                 QCOMPARE(controller->dockHost()->currentResource().providerId,
-                    external(id) ? QStringLiteral("simdock") : id);
-                QCOMPARE(controller->rail()->activeEntryId(), external(id) ? QStringLiteral("simdock") : id);
+                    external(id) ? retainedProvider : id);
+                QCOMPARE(controller->rail()->activeEntryId(), external(id) ? retainedProvider : id);
             }
             // Each route keeps its owning surface open while switching tools.
             for (const auto& id : ids) {
@@ -715,13 +724,14 @@ private slots:
             window.resizeDocks({controller->dockWidget()}, {280}, Qt::Horizontal);
             QTRY_COMPARE(firstCard->y(), secondCard->y());
             QVERIFY(firstCard->x() != secondCard->x());
-            hidden = QStringLiteral("simdock");
+            hidden = retainedProvider;
             auto* pin = window.findChild<QCheckBox*>("contextToolPin." + hidden); QVERIFY(pin && pin->isChecked());
             QTRY_VERIFY(pin->isVisible());
             pin->click();
             QVERIFY(!controller->isProviderPinned(hidden));
             QVERIFY(!controller->rail()->findChild<QAction*>("contextRail." + hidden)->isVisible());
             QVERIFY(window.findChild<QToolButton*>("contextToolRun." + hidden)->isVisible());
+            QVERIFY(waitForContextIdle(window,*controller,QDeadlineTimer(5000)));
             window.findChild<QToolButton*>("contextToolRun." + hidden)->click();
             QTRY_VERIFY(controller->dockVisible() && !controller->toolboxVisible());
             QCOMPARE(controller->dockHost()->currentResource().providerId, hidden);

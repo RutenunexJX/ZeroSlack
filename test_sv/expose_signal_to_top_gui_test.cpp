@@ -1,5 +1,6 @@
 #include <QScopeGuard>
 #include "mainwindow.h"
+#include "navigationpanecoordinator.h"
 #include <QLabel>
 #include "editoractioncontextservice.h"
 #include "editorfileidentity.h"
@@ -287,6 +288,9 @@ ContextActionTriggerState triggerEditorOwnedContextAction(
         return {};
     QTextCursor clickCursor(editor->document());
     clickCursor.setPosition(clickPosition);
+    editor->setTextCursor(clickCursor);
+    editor->ensureCursorVisible();
+    QCoreApplication::processEvents();
     const QPoint clickPoint =
         editor->cursorRect(clickCursor).center();
 
@@ -641,6 +645,8 @@ void runFileActionRegistryShellRegression()
         navigationAction->trigger();
     QCoreApplication::processEvents(
         QEventLoop::AllEvents, 50);
+    auto* navigationPane = window.findChild<NavigationPaneCoordinator*>();
+    QTest::qWaitFor([&] { return navigationPane && !navigationPane->isAnimating(); }, 1500);
     check("Navigation shortcut is a Registry menu adapter",
           navigationAction
               && navigationDock
@@ -1921,6 +1927,10 @@ void runContextActionRegistryExecutionRegression()
             QStringLiteral("// queue_here"),
             QStringLiteral(
                 "refactor.createAssignmentQueue"));
+    std::printf("Queue action: menu=%d found=%d enabled=%d triggered=%d id=%s route=%s last=%s slots=%d text=[%s]\n",
+                queueAction.menuShown,queueAction.found,queueAction.enabled,queueAction.triggered,
+                qPrintable(queueAction.actionId),qPrintable(queueAction.executionRoute),
+                qPrintable(applicationActionExecutionHistory().lastActionId()),editor->templateSlotModeActive(),qPrintable(editor->toPlainText()));
     check("assignment queue context action uses Registry host",
           queueAction.menuShown
               && queueAction.found

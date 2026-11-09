@@ -5,6 +5,9 @@ export interface EditorAdapter {
   settle?():Promise<void>;
   command(name:string,clipboard?:ClipboardPayload):Promise<void>|void;
   dispose():void;
+  detachView?(view:string):void;
+  viewState?():Record<string,unknown>;
+  restoreViewState?(state:Record<string,any>):void;
   exportMarkdown?():Promise<{content:string;attachments:unknown[];warnings:string[]}>;
   theme?(dark:boolean):void;
   appearance?(value:{family:string;size:number;lineHeight:number}):void;
@@ -29,10 +32,13 @@ export class DocumentBridge {
   private composing=false;
   private disposed=false;
   private initializing=false;
+  private barrier=0;
+  private viewTimer:number|undefined;
   private changeTimer:number|undefined;
   private readonly pending=new Set<Promise<unknown>>();
   private readonly requests=new Map<string,{resolve:(value:any)=>void;reject:(error:Error)=>void;timer:number}>();
   constructor(private readonly adapter:EditorAdapter) {
+    for(const name of ['scroll','selectionchange','focusout'])window.addEventListener(name,()=>this.viewChanged(),true);
     window.addEventListener('compositionstart',()=>{this.composing=true},true);
     window.addEventListener('compositionend',()=>{this.composing=false},true);
     window.addEventListener('wheel',event=>{
@@ -59,12 +65,17 @@ export class DocumentBridge {
     window.chrome.webview.addEventListener('message',event=>void this.receive(event.data));
     window.chrome.webview.postMessage({type:'hello'});
   }
-  changed() {
+  changed(sharedRevision?:number) {
     if(!this.initialized||this.initializing||this.disposed)return;
-    this.revision++;
+    this.revision=sharedRevision??this.revision+1;
     if(this.changeTimer===undefined)this.changeTimer=window.setTimeout(()=>{
       this.changeTimer=undefined;this.send({type:'changed',revision:this.revision});
     },16);
+  }
+  setRevision(value:number){this.revision=value}
+  viewChanged(){
+    if(!this.initialized||this.disposed||this.viewTimer!==undefined)return;
+    this.viewTimer=window.setTimeout(()=>{this.viewTimer=undefined;if(this.initialized&&!this.disposed)this.send({type:'view-state',state:this.adapter.viewState?.()??{}})},50);
   }
   track<T>(promise:Promise<T>):Promise<T> {
     this.pending.add(promise);promise.then(()=>this.pending.delete(promise),()=>this.pending.delete(promise));return promise;
@@ -89,23 +100,26 @@ export class DocumentBridge {
       await new Promise(resolve=>setTimeout(resolve,20));
     }
     // A task boundary drains compositionend/input and upstream queued operations even in hidden tabs.
-    await new Promise(resolve=>setTimeout(resolve,0));await this.adapter.settle?.();this.adapter.flush();
+    await new Promise(resolve=>setTimeout(resolve,0));this.adapter.flush();await this.adapter.settle?.();this.adapter.flush();
   }
   private async receive(message:any) {
     if(!message||typeof message!=='object'||this.disposed)return;
     if(message.type==='initialize'){
       if(this.initializing)return;
-      this.initializing=true;this.initialized=false;this.session=message.session;this.documentId=message.document;
+      ++this.barrier;this.initializing=true;this.initialized=false;this.session=message.session;this.documentId=message.document;
       this.revision=0;this.frozen=false;
       try{
         const result=await this.adapter.initialize(String(message.content??''),message);
         this.adapter.theme?.(!!message.dark);if(message.appearance?.size)this.adapter.appearance?.(message.appearance);this.initialized=true;
-        this.send({type:'ready',...result});
+        if(message.viewState)this.adapter.restoreViewState?.(message.viewState);
+        this.send({type:'ready',...result});this.viewChanged();
       }catch(error){this.report(String(error));}
       finally{this.initializing=false}
       return;
     }
     if(message.session!==this.session||message.document!==this.documentId)return;
+    if(message.type==='dispose'){this.dispose();return}
+    if(message.type==='detach-view'){this.adapter.detachView?.(message.view);return}
     if(message.type==='response'){
       const request=this.requests.get(message.request);if(!request)return;
       clearTimeout(request.timer);this.requests.delete(message.request);
@@ -113,8 +127,17 @@ export class DocumentBridge {
     }
     if(message.type==='theme'){this.adapter.theme?.(!!message.dark);return}
     if(message.type==='appearance'){this.adapter.appearance?.(message.appearance);return}
-    if(message.type==='release'){this.frozen=false;return}
+    if(message.type==='release'){++this.barrier;this.frozen=false;return}
     if(!this.initialized)return;
+    if(message.type==='restore-view'){this.adapter.restoreViewState?.(message.state??{});this.viewChanged();return}
+    if(message.type==='prepare'){
+      const session=this.session,barrier=++this.barrier;
+      try{await this.settled();if(session!==this.session||barrier!==this.barrier)return;this.frozen=true;this.adapter.flush();await this.adapter.settle?.();
+        if(session!==this.session||barrier!==this.barrier)return;
+        this.send({type:'prepared',request:message.request,revision:this.revision});
+      }catch(error){this.send({type:'snapshot-error',request:message.request,message:String(error)})}
+      return;
+    }
     if(message.type==='command'&&!this.frozen&&!this.pausedOperations){try{await this.track(Promise.resolve(this.adapter.command(message.command,message.clipboard)))}catch(error){this.report(String(error))}return}
     if(message.type==='snapshot'){
       const session=this.session;
@@ -129,5 +152,5 @@ export class DocumentBridge {
       }catch(error){this.send({type:'snapshot-error',request:message.request,message:String(error)})}
     }
   }
-  dispose(){if(this.disposed)return;this.disposed=true;clearTimeout(this.changeTimer);for(const value of this.requests.values()){clearTimeout(value.timer);value.reject(new Error('Document closed'))}this.requests.clear();this.adapter.dispose()}
+  dispose(){if(this.disposed)return;this.disposed=true;++this.barrier;clearTimeout(this.viewTimer);clearTimeout(this.changeTimer);for(const value of this.requests.values()){clearTimeout(value.timer);value.reject(new Error('Document closed'))}this.requests.clear();this.adapter.dispose()}
 }

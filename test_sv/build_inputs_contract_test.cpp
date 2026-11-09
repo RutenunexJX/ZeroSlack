@@ -1,6 +1,7 @@
 #include <zeroslack/semantic/compilationorderservice.h>
 #include <zeroslack/semantic/workspaceconfigurationservice.h>
 #include "../src/simulation/simdock/core/dependencies.h"
+#include "../src/simulation/simdock/core/simulationbuildplanner.h"
 #include "../src/simulation/simdock/core/workspace.h"
 #include "../src/simulation/simdock/ui/workbench.h"
 #include "semantic_fixture_records.h"
@@ -129,55 +130,62 @@ private slots:
         Fixture f; Fixture other;
         f.add("top.sv", "module top; leaf u(); endmodule module leaf; endmodule\n");
         QString first, second;
+        QString legacyError;
+        QVERIFY(simdock::saveProject(f.directory.path(), f.project, &legacyError));
+        const auto legacyBefore = simdock::projectJson(f.project);
         {
             simdock::Workbench workbench;
             QSignalSpy scanned(&workbench, &simdock::Workbench::scanFinished);
             QVERIFY(workbench.setContext(f.directory.path()).isEmpty());
             QTRY_VERIFY_WITH_TIMEOUT(!scanned.isEmpty(), 10000);
-            QVERIFY(workbench.activeProjectId().isEmpty());
-            QVERIFY(workbench.addDesignProject(f.file("top.sv"), "top").isEmpty()); first = workbench.activeProjectId();
-            QVERIFY(workbench.addDesignProject(f.file("top.sv"), "leaf").isEmpty()); second = workbench.activeProjectId();
+            QVERIFY(workbench.designService()->activeProjectId().isEmpty());
+            QVERIFY(workbench.addDesignProject(f.file("top.sv"), "top").isEmpty()); first = workbench.designService()->activeProjectId();
+            QVERIFY(workbench.addDesignProject(f.file("top.sv"), "leaf").isEmpty()); second = workbench.designService()->activeProjectId();
             QVERIFY(first != second); QCOMPARE(workbench.designRoots().size(), 2);
             workbench.setDesignExpanded(first, false);
-            QCOMPARE(workbench.activeProjectId(), second);
-            QVERIFY(workbench.openProject(first).isEmpty());
+            QCOMPARE(workbench.designService()->activeProjectId(), second);
+            QVERIFY(workbench.designService()->activateProject(first).isEmpty());
             QVERIFY(workbench.setContext(other.directory.path()).isEmpty());
-            QVERIFY(workbench.activeProjectId().isEmpty()); QVERIFY(workbench.designRoots().isEmpty());
+            QVERIFY(workbench.designService()->activeProjectId().isEmpty()); QVERIFY(workbench.designRoots().isEmpty());
             QVERIFY(workbench.setContext(f.directory.path()).isEmpty());
-            QCOMPARE(workbench.activeProjectId(), first);
-            auto* projects = workbench.findChild<QPushButton*>("projectsDisclosure");
-            auto* inputs = workbench.findChild<QPushButton*>("inputsDisclosure");
-            QVERIFY(projects && inputs); projects->setChecked(false); inputs->setChecked(false);
+            QCOMPARE(workbench.designService()->activeProjectId(), first);
+            QVERIFY(!workbench.findChild<QWidget*>("projectsDisclosure"));
+            QVERIFY(!workbench.findChild<QWidget*>("inputsDisclosure"));
         }
         simdock::Workbench reopened;
         QVERIFY(reopened.setContext(f.directory.path()).isEmpty());
-        QCOMPARE(reopened.activeProjectId(), first); QCOMPARE(reopened.designRoots().size(), 2);
+        QCOMPARE(reopened.designService()->activeProjectId(), first); QCOMPARE(reopened.designRoots().size(), 2);
         for (const auto& root : reopened.designRoots()) QCOMPARE(root.expanded, root.projectId != first);
-        QVERIFY(!reopened.findChild<QPushButton*>("projectsDisclosure")->isChecked());
-        QVERIFY(!reopened.findChild<QPushButton*>("inputsDisclosure")->isChecked());
+        QVERIFY(!reopened.findChild<QWidget*>("projectList"));
+        QVERIFY(!reopened.findChild<QWidget*>("sourceList"));
         QVERIFY(reopened.removeDesignRoot(first).isEmpty());
         QCOMPARE(reopened.designRoots().size(), 1);
-        QCOMPARE(simdock::loadProjects(f.directory.path()).size(), 2);
+        const auto preserved = simdock::loadProjects(f.directory.path(), nullptr, false);
+        QCOMPARE(preserved.size(), 1);
+        QCOMPARE(simdock::projectJson(preserved.first()), legacyBefore);
+        QVERIFY(reopened.controller()->legacyProjectId().isEmpty());
     }
     void displayedOrderIncludesImplicitTestbench() {
         Fixture f;
         f.add("a_top.sv","module top; import base::*; word_t data; endmodule\n");
         f.add("z_base.sv","package base; typedef logic word_t; endpackage\n");
-        f.add("defs.svh","`define VALUE 1\n");
+        f.add("defs.svh","// unused header\n");
         put(f.file("00_tb.sv"),"module tb; top dut(); endmodule\n");
         f.project.tbFile="00_tb.sv"; f.project.tbName="tb";
         QString error; QVERIFY2(simdock::saveProject(f.directory.path(),f.project,&error),qPrintable(error));
+        const auto before=simdock::projectJson(f.project);
         simdock::Workbench workbench;
-        QSignalSpy scanned(&workbench,&simdock::Workbench::scanFinished);
         QVERIFY(workbench.setContext(f.directory.path()).isEmpty());
-        QTRY_VERIFY_WITH_TIMEOUT(!scanned.isEmpty(),10000);
         QVERIFY(workbench.openProject(f.project.id).isEmpty());
-        auto* list=workbench.findChild<QListView*>("sourceList"); QVERIFY(list);
-        QTRY_COMPARE_WITH_TIMEOUT(list->model()->index(0,0).data(Qt::UserRole).toString(),QString("00_tb.sv"),10000);
-        QCOMPARE(list->model()->index(1,0).data(Qt::UserRole).toString(),QString("z_base.sv"));
-        QCOMPARE(list->model()->index(2,0).data(Qt::UserRole).toString(),QString("a_top.sv"));
-        QCOMPARE(list->model()->index(3,0).data(Qt::UserRole).toString(),QString("defs.svh"));
-        QVERIFY(!simdock::loadProjects(f.directory.path()).first().sources.contains("00_tb.sv"));
+        auto request=simdock::SimulationBuildPlanner::workspaceRequest(f.directory.path(),workbench.controller()->target(),&error);
+        QVERIFY2(error.isEmpty(),qPrintable(error));
+        auto plan=simdock::SimulationBuildPlanner::plan(request); QVERIFY2(plan->valid(),qPrintable(plan->error()));
+        const auto order=f.relative(plan->compilation.files);
+        QCOMPARE(order.size(),3); QVERIFY(order.contains("00_tb.sv")); QVERIFY(order.contains("a_top.sv"));
+        QVERIFY(order.indexOf("z_base.sv")<order.indexOf("a_top.sv"));
+        QVERIFY(!order.contains("defs.svh"));
+        QCOMPARE(simdock::projectJson(simdock::loadProjects(f.directory.path(),nullptr,false).first()),before);
+        QVERIFY(!f.project.sources.contains("00_tb.sv"));
     }
     void folderAndProjectRowInteractions() {
         Fixture f;

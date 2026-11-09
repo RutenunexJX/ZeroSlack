@@ -29,7 +29,7 @@ bool put(const QString& path, const QByteArray& data) {
 }
 QTreeWidget* candidates(NavigationWidget& widget) {return widget.findChild<QTreeWidget*>("designCandidateTree");}
 QTreeWidget* tree(NavigationWidget& widget) {return widget.findChild<QTreeWidget*>("navigationDesignTree");}
-QLineEdit* search(NavigationWidget& widget) {return widget.findChild<QLineEdit*>("navigationSearchLineEdit");}
+QLineEdit* search(NavigationWidget& widget) {return widget.findChild<QLineEdit*>("navigationDesignSearchLineEdit");}
 QTreeWidgetItem* allFiles(NavigationWidget& widget) {
     auto* view=candidates(widget);
     for(int i=0;i<view->topLevelItemCount();++i)
@@ -242,7 +242,7 @@ private slots:
         simdock::Workbench workbench;
         QVERIFY(workbench.setContext(data.path()).isEmpty());workbench.markDesignMigrationCompleted();
         NavigationManager manager;manager.setNavigationService(&service);manager.setNavigationWidget(&widget);
-        manager.connectToWorkspaceManager(&workspace);manager.connectToWorkbench(&workbench);
+        manager.connectToWorkspaceManager(&workspace);manager.connectToDesignProjects(workbench.designService());
         QVERIFY(workspace.openWorkspace(data.path()));widget.setActiveTab(NavigationWidget::DesignTab);
         QTRY_VERIFY_WITH_TIMEOUT(fileRow(widget,one) && !fileRow(widget,one)->data(0,ModuleRole).toString().isEmpty(),10000);
         QCOMPARE(allFiles(widget)->childCount(),4);
@@ -341,6 +341,7 @@ private slots:
         for(const auto& file:files)QVERIFY(window.tabManager->openFileInTab(file));
         QCOMPARE(window.tabManager->getOpenSystemVerilogFiles().size(),7);
         QCOMPARE(window.tabManager->workspaceSessionTabs(workspace).size(),7);
+        nav->setActiveTab(NavigationWidget::DesignTab);
         capture(window,"mainwindow-empty-projects-selector");
         QSignalSpy scans(window.workspaceManager.get(),&WorkspaceManager::filesScanned);
         QSignalSpy refresh(window.navigationManager.get(),&NavigationManager::dataRefreshed);
@@ -370,16 +371,15 @@ private slots:
         int active=0;
         for(int i=0;i<7;++i)active+=tree(*nav)->topLevelItem(i)->data(0,NavigationRowStyle::ActiveRole).toBool();
         QCOMPARE(active,1);
-        QJsonArray buildInputs;
-        auto* sourceList=window.findChild<QAbstractItemView*>("sourceList");
-        QVERIFY(sourceList);
-        for(int row=0;row<sourceList->model()->rowCount();++row)
-            buildInputs.append(sourceList->model()->index(row,0).data(Qt::UserRole).toString());
+        QVERIFY(!window.findChild<QAbstractItemView*>("sourceList"));
+        auto discovered=window.workspaceManager->getSystemVerilogFiles();
+        auto expectedFiles=files; discovered.sort(); expectedFiles.sort();
+        QCOMPARE(discovered,expectedFiles);
         const auto reportDirectory=qEnvironmentVariable("ZEROSLACK_DESIGN_REPORT");
         if(!reportDirectory.isEmpty())put(reportDirectory+"/suffix-capabilities.json",QJsonDocument(QJsonObject{
             {"configuredSuffixes",QJsonArray::fromStringList(suffixes)},{"discoveredFiles",QJsonArray::fromStringList(files)},
             {"parsedModules",QJsonArray::fromStringList(names)},{"openHdlDocuments",7},{"sessionDocuments",7},
-            {"savedDesignProjects",7},{"buildInputsDiscoveredRows",buildInputs}}).toJson());
+            {"savedDesignProjects",7},{"discoveredCompilationCandidates",QJsonArray::fromStringList(discovered)}}).toJson());
         capture(window,"mainwindow-projects-light");
         ApplicationThemeManager::instance().setMode(ThemeMode::Dark);window.resize(980,720);
         capture(window,"mainwindow-projects-narrow-dark");

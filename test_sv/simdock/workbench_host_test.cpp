@@ -32,6 +32,7 @@
 #include <QScreen>
 #include <QSplitter>
 #include <QLineEdit>
+#include <QTextCursor>
 #include <QToolButton>
 #include <cmath>
 #include <new>
@@ -82,16 +83,16 @@ class WorkbenchHostTest : public QObject {
         write(root.filePath("dut.sv"), "module checked(input logic clk,rst,byte_valid,out_ready, input logic [7:0] byte_data, "
               "output logic byte_ready,uart_tx,out_valid,output logic [7:0] out_data); "
               "assign byte_ready=1'b1; assign uart_tx=1'b1; assign out_valid=byte_valid; assign out_data=byte_data; endmodule");
+        write(root.filePath("tb.sv"),"module tb;logic clk=0,rst=0,byte_valid=0,out_ready=0;logic[7:0]byte_data=0;wire byte_ready,uart_tx,out_valid;wire[7:0]out_data;checked d(.*);initial #10 $finish;endmodule\n");
         QDir().mkpath(root.filePath(".simdock/projects"));
         const QJsonObject project{{"schema", "simdock.project/v1"}, {"id", id}, {"name", "Embedded test"},
-            {"sources", QJsonArray{"dut.sv"}}, {"dutFile", "dut.sv"}, {"dutName", "checked"}, {"durationNs", 10000}};
+            {"sources", QJsonArray{"dut.sv"}}, {"dutFile", "dut.sv"}, {"dutName", "checked"}, {"durationNs", 10000}, {"tbFile","tb.sv"}, {"tbName","tb"}};
         write(root.filePath(QString(".simdock/projects/%1.json").arg(id)), QJsonDocument(project).toJson());
     }
     static void section(QWidget* widget, const QString& name) {
         auto* panel = qobject_cast<simdock::Workbench*>(widget);
-        auto* source = panel->sourceFilesWidget(); auto* log = panel->runLogWidget();
-        source->hide(); log->hide();
-        auto* page = name == "workspace" || name == "sources" ? source : name == "log" ? log : nullptr;
+        auto* log = panel->runLogWidget(); log->hide();
+        auto* page = name == "log" ? log : nullptr;
         if (page) { page->setGeometry(widget->rect()); page->show(); page->raise(); }
         QCoreApplication::processEvents();
     }
@@ -187,19 +188,21 @@ class WorkbenchHostTest : public QObject {
             for (auto initial : {ThemeMode::Light, ThemeMode::Dark}) {
                 if (manager.mode() != initial) manager.setMode(initial);
                 for (int opening = 0; opening < 2; ++opening) {
+                    QTemporaryDir targetRoot; write(targetRoot.filePath("tops.sv"),"module a;endmodule module b;endmodule");
+                    QVERIFY(workbench->setContext(targetRoot.path()).isEmpty());
                     bool projectOpened = false;
                     QTimer::singleShot(0, workbench, [&] {
                         auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget());
-                        projectOpened = dialog && dialog->objectName() == "newProjectDialog";
+                        projectOpened = dialog && dialog->objectName() == "simulationTopDialog";
                         surface(dialog);
                         manager.setMode(initial == ThemeMode::Light ? ThemeMode::Dark : ThemeMode::Light);
                         surface(dialog);
                         manager.setMode(initial); surface(dialog);
                         if (dialog) dialog->reject();
                     });
-                    simdock::askProjectName(workbench);
+                    QVERIFY(!workbench->selectTarget(targetRoot.filePath("tops.sv")).isEmpty());
                     QVERIFY(projectOpened);
-                    simdock::SettingsDialog dialog(QString(), workbench, false, QStringLiteral("nord"), true);
+                    simdock::SettingsDialog dialog(QString(), workbench);
                     bool settingsOpened = false;
                     QTimer::singleShot(0, &dialog, [&] {
                         settingsOpened = dialog.isVisible(); surface(&dialog);
@@ -215,7 +218,7 @@ class WorkbenchHostTest : public QObject {
         }
     }
     void ownerTeardown(int width) {
-        for (const auto* action : {"openSettings", "newProject"}) {
+        for (const auto* action : {"openSettings", "chooseTb"}) {
             QTemporaryDir root; fixture(root);
             QWidget host, escapedOwner; QVBoxLayout layout(&host);
             layout.setContentsMargins(0, 0, 0, 0); host.resize(width, 700);
@@ -224,7 +227,7 @@ class WorkbenchHostTest : public QObject {
             QSignalSpy scanned(widget, SIGNAL(scanFinished()));
             QVERIFY(call(widget, "setContext", root.path()).isEmpty());
             QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 1, 10000);
-            section(widget, QByteArray(action) == "newProject" ? "workspace" : "simulation");
+            section(widget, QStringLiteral("simulation"));
             auto* button = widget->findChild<QAbstractButton*>(QString::fromLatin1(action));
             auto* menuAction = widget->findChild<QAction*>(QString::fromLatin1(action));
             QVERIFY((button && button->isEnabled()) || (menuAction && menuAction->isEnabled()));
@@ -238,7 +241,7 @@ class WorkbenchHostTest : public QObject {
                 if (escaped) escaped->setParent(&escapedOwner);
             });
             auto* panel = qobject_cast<simdock::Workbench*>(widget.data());
-            QPointer<QWidget> sources(panel->sourceFilesWidget()), logs(panel->runLogWidget()), events(panel->eventsWidget());
+            QPointer<QWidget> logs(panel->runLogWidget()), events(panel->eventsWidget());
             QPointer<QDialog> dialog;
             QTimer destroy;
             destroy.setSingleShot(true);
@@ -251,7 +254,7 @@ class WorkbenchHostTest : public QObject {
             if (menuAction) menuAction->trigger(); else button->click();
             destroy.stop();
             QVERIFY2(opened, action); QVERIFY(parentDestroyed); QVERIFY(widget.isNull()); QVERIFY(dialog.isNull());
-            QVERIFY(sources.isNull()); QVERIFY(logs.isNull()); QVERIFY(events.isNull());
+            QVERIFY(logs.isNull()); QVERIFY(events.isNull());
             QVERIFY(first.isNull()); QVERIFY(doomed.isNull()); QVERIFY(childDestroyedBeforeParent);
             QVERIFY(escaped); QCOMPARE(escaped->parentWidget(), &escapedOwner);
         }
@@ -299,14 +302,15 @@ private slots:
         QVERIFY(call(widget, "setContext", {}).isEmpty());
         QVERIFY(state(widget)["workspace"].toString().isEmpty());
         QVERIFY(restore(widget, saved).isEmpty());
-        QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 2, 10000);
+        QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 3, 10000);
         QCOMPARE(state(widget)["projectId"].toString(), QString::fromLatin1(id));
         auto invalid = saved; invalid["version"] = 2; QVERIFY(!restore(widget, invalid).isEmpty());
-        invalid = saved; invalid["projectId"] = "missing"; QVERIFY(!restore(widget, invalid).isEmpty());
+        invalid = saved; invalid["projectId"] = "missing"; QVERIFY(restore(widget, invalid).isEmpty());
+        QCOMPARE(qobject_cast<simdock::Workbench*>(widget)->controller()->target().top,QString("tb"));
         auto themed = saved; themed["preferences"] = QVariantMap{{"theme/dark", true}, {"waveform/theme", "nord"}};
         QVERIFY(restore(widget, themed).isEmpty());
         QTest::qWait(80);
-        QCOMPARE(scanned.size(), 2);
+        QCOMPARE(scanned.size(), 3);
         auto* second = create(&host, nullptr); QVERIFY(second);
         QVERIFY(state(second)["preferences"].toMap().isEmpty()); delete second;
         QTest::qWait(60);
@@ -339,15 +343,15 @@ private slots:
         QTemporaryDir root; fixture(root); QSignalSpy scanned(widget, SIGNAL(scanFinished()));
         QVERIFY(call(widget, "setContext", root.path()).isEmpty()); QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 1, 10000);
         const auto keys = QSettings().allKeys();
-        auto* sources = widget->findChild<QListView*>("sourceList"); auto* model = sources->model();
-        sources->setCurrentIndex(model->index(0, 0)); const QPersistentModelIndex selected(sources->currentIndex());
+        auto* target=widget->findChild<QToolButton*>("simulationTarget");QVERIFY(target);
+        const auto targetText=target->text();auto* log=widget->findChild<QPlainTextEdit*>("simulationLog");QVERIFY(log);
         for (bool dark : {true, false, true}) {
             QVERIFY(setHostTheme(widget, dark));
             QTest::qWait(40);
             auto stale = state(widget); stale["preferences"] = QVariantMap{{"theme/dark", !dark}, {"waveform/theme", "nord"}};
             QVERIFY(restore(widget, stale).isEmpty());
             QCOMPARE(widget->palette().color(QPalette::Window).lightness() < 128, dark);
-            for (auto* list : {sources, widget->findChild<QListView*>("projectList")})
+            for (QWidget* list : {static_cast<QWidget*>(target), static_cast<QWidget*>(log)})
                 for (auto group : {QPalette::Active, QPalette::Inactive})
                     QVERIFY(contrast(list->palette().color(group, QPalette::HighlightedText), list->palette().color(group, QPalette::Highlight)) >= 4.5);
             const auto theme = dark ? QStringLiteral("dark") : QStringLiteral("light");
@@ -360,22 +364,18 @@ private slots:
                 auto* dialog = widget->findChild<QDialog*>("settingsDialog"); QVERIFY(dialog);
                 QTimer::singleShot(5000, dialog, &QDialog::reject);
                 dialogFits(dialog, "host-settings-" + theme);
-                auto* appearance = dialog->findChild<QComboBox*>("themeSelector"); QVERIFY(appearance && !appearance->isEnabled());
-                QCOMPARE(appearance->currentIndex(), dark ? 1 : 0);
+                QVERIFY(!dialog->findChild<QWidget*>("themeSelector"));
+                QVERIFY(!dialog->findChild<QWidget*>("waveThemeSelector"));
                 QVERIFY(setHostTheme(widget, !dark));
-                QCOMPARE(appearance->currentIndex(), dark ? 0 : 1);
+                QCOMPARE(widget->palette().color(QPalette::Window).lightness() < 128, !dark);
                 QVERIFY(setHostTheme(widget, dark));
-                auto* wave = dialog->findChild<QComboBox*>("waveThemeSelector"); QVERIFY(wave && wave->isEnabled());
-                wave->setCurrentIndex(wave->findData("nord"));
-                // Even a stale/forced field value cannot override host authority on Save.
-                appearance->setCurrentIndex(dark ? 0 : 1);
                 dialog->findChild<QLineEdit*>("simulatorPath")->setText(qEnvironmentVariable("SIMDOCK_TEST_QUESTA"));
                 if (qEnvironmentVariable("SIMDOCK_TEST_QUESTA").isEmpty()) { dialog->reject(); return; }
                 auto* save = dialog->findChild<QPushButton*>("saveSettings"); QVERIFY(reachable(save, dialog)); QTest::mouseClick(save, Qt::LeftButton);
             });
             QTest::mouseClick(settings, Qt::LeftButton);
             QCOMPARE(widget->palette().color(QPalette::Window).lightness() < 128, dark);
-            QCOMPARE(sources->model(), model); QVERIFY(selected.isValid()); QCOMPARE(sources->currentIndex(), QModelIndex(selected));
+            QCOMPARE(widget->findChild<QToolButton*>("simulationTarget"),target);QCOMPARE(target->text(),targetText);
             QCOMPARE(state(widget)["preferences"].toMap()["waveform/theme"].toString(), QStringLiteral("nord"));
         }
         QTest::qWait(100); QCOMPARE(scanned.size(), 1);
@@ -392,138 +392,79 @@ private slots:
         QCOMPARE(qApp->libraryPaths(), paths); QCOMPARE(QLocale(), locale); QCOMPARE(qApp->quitOnLastWindowClosed(), quit);
     }
     void responsiveGeometry() {
-        QFETCH(int, width); QFETCH(bool, bounded);
-        QTemporaryDir root; fixture(root); QWidget host; QVBoxLayout layout(&host); layout.setContentsMargins(0, 0, 0, 0);
-        auto* widget = create(&host, nullptr); QVERIFY(widget); layout.addWidget(widget);
-        const int height = qMin(760, host.screen()->availableGeometry().height() - 80);
-        if (bounded) host.setFixedSize(width, height); else host.resize(width, height);
-        host.show(); QVERIFY(QTest::qWaitForWindowExposed(&host));
-        QSignalSpy scanned(widget, SIGNAL(scanFinished()));
-        QVERIFY(call(widget, "setContext", root.path()).isEmpty()); QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 1, 10000);
-        QCOMPARE(host.width(), width); QCOMPARE(widget->width(), width); QVERIFY(widget->minimumSizeHint().width() <= 280);
-        QVERIFY(!widget->findChild<QWidget*>("workbenchSection"));
-        QVERIFY(!widget->findChild<QWidget*>("openWorkspace"));
-        const QList<QPair<QString, QStringList>> controls{
-            {"workspace", {"newProject", "projectList"}},
-            {"sources", {"sourceList", "refreshWorkspace", "inputsDisclosure"}},
-            {"simulation", {"openSettings", "demoTbConfiguration", "tbFile", "chooseTb", "tbTop", "duration", "startSimulation"}},
-            {"log", {"simulationLog", "clearLog"}}};
-        for (const auto& [page, names] : controls) {
-            section(widget, page);
-            if(page=="simulation"){
-                QVERIFY(!widget->findChild<QWidget*>("stopSimulation")->isVisible());
-                QVERIFY(!widget->findChild<QWidget*>("dutSelector")->isVisible());
-                auto* disclosure=widget->findChild<QAbstractButton*>("demoTbConfiguration");QVERIFY(disclosure);
-                disclosure->click();QVERIFY(reachable(widget->findChild<QWidget*>("dutSelector"),widget));disclosure->click();
-            }
-            for (const auto& name : names) {
-                auto* control = widget->findChild<QWidget*>(name);
-                QVERIFY2(reachable(control, widget), qPrintable(QString("%1 at %2: %3x%4").arg(name).arg(width)
-                    .arg(control ? control->width() : 0).arg(control ? control->height() : 0)));
-            }
-            if (width < 900) for (auto* scroll : widget->findChildren<QScrollArea*>())
-                if (scroll->objectName().startsWith("workbenchPage") && scroll->isVisible()) QCOMPARE(scroll->horizontalScrollBar()->maximum(), 0);
-            if (width < 900 && bounded) capture(&host, QString("host-%1-%2").arg(width).arg(page));
-        }
-        if (width >= 900 && bounded) capture(&host, QString("host-%1-wide").arg(width));
+        QFETCH(int,width); QFETCH(bool,bounded);
+        QTemporaryDir root;fixture(root);QWidget host;QVBoxLayout layout(&host);layout.setContentsMargins(0,0,0,0);
+        auto* widget=create(&host,nullptr);QVERIFY(widget);layout.addWidget(widget);
+        const int height=qMin(760,host.screen()->availableGeometry().height()-80);
+        if(bounded)host.setFixedSize(width,height);else host.resize(width,height);
+        host.show();QVERIFY(QTest::qWaitForWindowExposed(&host));QVERIFY(call(widget,"setContext",root.path()).isEmpty());
+        QCOMPARE(host.width(),width);QCOMPARE(widget->width(),width);QVERIFY(widget->minimumSizeHint().width()<=280);
+        for(const auto* name:{"workbenchSection","openWorkspace","projectList","sourceList","duration","dutSelector"})
+            QVERIFY2(!widget->findChild<QWidget*>(name),name);
+        QVERIFY(!widget->findChild<QWidget*>("stopSimulation")->isVisible());
+        for(const auto* name:{"simulationTarget","startSimulation","openSettings"})
+            QVERIFY2(reachable(widget->findChild<QWidget*>(name),widget),name);
+        capture(&host,QString("host-%1-compact").arg(width));
+        section(widget,"log");
+        for(const auto* name:{"simulationLog","clearLog"})QVERIFY2(reachable(widget->findChild<QWidget*>(name),widget),name);
+        if(bounded)capture(&host,QString("host-%1-log").arg(width));
     }
     void resizePreservesState() {
-        QTemporaryDir root; fixture(root); write(root.filePath("extra.sv"), "module extra; endmodule");
-        QWidget host; QVBoxLayout layout(&host); layout.setContentsMargins(0, 0, 0, 0);
-        auto* widget = create(&host, nullptr); layout.addWidget(widget); host.resize(1250, 700); host.show();
-        QSignalSpy scanned(widget, SIGNAL(scanFinished()));
-        QVERIFY(call(widget, "setContext", root.path()).isEmpty()); QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 1, 10000);
-        auto* list = widget->findChild<QListView*>("sourceList"); auto* model = list->model();
-        QVERIFY(model->setData(model->index(1, 0), Qt::Checked, Qt::CheckStateRole));
-        list->setCurrentIndex(model->index(1, 0));
-        QVERIFY(!widget->findChild<QPushButton*>("moveSourceUp"));
-        const QPersistentModelIndex selected(list->currentIndex());
-        const auto path = selected.data(Qt::UserRole);
-        auto* projects = widget->findChild<QPushButton*>("projectsDisclosure"); QVERIFY(projects);
-        auto* inputs = widget->findChild<QPushButton*>("inputsDisclosure"); QVERIFY(inputs);
-        projects->setChecked(false); inputs->setChecked(true);
-        auto* tb = widget->findChild<QLineEdit*>("tbTop"); tb->setText("tb_keep");
-        for (int width : {520, 280, 960, 1250, 280, 520, 1250}) {
-            host.resize(width, 700); QCoreApplication::processEvents(); section(widget, "sources");
-            const auto saved = state(widget); QVERIFY(restore(widget, saved).isEmpty());
-            QCOMPARE(list, widget->findChild<QListView*>("sourceList")); QCOMPARE(list->model(), model);
-            QVERIFY(selected.isValid()); QCOMPARE(list->currentIndex(), QModelIndex(selected));
-            QCOMPARE(selected.data(Qt::UserRole), path); QCOMPARE(selected.data(Qt::CheckStateRole).toInt(), int(Qt::Checked));
-            QCOMPARE(tb->text(), QStringLiteral("tb_keep")); QCOMPARE(state(widget)["projectId"].toString(), QString::fromLatin1(id));
-            QVERIFY(!projects->isChecked()); QVERIFY(inputs->isChecked());
+        QTemporaryDir root;fixture(root);QWidget host;QVBoxLayout layout(&host);layout.setContentsMargins(0,0,0,0);
+        auto* widget=create(&host,nullptr);layout.addWidget(widget);host.resize(1250,700);host.show();
+        QSignalSpy scanned(widget,SIGNAL(scanFinished()));QVERIFY(call(widget,"setContext",root.path()).isEmpty());
+        auto* panel=qobject_cast<simdock::Workbench*>(widget);QVERIFY(call(widget,"openProject",id).isEmpty());
+        auto* target=widget->findChild<QToolButton*>("simulationTarget");QVERIFY(target);
+        auto* controller=panel->controller();const auto chosen=controller->target();const auto menu=target->menu();
+        auto* log=widget->findChild<QPlainTextEdit*>("simulationLog");QVERIFY(log);
+        controller->appendLog("preserved log selection\n");QTRY_VERIFY(log->toPlainText().contains("preserved"));
+        auto cursor=log->textCursor();cursor.setPosition(2);cursor.setPosition(9,QTextCursor::KeepAnchor);log->setTextCursor(cursor);
+        for(int width:{520,280,960,1250,280,520,1250}){
+            host.resize(width,700);QCoreApplication::processEvents();const auto saved=state(widget);QVERIFY(restore(widget,saved).isEmpty());
+            QCOMPARE(panel->controller(),controller);QCOMPARE(controller->target().file,chosen.file);QCOMPARE(controller->target().top,chosen.top);
+            QCOMPARE(widget->findChild<QToolButton*>("simulationTarget"),target);QCOMPARE(target->menu(),menu);
+            QCOMPARE(log->textCursor().selectedText(),QString("eserved"));QCOMPARE(state(widget)["projectId"].toString(),QString::fromLatin1(id));
+            QVERIFY(reachable(target,widget));QVERIFY(reachable(widget->findChild<QPushButton*>("startSimulation"),widget));
         }
-        QTest::qWait(120); QCOMPARE(scanned.size(), 1);
-        // The current form state survives width changes; obsolete splitters are not restored.
-        host.resize(520, 700); QCoreApplication::processEvents();
-        auto saved = state(widget);
-        QVERIFY(restore(widget, saved).isEmpty()); host.resize(1250, 700); QCoreApplication::processEvents();
-        QVERIFY(!projects->isChecked()); QVERIFY(inputs->isChecked());
-        section(widget, "simulation");
-        QVERIFY(reachable(widget->findChild<QPushButton*>("startSimulation"), widget));
+        QTest::qWait(120);QCOMPARE(scanned.size(),1);
     }
     void narrowWorkspaceActions_data() {
         QTest::addColumn<int>("width"); QTest::newRow("280") << 280; QTest::newRow("520") << 520;
         QTest::newRow("280-address-reuse") << 280; QTest::newRow("520-address-reuse") << 520;
     }
     void narrowWorkspaceActions() {
-        QFETCH(int, width);
-        if (QByteArray(QTest::currentDataTag()).endsWith("-address-reuse")) { rebuiltThemeSurfaces(width); return; }
-        QTemporaryDir root; fixture(root); write(root.filePath("extra.sv"), "module extra; endmodule");
-        QWidget host; QVBoxLayout layout(&host); layout.setContentsMargins(0, 0, 0, 0);
-        auto* widget = create(&host, nullptr); layout.addWidget(widget); host.resize(width, 700); host.show();
-        QSignalSpy scanned(widget, SIGNAL(scanFinished())); section(widget, "workspace");
-        widget->findChild<QPushButton*>("projectsDisclosure")->setChecked(true);
-        widget->findChild<QPushButton*>("inputsDisclosure")->setChecked(true);
-        QVERIFY(!widget->findChild<QWidget*>("openWorkspace"));
-        QVERIFY(call(widget, "setContext", root.path()).isEmpty()); QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 1, 10000);
-        auto* add = widget->findChild<QPushButton*>("newProject"); QVERIFY(reachable(add, widget));
-        QTimer::singleShot(0, widget, [&] {
-            auto* dialog = widget->findChild<QDialog*>("newProjectDialog"); QVERIFY(dialog);
-            QTimer::singleShot(5000, dialog, &QDialog::reject);
-            dialogFits(dialog, QString("new-project-%1").arg(width));
-            dialog->findChild<QLineEdit*>("projectNameInput")->setText("Narrow test");
-            auto* create = dialog->findChild<QPushButton*>("confirmCreateProject");
-            QVERIFY(reachable(create, dialog)); QTest::mouseClick(create, Qt::LeftButton);
+        QFETCH(int,width);
+        if(QByteArray(QTest::currentDataTag()).endsWith("-address-reuse")){rebuiltThemeSurfaces(width);return;}
+        QTemporaryDir root;fixture(root);write(root.filePath("multi.sv"),"module first;endmodule module second;endmodule\n");
+        QWidget host;QVBoxLayout layout(&host);layout.setContentsMargins(0,0,0,0);host.resize(width,700);
+        auto* widget=create(&host,nullptr);layout.addWidget(widget);host.show();QVERIFY(call(widget,"setContext",root.path()).isEmpty());
+        auto* panel=qobject_cast<simdock::Workbench*>(widget);
+        bool opened=false;
+        QTimer::singleShot(0,widget,[&]{
+            auto* dialog=widget->findChild<QDialog*>("simulationTopDialog");QVERIFY(dialog);opened=true;
+            QTimer::singleShot(5000,dialog,&QDialog::reject);dialogFits(dialog,QString("choose-top-%1").arg(width));
+            auto* choices=dialog->findChild<QComboBox*>("simulationTopChoices");QVERIFY(choices);QCOMPARE(choices->count(),2);
+            choices->setCurrentIndex(choices->findText("second"));dialog->accept();
         });
-        QTest::mouseClick(add, Qt::LeftButton);
-        auto* projects = widget->findChild<QListView*>("projectList"); QCOMPARE(projects->model()->rowCount(), 2);
-        QCOMPARE(projects->currentIndex().data().toString(), QStringLiteral("Narrow test"));
-        section(widget, "sources"); auto* sources = widget->findChild<QListView*>("sourceList");
-        QVERIFY(reachable(sources, widget)); auto* model = sources->model(); QCOMPARE(model->rowCount(), 2);
-        for (int row = 0; row < 2; ++row) {
-            sources->setCurrentIndex(model->index(row, 0)); sources->setFocus();
-            QTest::keyClick(sources, Qt::Key_Space);
-            QCOMPARE(model->index(row, 0).data(Qt::CheckStateRole).toInt(), int(Qt::Checked));
-        }
-        QVERIFY(!widget->findChild<QPushButton*>("moveSourceUp"));
-        QVERIFY(!widget->findChild<QPushButton*>("moveSourceDown"));
-        auto* rescan = widget->findChild<QPushButton*>("refreshWorkspace"); QVERIFY(reachable(rescan, widget));
-        QTest::mouseClick(rescan, Qt::LeftButton); QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 2, 10000);
-        section(widget, "workspace"); QVERIFY(reachable(projects, widget));
-        const auto original = projects->model()->match(projects->model()->index(0, 0), Qt::DisplayRole, QStringLiteral("Embedded test"), 1, Qt::MatchExactly);
-        QVERIFY(!original.isEmpty()); projects->scrollTo(original.first());
-        QTest::mouseClick(projects->viewport(), Qt::LeftButton, Qt::NoModifier, projects->visualRect(original.first()).center());
-        QCOMPARE(state(widget)["projectId"].toString(), QString::fromLatin1(id));
-        section(widget, "simulation");
-        auto* settings = widget->findChild<QToolButton*>("openSettings"); QVERIFY(reachable(settings, widget));
-        QTimer::singleShot(0, widget, [&] {
-            auto* dialog = widget->findChild<QDialog*>("settingsDialog"); QVERIFY(dialog);
-            QTimer::singleShot(5000, dialog, &QDialog::reject);
-            dialogFits(dialog, QString("settings-%1").arg(width));
-            const auto simulator = qEnvironmentVariable("SIMDOCK_TEST_QUESTA");
-            if (simulator.isEmpty()) { dialog->reject(); return; }
+        QVERIFY(panel->selectTarget(root.filePath("multi.sv")).isEmpty());QVERIFY(opened);QCOMPARE(panel->controller()->target().top,QString("second"));
+        auto* settings=widget->findChild<QToolButton*>("openSettings");QVERIFY(reachable(settings,widget));
+        QTimer::singleShot(0,widget,[&]{
+            auto* dialog=widget->findChild<QDialog*>("settingsDialog");QVERIFY(dialog);QTimer::singleShot(5000,dialog,&QDialog::reject);
+            dialogFits(dialog,QString("settings-%1").arg(width));
+            QVERIFY(dialog->findChild<QWidget*>("simulationIncludes"));QVERIFY(dialog->findChild<QWidget*>("simulationDefinitionSources"));
+            const auto simulator=qEnvironmentVariable("SIMDOCK_TEST_QUESTA");if(simulator.isEmpty()){dialog->reject();return;}
             dialog->findChild<QLineEdit*>("simulatorPath")->setText(simulator);
-            auto* wave = dialog->findChild<QComboBox*>("waveThemeSelector"); wave->setCurrentIndex(wave->findData("nord"));
-            auto* save = dialog->findChild<QPushButton*>("saveSettings"); QVERIFY(reachable(save, dialog)); QTest::mouseClick(save, Qt::LeftButton);
+            QVERIFY(!dialog->findChild<QWidget*>("waveThemeSelector"));
+            auto* save=dialog->findChild<QPushButton*>("saveSettings");QVERIFY(reachable(save,dialog));QTest::mouseClick(save,Qt::LeftButton);
         });
-        QTest::mouseClick(settings, Qt::LeftButton);
-        if (!qEnvironmentVariable("SIMDOCK_TEST_QUESTA").isEmpty())
-            QCOMPARE(state(widget)["preferences"].toMap()["waveform/theme"].toString(), QStringLiteral("nord"));
+        QTest::mouseClick(settings,Qt::LeftButton);
+        if(!qEnvironmentVariable("SIMDOCK_TEST_QUESTA").isEmpty())QCOMPARE(panel->simulator(),qEnvironmentVariable("SIMDOCK_TEST_QUESTA"));
+        QCOMPARE(panel->controller()->target().top,QString("second"));
     }
     void rapidContextsAndOwnedWorker() {
         QTemporaryDir first, second; fixture(first); fixture(second);
         for (int i = 0; i < 100; ++i) write(first.filePath(QString("extra%1.sv").arg(i)), "module extra; endmodule");
-        // A saturated host/global pool must not starve the embedded scanner.
+        // Workspace switching no longer starts a view-owned scanner or waits for the host pool.
         QSemaphore release; auto* pool = QThreadPool::globalInstance();
         const int previousLimit = pool->maxThreadCount(); pool->setMaxThreadCount(1);
         auto blocked = QtConcurrent::run([&] { release.acquire(); });
@@ -533,9 +474,9 @@ private slots:
         QWidget host; QPointer<QWidget> widget(create(&host, this)); QVERIFY(widget);
         QSignalSpy scanned(widget, SIGNAL(scanFinished()));
         for (int i = 0; i < 20; ++i) QVERIFY(call(widget, "setContext", i % 2 ? second.path() : first.path()).isEmpty());
-        QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 1, 10000);
-        auto* list = widget->findChild<QListView*>("sourceList"); QVERIFY(list);
-        QCOMPARE(list->model()->rowCount(), 1);
+        QCOMPARE(scanned.size(),20);
+        QCOMPARE(qobject_cast<simdock::Workbench*>(widget.data())->controller()->workspace(),QFileInfo(second.path()).canonicalFilePath());
+        QVERIFY(!widget->findChild<QListView*>("sourceList"));
         QVERIFY(call(widget, "setContext", first.path()).isEmpty());
         QVERIFY(closable(widget));
         delete widget; QVERIFY(widget.isNull());
@@ -557,8 +498,9 @@ private slots:
         section(widget, "simulation");
         QVERIFY(!widget->findChild<QWidget*>("editStimulus"));
         QVERIFY(!widget->findChild<QWidget*>("simulationInputMode"));
-        QVERIFY(reachable(widget->findChild<QWidget*>("tbTop"), widget));
-        QVERIFY(reachable(widget->findChild<QWidget*>("duration"), widget));
+        QVERIFY(reachable(widget->findChild<QWidget*>("simulationTarget"), widget));
+        QVERIFY(!widget->findChild<QWidget*>("duration"));
+        QVERIFY(!widget->findChild<QWidget*>("tbTop"));
         QVERIFY(closable(widget));
     }
     void destroyWithOpenDialog_data() {
@@ -568,7 +510,7 @@ private slots:
     void destroyWithOpenDialog() {
         QFETCH(int, width);
         if (QByteArray(QTest::currentDataTag()).endsWith("-owner-teardown")) { ownerTeardown(width); return; }
-        for (const auto* action : {"openSettings", "newProject"}) {
+        for (const auto* action : {"openSettings", "chooseTb"}) {
             QTemporaryDir root; fixture(root);
             QWidget host; QVBoxLayout layout(&host);
             layout.setContentsMargins(0, 0, 0, 0); host.resize(width, 700);
@@ -576,11 +518,11 @@ private slots:
             host.show(); QSignalSpy scanned(widget, SIGNAL(scanFinished()));
             QVERIFY(call(widget, "setContext", root.path()).isEmpty());
             QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 1, 10000);
-            section(widget, QByteArray(action) == "newProject" ? "workspace" : "simulation");
+            section(widget, QStringLiteral("simulation"));
             auto* button = widget->findChild<QAbstractButton*>(QString::fromLatin1(action));
             auto* menuAction = widget->findChild<QAction*>(QString::fromLatin1(action));
             QVERIFY((button && button->isEnabled()) || (menuAction && menuAction->isEnabled()));
-            QVERIFY(reachable(button ? button : widget->findChild<QWidget*>("simulationActions"), widget));
+            QVERIFY(reachable(button ? button : widget->findChild<QWidget*>("simulationTarget"), widget));
             QTimer destroyPoll;
             destroyPoll.setInterval(10);
             connect(&destroyPoll, &QTimer::timeout, &host, [&] {
@@ -599,61 +541,33 @@ private slots:
     }
     void simulationLifecycle_data() { existingTestbenchWorkflow_data(); }
     void simulationLifecycle() {
-        QFETCH(int, width);
-        const auto simulator = qEnvironmentVariable("SIMDOCK_TEST_QUESTA");
-        if (simulator.isEmpty()) QSKIP("Set SIMDOCK_TEST_QUESTA for actual process lifecycle validation.");
-        QTemporaryDir root; fixture(root); QWidget host; QVBoxLayout layout(&host);
-        layout.setContentsMargins(0, 0, 0, 0); host.resize(width, 700);
-        QPointer<QWidget> widget(create(&host, nullptr)); QVERIFY(widget); layout.addWidget(widget); host.show();
-        QSignalSpy scanned(widget, SIGNAL(scanFinished()));
-        auto saved = state(widget); saved["workspace"] = root.path(); saved["projectId"] = id;
-        saved["preferences"] = QVariantMap{{"simulator/path", simulator}};
-        QVERIFY(restore(widget, saved).isEmpty()); QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 1, 10000);
-        section(widget, "simulation");
-        QVERIFY(!widget->findChild<QAction*>("createTb"));
-        QVERIFY(reachable(widget->findChild<QWidget*>("simulationActions"), widget));
-        auto* choose = widget->findChild<QAbstractButton*>("chooseTb"); QVERIFY(reachable(choose, widget));
-        const auto tbFile = widget->findChild<QLineEdit*>("tbFile")->text(); QVERIFY(!tbFile.isEmpty());
-        QTimer::singleShot(0, widget, [&] {
-            auto* dialog = widget->findChild<QFileDialog*>(); QVERIFY(dialog);
-            QTimer::singleShot(5000, dialog, &QDialog::reject);
-            dialog->selectFile(root.filePath(tbFile)); QMetaObject::invokeMethod(dialog, "accept");
-        });
-        QTest::mouseClick(choose, Qt::LeftButton);
-        auto* run = widget->findChild<QPushButton*>("startSimulation");
-        auto* stop = widget->findChild<QPushButton*>("stopSimulation"); QVERIFY(run && run->isEnabled() && stop);
-        QObject* session = nullptr;
-        for (auto* child : widget->findChildren<QObject*>())
-            if (QByteArray(child->metaObject()->className()) == "simdock::QuestaSession") session = child;
-        QVERIFY(session);
-        QVERIFY(reachable(run, widget)); QTest::mouseClick(run, Qt::LeftButton);
-        QTRY_VERIFY_WITH_TIMEOUT(session->property("processId").toLongLong() != 0, 15000);
-        QVERIFY(closable(widget));
-        auto* log = widget->findChild<QPlainTextEdit*>("simulationLog"); QVERIFY(log);
-        section(widget, "log"); QVERIFY(reachable(log, widget));
-        // A cold Questa GUI can take most of the session's 120 s deadline on
-        // this host. Wait through that deadline and include its log on failure.
-        QTRY_VERIFY2_WITH_TIMEOUT(log->toPlainText().contains("Run completed"),
-                                 qPrintable(log->toPlainText()), 130000);
-        QVERIFY(closable(widget));
-        capture(&host, QString("run-completed-%1").arg(width));
-        section(widget, "simulation");
-        auto* closeSession=widget->findChild<QAction*>("closeSimulationSession");QVERIFY(closeSession&&closeSession->isVisible());closeSession->trigger();
-        QTRY_COMPARE_WITH_TIMEOUT(session->property("processId").toLongLong(), 0, 10000);
-        QVERIFY(closable(widget));
-        section(widget, "log"); auto* clear = widget->findChild<QPushButton*>("clearLog");
-        QVERIFY(reachable(clear, widget)); QTest::mouseClick(clear, Qt::LeftButton); QCOMPARE(log->toPlainText(), QString());
-        section(widget, "simulation"); QVERIFY(reachable(run, widget)); QTest::mouseClick(run, Qt::LeftButton);
-        QTRY_VERIFY_WITH_TIMEOUT(session->property("processId").toLongLong() != 0, 15000);
-        const auto pid = session->property("processId").toLongLong();
+        QFETCH(int,width);const auto simulator=qEnvironmentVariable("SIMDOCK_TEST_QUESTA");
+        if(simulator.isEmpty())QSKIP("Set SIMDOCK_TEST_QUESTA for actual process lifecycle validation.");
+        QTemporaryDir root;fixture(root);QWidget host;QVBoxLayout layout(&host);layout.setContentsMargins(0,0,0,0);host.resize(width,700);
+        QPointer<QWidget> widget(create(&host,nullptr));layout.addWidget(widget);host.show();
+        auto saved=state(widget);saved["workspace"]=root.path();saved["projectId"]=id;saved["preferences"]=QVariantMap{{"simulator/path",simulator}};
+        QVERIFY(restore(widget,saved).isEmpty());auto* panel=qobject_cast<simdock::Workbench*>(widget.data());
+        auto* controller=panel->controller();auto* session=controller->session();session->setInteractive(false);
+        QSignalSpy completed(controller,&simdock::WorkspaceSimulationController::finished);
+        auto* run=widget->findChild<QPushButton*>("startSimulation");QVERIFY(reachable(run,widget));QTest::mouseClick(run,Qt::LeftButton);
+        auto* log=widget->findChild<QPlainTextEdit*>("simulationLog");QVERIFY(log);section(widget,"log");QVERIFY(reachable(log,widget));
+        QTRY_VERIFY2_WITH_TIMEOUT(!completed.isEmpty(),qPrintable(log->toPlainText()),130000);
+        QVERIFY2(completed.takeFirst()[0].toBool(),qPrintable(log->toPlainText()));QCOMPARE(session->outcome(),QString("finished"));
+        QVERIFY(closable(widget));capture(&host,QString("run-finished-%1").arg(width));section(widget,"simulation");
+        auto* stop=widget->findChild<QPushButton*>("stopSimulation");QVERIFY(reachable(stop,widget));stop->click();
+        QTRY_VERIFY_WITH_TIMEOUT(!session->alive(),10000);
+        section(widget,"log");auto* clear=widget->findChild<QPushButton*>("clearLog");QVERIFY(reachable(clear,widget));clear->click();QCOMPARE(log->toPlainText(),QString());
+        write(root.filePath("tb.sv"),"module tb;logic clk=0;always #5 clk=~clk;endmodule\n");
+        section(widget,"simulation");run->click();QTRY_VERIFY_WITH_TIMEOUT(controller->state()=="Running",15000);
+        const auto pid=session->processId();QVERIFY(pid);
 #ifdef Q_OS_WIN
-        const auto process = OpenProcess(SYNCHRONIZE, FALSE, DWORD(pid)); QVERIFY(process);
+        const auto process=OpenProcess(SYNCHRONIZE,FALSE,DWORD(pid));QVERIFY(process);
 #endif
-        const auto report = qEnvironmentVariable("SIMDOCK_EMBED_REPORT");
-        if (!report.isEmpty()) write(QDir(report).filePath(QString("destroyed-session-%1-pid.txt").arg(width)), QByteArray::number(pid));
-        delete widget; QVERIFY(widget.isNull()); // Destructor kills its own process tree.
+        const auto report=qEnvironmentVariable("SIMDOCK_EMBED_REPORT");
+        if(!report.isEmpty())write(QDir(report).filePath(QString("destroyed-session-%1-pid.txt").arg(width)),QByteArray::number(pid));
+        delete widget.data();QVERIFY(widget.isNull()); // This standalone fixture owns its controller.
 #ifdef Q_OS_WIN
-        QCOMPARE(WaitForSingleObject(process, 3000), DWORD(WAIT_OBJECT_0)); CloseHandle(process);
+        QCOMPARE(WaitForSingleObject(process,3000),DWORD(WAIT_OBJECT_0));CloseHandle(process);
 #endif
     }
 };

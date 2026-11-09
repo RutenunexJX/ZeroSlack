@@ -36,6 +36,8 @@ import {DocTitleViewExtension} from '@blocksuite/affine/fragments/doc-title/view
 import {PackageWorkspace,PackageDoc,snapshotPackage,restorePackage,validateDocument,base64ToBytes,bytesToBase64} from './package-workspace';
 import {DocumentBridge,pasteEvent,type EditorAdapter} from './bridge';
 import './blocks.css';
+import {BlocksSession} from './blocks-session';
+import * as Y from 'yjs';
 
 const storeManager=new StoreExtensionManager(getInternalStoreExtensions());
 class PageModeService extends DocModeService {
@@ -59,13 +61,43 @@ window.zeroslackWriteClipboard=items=>bridge.track(bridge.pauseEditing(async()=>
   }
   await bridge.request('write-clipboard',value);
 }));
+let shared:BlocksSession|undefined;
 let workspace:PackageWorkspace|undefined;
 let doc:PackageDoc|undefined;
 let store:Store|undefined;
 let host:EditorHost|undefined;
 let std:BlockStdScope|undefined;
+let pendingSelection:Record<string,any>[]|undefined;
+function selectionState(){return pendingSelection??std?.selection.value.map(value=>value.toJSON())??[]}
+function restoreSelection(){
+  if(!std||!pendingSelection)return false;
+  const value=pendingSelection;pendingSelection=undefined;
+  try{std.selection.fromJSON(value.filter(item=>store?.getModelById(String(item.blockId??item.from?.blockId))));return value.length>0}catch{return false}
+}
+function focusView(){
+  if(pendingSelection?.length){host?.focus({preventScroll:true});restoreSelection()}
+  else if(!std?.selection.value.length)host?.querySelector('affine-page-root')?.focusFirstParagraph();
+  else host?.focus({preventScroll:true});
+}
+function preserveView(){
+  const top=root.scrollTop,left=root.scrollLeft;
+  const values=structuredClone(selectionState());
+  const points=values.flatMap(value=>[value.from,value.to].filter(Boolean).map(point=>{
+    const text=doc?.yBlocks.get(point.blockId)?.get('prop:text');
+    return text instanceof Y.Text?{point,start:Y.createRelativePositionFromTypeIndex(text,point.index),end:Y.createRelativePositionFromTypeIndex(text,point.index+point.length)}:null;
+  })).filter(Boolean);
+  return ()=>{
+    for(const value of points){
+      const start=Y.createAbsolutePositionFromRelativePosition(value!.start,doc!.spaceDoc),end=Y.createAbsolutePositionFromRelativePosition(value!.end,doc!.spaceDoc);
+      if(start&&end){value!.point.index=start.index;value!.point.length=Math.max(0,end.index-start.index)}
+    }
+    pendingSelection=values;if(document.hasFocus())restoreSelection();
+    root.scrollTop=top;root.scrollLeft=left;bridge.viewChanged();
+  };
+}
+window.addEventListener('focus',()=>{if(pendingSelection)restoreSelection()});
 const uploadingAssets=new Set<any>();
-function dispose(){root.replaceChildren();host=undefined;std=undefined;store=undefined;doc=undefined;workspace?.dispose();workspace=undefined;uploadingAssets.clear()}
+function dispose(){shared?.close();shared=undefined;root.replaceChildren();host=undefined;std=undefined;store=undefined;doc=undefined;pendingSelection=undefined;workspace?.dispose();workspace=undefined;uploadingAssets.clear()}
 const adapter:EditorAdapter={
   async initialize(content,options){
     dispose();
@@ -103,6 +135,17 @@ const adapter:EditorAdapter={
     });
     if(!store.root)throw new Error('The block document has no page root.');
     validateDocument(workspace!,doc!);
+    shared=new BlocksSession('blocks:'+options!.session,revision=>bridge.changed(revision),
+      (undo,redo)=>{if(store){store.history.canUndo$.value=undo;store.history.canRedo$.value=redo}},
+      error=>{if(store)store.readonly=true;bridge.report(String(error))},options!.view,preserveView);
+    const joined=await shared.join(JSON.stringify(await snapshotPackage(workspace!,doc!)));
+    const restored=await restorePackage(joined.content,extensions);
+    workspace!.dispose();workspace=restored.workspace;doc=restored.document;store=doc.getStore();store.load();
+    bridge.setRevision(joined.revision);
+    store.history.undoManager.captureTransaction=()=>false;store.resetHistory();
+    store.undo=()=>{void bridge.track(shared!.command('undo')).catch(error=>bridge.report(String(error)))};
+    store.redo=()=>{void bridge.track(shared!.command('redo')).catch(error=>bridge.report(String(error)))};
+    shared.attach(workspace,doc);
     // Drag/drop inserts asynchronously through transformers, outside clipboard.
     const getTransformer=store.getTransformer.bind(store);
     store.getTransformer=(...args)=>{
@@ -112,6 +155,7 @@ const adapter:EditorAdapter={
       return job;
     };
     std=new BlockStdScope({store,extensions:[...viewManager.get('page'),DocModeExtension(new PageModeService()),EditorSettingExtension({setting$:signal({})})]});
+    std.selection.slots.changed.subscribe(()=>bridge.viewChanged());
     const copy=std.clipboard.copy;
     std.clipboard.copy=(...args)=>bridge.track(bridge.pauseEditing(()=>copy(...args)));
     const paste=std.clipboard.paste;
@@ -133,9 +177,14 @@ const adapter:EditorAdapter={
     host=std.render();const title=document.createElement('doc-title');title.doc=store;root.append(title,host);
     await Promise.all([host.updateComplete,title.updateComplete]);
     // Mount-time defaults belong to initialization, not to the user's first undo step.
-    await new Promise(resolve=>setTimeout(resolve,0));store.resetHistory();
-    doc.spaceDoc.on('update',()=>bridge.changed());workspace.doc.on('update',()=>bridge.changed());
+    await new Promise(resolve=>setTimeout(resolve,0));await shared.settle();
     if(options?.importMarkdown)return {notice:['Imported as an independent block document. Markdown source layout is normalized; fenced diagrams remain code blocks.',...conversionNotices].join(' ')};
+  },
+  detachView(view){shared?.detachView(view)},
+  viewState(){return {selection:selectionState(),top:root.scrollTop,left:root.scrollLeft}},
+  restoreViewState(state){
+    pendingSelection=Array.isArray(state.selection)?state.selection:[];if(document.hasFocus())restoreSelection();
+    root.scrollTop=Math.max(0,Number(state.top)||0);root.scrollLeft=Math.max(0,Number(state.left)||0);
   },
   flush(){},
   async settle(){
@@ -146,6 +195,7 @@ const adapter:EditorAdapter={
       if(performance.now()>deadline)throw new Error('An image is still unavailable. Finish inserting it, restore it, or remove its placeholder before saving.');
       await new Promise(resolve=>setTimeout(resolve,20));
     }
+    await shared?.settle();
   },
   async snapshot(){return JSON.stringify(await snapshotPackage(workspace!,doc!))},
   async exportMarkdown(){
@@ -163,10 +213,10 @@ const adapter:EditorAdapter={
     }finally{job[Symbol.dispose]()}
   },
   async command(name,clipboard){
-    if(name==='undo')store?.undo();else if(name==='redo')store?.redo();
-    else if(name==='focus')host?.querySelector('affine-page-root')?.focusFirstParagraph();
+    if(name==='undo'||name==='redo')await shared?.command(name);
+    else if(name==='focus')focusView();
     else if(name==='paste'&&clipboard){
-      if(!root.contains(document.getSelection()?.anchorNode??null))host?.querySelector('affine-page-root')?.focusFirstParagraph();
+      if(!root.contains(document.getSelection()?.anchorNode??null))focusView();
       const target=document.getSelection()?.anchorNode?.parentElement??host!;
       target.dispatchEvent(pasteEvent(clipboard));await new Promise(resolve=>setTimeout(resolve,0));
     }else if(name==='copy'||name==='cut'){
@@ -174,6 +224,7 @@ const adapter:EditorAdapter={
       target.dispatchEvent(new ClipboardEvent(name,{clipboardData:new DataTransfer(),bubbles:true,cancelable:true}));
       await new Promise(resolve=>setTimeout(resolve,0));
     }else if(name==='selectAll'){
+      pendingSelection=undefined;host?.focus({preventScroll:true});
       const blocks=store!.root!.children.filter(model=>model.flavour==='affine:note').flatMap(model=>model.children);
       std!.selection.setGroup('note',blocks.map(model=>std!.selection.create(BlockSelection,{blockId:model.id})));
     }

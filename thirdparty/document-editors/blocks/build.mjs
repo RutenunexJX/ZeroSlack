@@ -43,5 +43,7 @@ const options={nodePaths:[path.resolve('node_modules')],bundle:true,entryNames:'
  tsconfigRaw:{compilerOptions:{experimentalDecorators:false,useDefineForClassFields:false}},
  define:{'process.env.NODE_ENV':'"production"'},plugins:[litOnlyIcons,vanillaExtractPlugin()],metafile:true,logLevel:'info'};
 const result=await build({...options,entryPoints:[path.join(product,'blocks.ts')],outdir:output});
+const worker=await build({entryPoints:[path.join(product,'blocks-session-worker.ts')],nodePaths:[path.resolve('node_modules')],bundle:true,
+ outfile:path.join(output,'session-worker.js'),format:'iife',minify:true,legalComments:'external',target:'chrome120',metafile:true,logLevel:'info'});
 await copyFile(path.join(product,'index.html'),path.join(output,'index.html'));
-await writeFile('build-meta.json',JSON.stringify(result.metafile));
+await writeFile('build-meta.json',JSON.stringify({inputs:{...result.metafile.inputs,...worker.metafile.inputs},outputs:{...result.metafile.outputs,...worker.metafile.outputs}}));

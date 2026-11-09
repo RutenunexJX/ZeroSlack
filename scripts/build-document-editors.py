@@ -182,7 +182,18 @@ def main():
                 if generated_source.is_file(): generated_source.unlink()
         subprocess.run([str(args.node), 'build.mjs'], cwd=directory, env=env, check=True)
         missing += collect_notices(kind, directory, output, (marktext if kind == 'markdown' else blocksuite) / 'LICENSE')
+    pdfjs = work / 'vendor/pdfjs/package'
+    pdf = output / 'pdf'
+    (pdf / 'vendor/build').mkdir(parents=True)
+    for name in ('pdf.mjs', 'pdf.worker.mjs', 'pdf.renderer.mjs'):
+        shutil.copy2(pdfjs / 'build' / name, pdf / 'vendor/build' / name)
+    for name in ('web', 'cmaps', 'standard_fonts', 'wasm', 'iccs'):
+        shutil.copytree(pdfjs / name, pdf / 'vendor' / name, ignore=shutil.ignore_patterns('*.map'))
+    for source, target in (('pdf.html', 'index.html'), ('pdf.mjs', 'viewer.mjs'), ('pdf.css', 'viewer.css')):
+        shutil.copy2(REPO / 'src/documents/web' / source, pdf / target)
     licenses = output / 'licenses'
+    shutil.copy2(pdfjs / 'LICENSE', licenses / 'PDFjs-Apache-2.0.txt')
+    shutil.copy2(pdfjs / 'package.json', licenses / 'pdfjs-package.json')
     for source, name in ((marktext / 'LICENSE', 'MarkText-Muya-MIT.txt'), (blocksuite / 'LICENSE', 'BlockSuite-MPL-2.0.txt'),
                          (work / 'vendor/webview2/LICENSE.txt', 'WebView2-SDK-LICENSE.txt'),
                          (CONFIG / 'OpenSans-OFL.txt', 'OpenSans-OFL.txt')):
@@ -190,7 +201,7 @@ def main():
     shutil.copy2(CONFIG / 'NOTICE.txt', output / 'NOTICE.txt')
     sources = output / 'sources'
     sources.mkdir()
-    for key in ('marktext', 'blocksuite'): shutil.copy2(archives[key], sources / archives[key].name)
+    for key in ('marktext', 'blocksuite', 'pdfjs'): shutil.copy2(archives[key], sources / archives[key].name)
     shutil.copytree(CONFIG, sources / 'build-config')
     shutil.copytree(REPO / 'src/documents/web', sources / 'zeroslack-adapters')
     shutil.copy2(__file__, sources / 'build-document-editors.py')

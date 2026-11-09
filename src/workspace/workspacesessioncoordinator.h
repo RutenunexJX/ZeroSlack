@@ -29,6 +29,7 @@ Q_DECLARE_METATYPE(WorkspaceSessionSaveStatus)
 struct WorkspaceSessionUiRestoreResult {
     bool geometryRestored = true;
     bool dockStateRestored = true;
+    QStringList warnings;
 };
 
 struct WorkspaceSessionUiBridge {
@@ -116,6 +117,7 @@ private:
     QString activationGuardWorkspaceRoot;
     std::uint64_t activationGuardGeneration = 0;
     bool restoreOnActivation = true;
+    bool restoringSession = false;
     bool rememberPanelState = true;
 
     WorkspaceSessionState captureSessionState() const;

@@ -4,13 +4,15 @@
 #include <QWidget>
 class QLabel;
 class QPushButton;
-namespace simdock { class Workbench; }
+namespace simdock { class Workbench; class WorkspaceSimulationController; }
+class DesignProjectService;
 
 class ZEROSLACK_API SimDockContextView final : public QWidget
 {
     Q_OBJECT
 public:
-    explicit SimDockContextView(QWidget* parent = nullptr);
+    explicit SimDockContextView(QWidget* parent = nullptr, simdock::WorkspaceSimulationController* controller = nullptr,
+        DesignProjectService* design = nullptr);
     bool activate(const ContextResource& resource);
     bool canClose(QString* error = nullptr) const;
     void retire();

@@ -27,6 +27,7 @@
 #include "simulationcommandservice.h"
 #include "../src/integrations/simdock/simdockcontextview.h"
 #include "../src/simulation/simdock/ui/workbench.h"
+#include "../src/simulation/simdock/core/simulationbuildplanner.h"
 
 namespace {
 void put(const QString &path, const QByteArray &bytes) { QFile file(path); if (file.open(QIODevice::WriteOnly)) file.write(bytes); }
@@ -131,12 +132,19 @@ void compileTimingSources(MainWindow& window, const QString& directory) {
     QVERIFY(build);
     const auto source = QDir(directory).filePath("dut.sv");
     const auto top = QDir(directory).filePath("tb.sv");
+    QTRY_VERIFY_WITH_TIMEOUT(window.workspaceManager->projectSnapshot().sourceDiscoveryComplete
+        && !window.workspaceManager->isWorkspaceScanActive()
+        && window.workspaceManager->projectSnapshot().designSourceFiles().contains(source)
+        && window.workspaceManager->projectSnapshot().designSourceFiles().contains(top), 15000);
     const auto projectIssue = build->addDesignProject(top, "tb");
     QVERIFY2(projectIssue.isEmpty(), qPrintable(projectIssue));
-    const auto inputIssue = build->adoptHdlInputs(build->activeProjectId(), {source, top}, {});
-    QVERIFY2(inputIssue.isEmpty(), qPrintable(inputIssue));
-    QTRY_VERIFY_WITH_TIMEOUT(build->activeCompilationInputs().contains(source)
-        && build->activeCompilationInputs().contains(top), 15000);
+    QVERIFY(build->selectTarget(top).isEmpty());
+    QString error;
+    const auto request=simdock::SimulationBuildPlanner::workspaceRequest(directory,build->controller()->target(),&error);
+    QVERIFY2(error.isEmpty(),qPrintable(error));
+    const auto plan=simdock::SimulationBuildPlanner::plan(request);QVERIFY2(plan->valid(),qPrintable(plan->error()));
+    QVERIFY(plan->compilation.files.contains(SemanticInputCapture::pathKey(source)));
+    QVERIFY(plan->compilation.files.contains(SemanticInputCapture::pathKey(top)));
 }
 void searchSymbols(MainWindow& window, MyCodeEditor* editor, const QString& query) {
     editor->setFocus();

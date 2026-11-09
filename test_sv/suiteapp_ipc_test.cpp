@@ -15,6 +15,8 @@
 #include "../src/integrations/simdock/simdockcontextview.h"
 #include "../src/simulation/simdock/core/workspace.h"
 #include "../src/simulation/simdock/ui/workbench.h"
+#include "../src/simulation/simdock/core/workspacesimulationcontroller.h"
+#include "../src/simulation/simdock/core/questasession.h"
 #include "usertemplateservice.h"
 #include <zeroslack/documents/documentfileread.h>
 #include <zeroslack/ui/applicationwindow.h>
@@ -778,10 +780,12 @@ private slots:
         const auto heldText = heldEditor->toPlainText();
         QVERIFY(window.tabManager->getDocumentForEditor(heldEditor).dirty);
         QVERIFY(whileServing([&] { return client.openSurface("simdock.workbench", target, "simdock"); }).response.value("ok").toBool());
-        QVERIFY(controller->viewForResource("simdock:workbench")->isAncestorOf(host));
+        QVERIFY(!controller->viewForResource("simdock:workbench"));
+        QCOMPARE(window.findChild<SimDockContextView*>(),host);
+        QVERIFY(host->isVisible());
         const auto rejected = whileServing([&] { return client.invokeAction("simdock.simulation.run", {}, target, "simdock"); });
         QCOMPARE(rejected.response.value("error").toObject().value("code").toString(), QString("action_not_supported"));
-        QCOMPARE(host->component()->findChild<simdock::QuestaSession*>()->processId(), qint64(0));
+        QCOMPARE(host->workbench()->controller()->session()->processId(), qint64(0));
         QUrl other("simdock://workspace"); QUrlQuery otherQuery; otherQuery.addQueryItem("path", b); other.setQuery(otherQuery);
         const auto otherTarget = other.toString(QUrl::FullyEncoded);
         {

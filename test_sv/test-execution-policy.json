@@ -5099,6 +5099,40 @@
       "timeout": 120,
       "timeoutBasis": "Initial fixed 120-second budget for the native editor workflow.",
       "target": "editor_block_store_test"
+    },
+    {
+      "name": "workspace_simulation_services",
+      "role": "compiled",
+      "managedSince": "2026-11-09",
+      "reviewBy": "2026-12-07",
+      "reviewOwner": "AppSuite部署统筹",
+      "source": "D:/AppSuite/ZeroSlack/build/coordination/20261109-simulation-unified-tabs/TASK.md",
+      "when": {},
+      "execution": "run",
+      "reason": {
+        "category": "self_contained",
+        "detail": "Task-created workspaces: Design/target ownership, atomic migration, concurrent saves, transient view teardown and preparation cancellation."
+      },
+      "timeout": 120,
+      "timeoutBasis": "Bounded stage A services regression with task-created inputs; existing test limits unchanged.",
+      "target": "workspace_simulation_services_test"
+    },
+    {
+      "name": "simulation_build_planner",
+      "role": "compiled",
+      "managedSince": "2026-11-09",
+      "reviewBy": "2026-12-07",
+      "reviewOwner": "AppSuite部署统筹",
+      "source": "D:/AppSuite/ZeroSlack/build/coordination/20261109-simulation-unified-tabs/TASK.md",
+      "when": {},
+      "execution": "run",
+      "reason": {
+        "category": "self_contained",
+        "detail": "Task-created TB closure, actual generate/interface/bind elaboration, package order, conflicts and captured-input cache invalidation."
+      },
+      "timeout": 120,
+      "timeoutBasis": "Fixed stage B planner budget; existing test limits unchanged.",
+      "target": "simulation_build_planner_test"
     }
   ],
   "resources": [

@@ -14,6 +14,7 @@
 
 #include <functional>
 
+class EditorSplitController;
 class QEvent;
 class QAction;
 class QFrame;
@@ -46,9 +47,11 @@ public:
     static constexpr int kMaximumHeightPercent = 55;
 
     explicit PanelLayoutController(QMainWindow* mainWindow,
-                                   QObject* parent = nullptr);
+                                   QObject* parent = nullptr,
+                                   EditorSplitController* registry = nullptr);
     ~PanelLayoutController() override;
 
+    EditorSplitController* tabHostController() const;
     void setNavigationDock(QDockWidget* dock);
     bool registerSidePanel(const QString& panelId,
                            QDockWidget* dock);
@@ -57,7 +60,6 @@ public:
     bool registerBottomPanelAlias(const QString& alias,
                                   const QString& panelId);
     void finalize();
-    void setMainAreaRequestHandler(std::function<void(const QString&, QWidget*, QWidget*)> handler) { mainAreaRequest = std::move(handler); }
     bool openPanelInMainArea(const QString& panelId);
     void setPanelStateHandlers(const QString& panelId, std::function<QVariantMap()> capture,
                               std::function<void(const QVariantMap&)> restore);
@@ -113,11 +115,6 @@ public:
     QWidget* resizeHandle() const;
     QWidget* buttonBar() const;
     QToolButton* buttonForPanel(const QString& panelId) const;
-    void attachBottomCompanion(QWidget* content);
-    void setBottomCompanionVisible(bool visible, bool expandDrawer = true);
-    bool bottomCompanionVisible() const;
-    QByteArray bottomSplitState() const;
-    void restoreBottomSplitState(const QByteArray& state);
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -149,24 +146,21 @@ private:
     QPointer<QDockWidget> bottomDrawerDock;
     QPointer<QWidget> bottomDrawerRoot;
     QPointer<QWidget> bottomResizeHandle;
-    QPointer<QStackedWidget> bottomContentStack;
+    QPointer<QWidget> bottomContentHost;
+    QPointer<EditorSplitController> pageRegistry;
+    bool ownsPageRegistry = false;
+    void selectPanelPage(QWidget* page, bool activate = false);
     QPointer<QWidget> bottomContentSurface;
-    QPointer<QSplitter> bottomContentRow;
-    QPointer<QWidget> bottomCompanion;
-    QByteArray retainedBottomSplitState;
     QPointer<QFrame> bottomButtonBar;
 #ifdef ZEROSLACK_ENABLE_ELA
     QPointer<ElaDrawerArea> contentDrawer;
-    int expandedContentHeight = kDefaultContentHeight;
     void applyDrawerProgress(qreal progress);
 #endif
+    int expandedContentHeight = kDefaultContentHeight;
     QVector<PanelEntry> panels;
     QVector<SidePanelEntry> sidePanels;
     QHash<QString, QString> aliases;
     QStringList defaultOrder;
-    QString activePanel;
-    QString lastPanel;
-    std::function<void(const QString&, QWidget*, QWidget*)> mainAreaRequest;
     bool collapsed = false;
     bool applying = false;
     bool finalized = false;

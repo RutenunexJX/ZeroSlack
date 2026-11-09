@@ -24,29 +24,6 @@
 #include <QWindow>
 #include <functional>
 
-// Preserve coordinator-owned content when a central tool tab closes.
-class BorrowedPanelPage final : public QWidget {
-public:
-    BorrowedPanelPage(QWidget* content, QWidget* home)
-        : contentValue(content), homeValue(home) {
-        auto* layout = new QVBoxLayout(this);
-        layout->setContentsMargins(0, 0, 0, 0);
-        layout->addWidget(content);
-        content->show();
-    }
-    ~BorrowedPanelPage() override {
-        if (!contentValue || !homeValue) return;
-        contentValue->hide();
-        if (auto* dock = qobject_cast<QDockWidget*>(homeValue.data()))
-            dock->setWidget(contentValue);
-        else if (auto* stack = qobject_cast<QStackedWidget*>(homeValue.data()))
-            stack->addWidget(contentValue);
-        else contentValue->setParent(homeValue);
-    }
-private:
-    QPointer<QWidget> contentValue, homeValue;
-};
-
 class WorkspaceChrome final : public QObject {
 public:
     WorkspaceChrome(QMainWindow* host, NavigationPaneCoordinator* navigationPane,

@@ -31,9 +31,24 @@ const prismPlugin={name:'local-prism-grammars',setup(builder){
 }};
 const product=path.join(process.env.ZEROSLACK_SOURCE_ROOT,'src/documents/web');
 const output=process.env.ZEROSLACK_WEB_OUTPUT;
+const workerHistory={name:'muya-session-history',setup(builder){
+  builder.onLoad({filter:/[\\/]muya[\\/]src[\\/]history[\\/]index\.ts$/},async args=>{
+    let source=await readFile(args.path,'utf8');
+    for(const value of ["import { asDoc } from '../state';","import { ChangeSource } from '../types';","import { deepClone } from '../utils';"])
+      if(!source.includes(value))throw new Error('Pinned Muya history imports changed');else source=source.replace(value,'');
+    // Retain the pinned History implementation; remove only its DOM-dependent
+    // serialization imports for the worker's plain JSON model.
+    source="const asDoc=(value:any)=>value;const deepClone=structuredClone;const ChangeSource={User:'user',Api:'api'};\n"+source;
+    await mkdir('patched-sources',{recursive:true});await writeFile('patched-sources/history.ts',source);
+    return {contents:source,loader:'ts',resolveDir:path.dirname(args.path)};
+  });
+}};
+const worker=await build({entryPoints:[path.join(product,'markdown-session-worker.ts')],nodePaths:[path.resolve('node_modules')],
+  alias:{'@zeroslack/muya-history':path.resolve('muya/src/history/index.ts')},bundle:true,outfile:path.join(output,'session-worker.js'),
+  format:'iife',minify:true,legalComments:'external',target:'chrome120',plugins:[workerHistory],metafile:true,logLevel:'info'});
 const result=await build({entryPoints:[path.join(product,'markdown.ts')],nodePaths:[path.resolve('node_modules')],alias:{'@zeroslack/muya':path.resolve('muya/src/index.ts')},bundle:true,outdir:output,entryNames:'editor',format:'esm',splitting:true,minify:true,legalComments:'external',
   target:'chrome120',loader:{'.svg':'text','.png':'file','.jpg':'file','.woff':'file','.woff2':'file','.ttf':'file'},
   define:{'process.env.NODE_ENV':'"production"','window.MUYA_VERSION':'"marktext-0.23.0-18fdc1e"'},
   plugins:[prismPlugin],metafile:true,logLevel:'info'});
 await copyFile(path.join(product,'index.html'),path.join(output,'index.html'));
-await writeFile('build-meta.json',JSON.stringify(result.metafile));
+await writeFile('build-meta.json',JSON.stringify({inputs:{...result.metafile.inputs,...worker.metafile.inputs},outputs:{...result.metafile.outputs,...worker.metafile.outputs}}));

@@ -7,6 +7,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QTimer>
+#include <QScopedValueRollback>
 
 #include <utility>
 
@@ -242,6 +243,8 @@ void WorkspaceSessionCoordinator::flushPendingSaves()
 
 bool WorkspaceSessionCoordinator::restoreSession()
 {
+    if (restoringSession) return false;
+    const QScopedValueRollback restoring(restoringSession, true);
     if (!workspaceManager || !workspaceManager->isWorkspaceOpen()) {
         showStatus(
             QStringLiteral(
@@ -338,7 +341,7 @@ bool WorkspaceSessionCoordinator::restoreSession()
             rememberPanelState);
     }
 
-    QStringList notes;
+    QStringList notes = uiResult.warnings;
     if (restoredPending) notes.append(QStringLiteral("latest pending session; not yet persisted"));
     if (!scanRestored)
         notes.append(QStringLiteral("scan list skipped"));
@@ -373,7 +376,7 @@ bool WorkspaceSessionCoordinator::restoreSession()
                        .arg(notes.join(QStringLiteral("; ")));
     }
     showStatus(message, notes.isEmpty() ? 4000 : 7000);
-    scheduleSessionSave();
+    QTimer::singleShot(0, this, &WorkspaceSessionCoordinator::scheduleSessionSave);
 
     const bool restored =
         scanRestored && uiResult.dockStateRestored;
@@ -413,6 +416,7 @@ void WorkspaceSessionCoordinator::clearSession()
 
 void WorkspaceSessionCoordinator::scheduleSessionSave()
 {
+    if (restoringSession) return;
     if (!workspaceManager || !workspaceManager->isWorkspaceOpen())
         return;
     const QString workspaceRoot =

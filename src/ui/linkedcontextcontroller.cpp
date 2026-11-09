@@ -4,6 +4,7 @@
 #include "linkedconnectoroverlay.h"
 #include "linkedcontextstate.h"
 #include "tabmanager.h"
+#include "editorsplitcontroller.h"
 #include "mycodeeditor.h"
 #include "editorfoldviewstate.h"
 #include "pinloomcodelinkstore.h"
@@ -29,6 +30,7 @@
 #include <QRegularExpression>
 #include <QScrollBar>
 #include <QStackedWidget>
+#include <QTabWidget>
 #include <QTextBlock>
 #include <QTimer>
 #include <QToolBar>
@@ -80,6 +82,8 @@ struct LinkedContextController::Private {
     QPointer<QWidget> originalFocus;
     struct EditorView { QPointer<MyCodeEditor> editor; QPointer<QTextDocument> document; int position=0,anchor=0,vertical=0,horizontal=0; };
     QList<EditorView> originalViews;
+    struct PresentedView { QPointer<MyCodeEditor> editor; QPointer<QTabWidget> group; QString region; int index; };
+    QList<PresentedView> presentedViews;
     QPointer<QWidget> page,statusRow;
     QPointer<LinkedNativeRails> nativeRails;
     QPointer<LinkedConnectorOverlay> connector;
@@ -500,6 +504,33 @@ struct LinkedContextController::Private {
         return result;
     }
     void initialize() { initialized=active&&editor&&nativeRails; }
+    bool presentEditor(MyCodeEditor* next) {
+        auto* registry=tabs->editorSplitController();
+        auto* source=registry->groupForPage(next);
+        if (!source) return false;
+        if (registry->regionForGroup(source)==QStringLiteral("main")
+            && (source==editorPage || editorPage->isAncestorOf(source))) return true;
+        auto* target=registry->regionActiveGroup(QStringLiteral("main"));
+        if (!target || !registry->retainGroup(source)) return false;
+        const PresentedView origin{next,source,registry->regionForGroup(source),source->indexOf(next)};
+        if (!registry->movePage(next,target)) { registry->releaseGroup(source); return false; }
+        presentedViews.append(origin);
+        return true;
+    }
+    void restorePresentedEditors() {
+        auto* registry=tabs->editorSplitController();
+        QPointer<QWidget> selected=registry->activeGroup() ? registry->activeGroup()->currentWidget() : nullptr;
+        const auto open=tabs->openEditors();
+        for (const auto& origin:presentedViews) {
+            if (origin.editor && open.contains(origin.editor) && registry->groupForPage(origin.editor)) {
+                auto* target=origin.group ? origin.group.data() : registry->regionGroup(origin.region);
+                if (target) registry->movePage(origin.editor,target,origin.index);
+            }
+            if (origin.group) registry->releaseGroup(origin.group);
+        }
+        presentedViews.clear();
+        if (selected && registry->groupForPage(selected)) registry->activatePage(selected,false);
+    }
     void switchEditor(MyCodeEditor* next) {
         if(!active||switching)return;
         if(!next){q->setActive(false);return;}
@@ -509,6 +540,7 @@ struct LinkedContextController::Private {
         if(!editor)for(const auto& view:originalViews)if(view.editor==next&&view.document==next->document()){nativeView=view;break;}
         switching=true;
         if(!flush()){if(editor&&!file.isEmpty())tabs->activateOpenFile(file);switching=false;return;}
+        if(!presentEditor(next)){switching=false;status(QStringLiteral("Cannot present this code view in linked context."));q->setActive(false);return;}
         clearLegacyNotice();
         nativeRestoring=true;nativeDirty=false;nativeReferencesReady=false;nativeReferencesChanged=false;
         const bool renamed=next==editor&&nextFile!=file;
@@ -652,7 +684,7 @@ bool LinkedContextController::setActive(bool active) {
         for(auto* dock:d->window->findChildren<QDockWidget*>())hide(dock);
         for(auto* toolbar:d->window->findChildren<QToolBar*>())hide(toolbar);
         for(auto widget:d->chrome)hide(widget);
-        d->active=true;d->initialized=false;d->createNativePage();d->switchEditor(editor);editor->setFocus();
+        d->active=true;d->initialized=false;d->createNativePage();d->switchEditor(editor);if(!d->active)return false;editor->setFocus();
         for(const auto& view:d->originalViews)if(view.editor==editor){d->restoreNativeView(view);break;}
     }else{
         if(!d->destroying&&!d->flush())return false;
@@ -663,6 +695,7 @@ bool LinkedContextController::setActive(bool active) {
         if(d->overlay)delete d->overlay;if(d->editor){d->editor->viewport()->removeEventFilter(this);d->editor->removeEventFilter(this);}d->editor.clear();
         d->editorPage->setParent(d->stack);d->stack->addWidget(d->editorPage);d->stack->setCurrentWidget(d->editorPage);d->editorPage->show();
         if(d->page){d->stack->removeWidget(d->page);delete d->page;}
+        d->restorePresentedEditors();
         d->window->restoreState(d->normalWindowState);
         for(const auto& entry:d->visibility)if(entry.first){entry.first->removeEventFilter(this);entry.first->setVisible(entry.second);}
         // A closed view can survive until deleteLater after its document was detached.

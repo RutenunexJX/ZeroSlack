@@ -6,6 +6,12 @@ if(NOT ZEROSLACK_ENABLE_ELA)
     message(FATAL_ERROR "The integrated simulation workbench requires the maintained Ela build")
 endif()
 target_sources(zeroslack_core PRIVATE
+    src/workspace/designprojectservice.cpp
+    src/simulation/simdock/core/workspacestatefile.cpp
+    src/simulation/simdock/core/simulationtarget.cpp
+    src/simulation/simdock/core/simulationbuildplanner.cpp
+    src/simulation/simdock/core/simulationeventmodel.cpp
+    src/simulation/simdock/core/workspacesimulationcontroller.cpp
     src/simulation/simdock/core/workspace.cpp
     src/simulation/simdock/core/projectstore.cpp
     src/simulation/simdock/core/ownedpaths.cpp
@@ -16,6 +22,7 @@ target_sources(zeroslack_core PRIVATE
     src/simulation/simdock/core/simulationevents.cpp
     src/simulation/simdock/core/wavepalette.cpp
     src/simulation/simdock/ui/workbench.cpp
+    src/simulation/simdock/ui/simulationruncoordinator.cpp
     src/simulation/simdock/ui/simulationeventspanel.cpp
     src/simulation/simdock/ui/dialogs.cpp
     src/simulation/simdock/ui/uistyle.cpp

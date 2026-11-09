@@ -24,6 +24,7 @@ ElaTabBarStyle::~ElaTabBarStyle()
 
 int ElaTabBarStyle::pixelMetric(PixelMetric metric, const QStyleOption* option, const QWidget* widget) const
 {
+    if (_nativeTabBehavior && metric == PM_TabBar_ScrollButtonOverlap) return 0;
     int value = QProxyStyle::pixelMetric(metric, option, widget);
     if (_nativeTabBehavior && metric == PM_TabBarScrollButtonWidth) {
         if (const auto* bar = qobject_cast<const QTabBar*>(widget)) {

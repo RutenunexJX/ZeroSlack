@@ -102,7 +102,7 @@ ContextResource TemporaryEditorContextProvider::resourceForCurrentEditor(
     const QString& workspaceId)
 {
     MyCodeEditor* editor = tabManager
-        ? tabManager->getCurrentEditor()
+        ? tabManager->contextEditor()
         : nullptr;
     SharedDocument* document = editor && tabManager
         ? tabManager->sharedDocumentForEditor(editor)

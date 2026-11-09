@@ -26,6 +26,7 @@
 #include "instancepairconnectionpanel.h"
 #include "activitylogservice.h"
 #include "tabmanager.h"
+#include "editorsplitcontroller.h"
 #include "projectmodel.h"
 #include "usertemplateservice.h"
 #include "workspacemanager.h"
@@ -918,11 +919,11 @@ private slots:
             QTRY_VERIFY_WITH_TIMEOUT(navigation->selectDesignInstance("top.instance_with_a_long_name_left",true),10000);
             QVERIFY(!design->currentItem()->toolTip(0).isEmpty());
             auto* simulation=window.findChild<simdock::Workbench*>();QVERIFY(simulation);
-            const auto project=simulation->activeProjectId();QVERIFY(!project.isEmpty());
+            const auto project=simulation->designService()->activeProjectId();QVERIFY(!project.isEmpty());
             QVERIFY(window.navigationManager->setDesignTop("leaf",workspace+"/leaf.sv").isEmpty());
-            QTRY_VERIFY(simulation->activeProjectId()!=project);
+            QTRY_VERIFY(simulation->designService()->activeProjectId()!=project);
             QVERIFY(window.navigationManager->setDesignTop("top",top).isEmpty());
-            QTRY_COMPARE(simulation->activeProjectId(),project);
+            QTRY_COMPARE(simulation->designService()->activeProjectId(),project);
             QTRY_VERIFY(navigation->selectDesignInstance("top.instance_with_a_long_name_left",true));
             design->collapseAll();design->expandAll();
         }
@@ -949,23 +950,32 @@ private slots:
         navigationPane->setExpanded(true,false);QVERIFY(navigationPane->isExpanded());
 
         cost.checkpoint("navigation");
-        // Use the actual bottom split with its existing Context companion.
+        // Use the shared Bottom groups, with a Context resource alongside tools.
         auto* host=window.findChild<ContextDockHost*>();QVERIFY(host);
         const auto resource=LiveInsightsContextProvider::resourceForKind(LiveInsightKind::Module,workspace);
         QVERIFY(host->addResource(resource,new LiveInsightsContextView(nullptr,LiveInsightKind::Module),true));
         QVERIFY(host->moveResourceToArea(resource.stableKey(),true));
         auto* layout=owner<PanelLayoutController>(&window);QVERIFY(layout);layout->setAnimationsEnabled(false);
-        layout->setBottomCompanionVisible(true);
-        auto* splitter=window.findChild<QSplitter*>("bottomWorkspaceSplitter");QVERIFY(splitter);
-        auto* stack=qobject_cast<QStackedWidget*>(layout->drawerContent());QVERIFY(stack);
+        auto* registry=window.tabManager->editorSplitController();QVERIFY(registry);
+        auto* splitter=qobject_cast<QSplitter*>(registry->regionRoot("bottom"));QVERIFY(splitter);
+        auto* bottomHost=layout->drawerContent();QVERIFY(bottomHost);
         const QStringList expected={"problems","scopedSearch","activity","simulationLog","simulationEvents","hotspot","rtlHighRiskEdit","connections"};
-        const auto ids=layout->bottomPanelIds();QCOMPARE(QSet<QString>(ids.begin(),ids.end()),QSet<QString>(expected.begin(),expected.end()));
+        for (const auto& id:expected) {
+            QVERIFY(registry->pageById("tool:"+id));
+            QVERIFY(layout->restorePanel(id));
+        }
+        const auto bottomIds=layout->bottomPanelIds();
+        auto expectedBottom=expected;expectedBottom.removeAll("connections");
+        QCOMPARE(QSet<QString>(bottomIds.begin(),bottomIds.end()),QSet<QString>(expectedBottom.begin(),expectedBottom.end()));
+        // Measure bottom tools before opening the independently sized main-area page.
+        QVERIFY(layout->closePanel("connections"));
+        const auto ids=expected;
         cost.checkpoint("bottom-setup");
         for(const auto& id:ids){
             PhaseCost panelCost(id);
             QVERIFY(layout->restorePanel(id));QVERIFY(layout->setPanelHeight(id,height));
             { WaitCost waitCost(10); QTest::qWait(10); }
-            QWidget* panel=stack->currentWidget();QVERIFY(panel);
+            QWidget* panel=registry->pageById("tool:"+id);QVERIFY(panel);
             if(id!="connections"){QCOMPARE(layout->activeBottomPanelId(),id);QVERIFY(panel->isVisibleTo(&window));}
             if(id=="hotspot"){
                 auto* trace=qobject_cast<SignalTracePanel*>(panel);QVERIFY(trace);configure(trace,populated,1);QVERIFY(SignalTraceTest::settled(*trace));
@@ -1018,7 +1028,7 @@ private slots:
                 auto* connectionPanel=connections->panel();QVERIFY(connectionPanel);
                 auto* page=window.tabManager->toolPage(id);QVERIFY(page && page->isAncestorOf(connectionPanel));
                 QTRY_VERIFY(connectionPanel->isVisibleTo(&window));
-                QVERIFY(!stack->isAncestorOf(connectionPanel));QVERIFY(layout->activeBottomPanelId()!=id);
+                QVERIFY(!bottomHost->isAncestorOf(connectionPanel));QVERIFY(layout->activeBottomPanelId()!=id);
                 auto* connectionScroll=connectionPanel->findChild<QScrollArea*>("instancePairConnectionPanelScroll");QVERIFY(connectionScroll);
                 // Respect the native tab host's minimum after lazy pages are polished.
                 QVERIFY(connectionsLayoutSettled(&window,connectionScroll));
@@ -1057,9 +1067,33 @@ private slots:
                 toggle->click();QVERIFY(connectionsLayoutSettled(&window,connectionScroll));QCOMPARE(controlState(connectionPanel),controls);
                 continue;
             }
+            auto* group=registry->groupForPage(panel);QVERIFY(group);
+            const auto sizeContent=[&](const QSize& desired) {
+                // Requested dimensions refer to the content, excluding shared tab chrome.
+                const int chromeHeight=group->height()-panel->height();
+                if (!layout->setPanelHeight(id,desired.height()+chromeHeight)) return false;
+                for(int settle=0;settle<3;++settle) {
+                    const int groupWidth=desired.width()+group->width()-panel->width();
+                    splitter->setSizes({groupWidth,splitter->width()-groupWidth-splitter->handleWidth()});
+                    WaitCost waitCost(10); QTest::qWait(10);
+                }
+                if (panel->size()!=desired) qWarning()<<"content-sizing"<<id<<"active"<<layout->activeBottomPanelId()
+                    <<"requested"<<desired<<"actual"<<panel->size()<<"group"<<group->size()
+                    <<"chrome"<<chromeHeight<<"stored"<<layout->panelHeight(id)<<"maximum"<<layout->maximumContentHeight()
+                    <<"host"<<bottomHost->size()<<"window"<<window.size()<<"minimum"<<window.minimumSizeHint();
+                if (panel->size()!=desired) {
+                    auto* central=window.centralWidget();
+                    qWarning()<<"central minimum"<<central->size()<<central->minimumSize()<<central->minimumSizeHint();
+                    for(auto* child:central->findChildren<QWidget*>())
+                        if(child->minimumSizeHint().height()>300 || child->minimumHeight()>300)
+                            qWarning()<<"minimum contributor"<<child->metaObject()->className()<<child->objectName()<<child->size()
+                                <<child->minimumSize()<<child->minimumSizeHint()<<"visible"<<child->isVisible();
+                }
+                return true;
+            };
             for(int mode=0;mode<(id=="hotspot"?3:1);++mode){
                 if(id=="hotspot"){auto* trace=qobject_cast<SignalTracePanel*>(panel);configure(trace,populated,mode);QVERIFY(SignalTraceTest::settled(*trace));}
-                for(int settle=0;settle<3;++settle){splitter->setSizes({width,splitter->width()-width-splitter->handleWidth()});{ WaitCost waitCost(10); QTest::qWait(10); }}
+                QVERIFY(sizeContent(QSize(width,height)));
                 sample=measure(panel,height==160?2:4);
                 if(panel->width()!=width)sample.failures<<QString("requested width %1; actual %2").arg(width).arg(panel->width());
                 if(panel->height()!=height)sample.failures<<QString("requested content height %1; actual %2").arg(height).arg(panel->height());
@@ -1070,8 +1104,7 @@ private slots:
                     const auto controls=controlState(panel);
                     int step=0;
                     for(const QSize changed:{QSize(480,280),QSize(220,160),QSize(width,height)}){
-                        QVERIFY(layout->setPanelHeight(id,changed.height()));
-                        for(int settle=0;settle<3;++settle){splitter->setSizes({changed.width(),splitter->width()-changed.width()-splitter->handleWidth()});{ WaitCost waitCost(10); QTest::qWait(10); }}
+                        QVERIFY(sizeContent(changed));
                         QCOMPARE(panel->size(),changed);QCOMPARE(controlState(panel),controls);
                         sample=measure(panel,changed.height()==160?2:4);failures+=sample.failures;
                         QVERIFY(record(panel,id+QString("-resize-%1").arg(++step),sample,{{"populated",populated}}));

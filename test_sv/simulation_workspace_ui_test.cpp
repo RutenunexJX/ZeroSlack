@@ -1,4 +1,7 @@
 #include "mainwindow.h"
+#include "../src/simulation/simdock/ui/simulationruncoordinator.h"
+#include "automationservice.h"
+#include "shareddocument.h"
 #include "mycodeeditor.h"
 #include "editorsemanticcontextservice.h"
 #include "applicationthememanager.h"
@@ -73,7 +76,7 @@ struct Host {
         QDir().mkpath(other);
         put(workspace + "/dut.sv", "module dut(input logic clk, input logic rst, output logic q); assign q = clk & ~rst; endmodule\n");
         put(workspace + "/extra.sv", "module extra; endmodule\n");
-        put(workspace + "/tb_manual.sv", "module tb_manual; logic clk=0,rst=0,q; dut d(.*); always #5 clk=~clk; endmodule\n");
+        put(workspace + "/tb_manual.sv", "module tb_manual; logic clk=0,rst=0,q; dut d(.*); always #5 clk=~clk; initial #20 $finish; endmodule\n");
         project = simdock::newProject("Simulation project");
         project.sources = {"dut.sv", "extra.sv"}; project.dutName = "dut"; project.dutFile = "dut.sv";
         project.inputMode = simdock::InputMode::ExistingTb;
@@ -92,7 +95,6 @@ struct Host {
     WorkspaceSessionCoordinator* sessions() const { return window->findChild<WorkspaceSessionCoordinator*>(); }
     ContextWorkspaceController* context() const { return window->findChild<ContextWorkspaceController*>(); }
     NavigationWidget* navigation() const { return window->findChild<NavigationWidget*>(); }
-    QAbstractItemView* sources() const { return child<QAbstractItemView>(window.get(), "sourceList"); }
     QPlainTextEdit* log() const { return child<QPlainTextEdit>(window.get(), "simulationLog"); }
     simdock::Project saved() const {
         for (const auto& p : simdock::loadProjects(workspace)) if (p.id == project.id) return p;
@@ -100,8 +102,7 @@ struct Host {
     }
     bool open() { return sessions()->openWorkspace(workspace) && panel()->openProject(project.id).isEmpty(); }
     bool simulation() {
-        return context()->openResource(SimDockContextProvider().activationResource(workspace),
-            {ContextSurface::Docked, ContextPersistence::Kept});
+        return panel()->isVisible();
     }
     void runLog() { click(window.get(), "bottomPanelButton_simulationLog"); }
 };
@@ -131,7 +132,7 @@ class SimulationWorkspaceUiTest : public QObject {
         }
         QVERIFY(put(QDir(output).filePath(name+".json"),QJsonDocument(record).toJson()));
     }
-    void ready(Host& f) { QTRY_VERIFY_WITH_TIMEOUT(child<QComboBox>(f.panel(), "dutSelector")->count() > 0, 15000); }
+    void ready(Host& f) { QTRY_VERIFY_WITH_TIMEOUT(!f.window->workspaceManager->isWorkspaceScanActive() && f.window->workspaceManager->projectSnapshot().sourceDiscoveryComplete,15000); }
     void capture(Host& f, const QString& name) {
         const auto output = qEnvironmentVariable("ZEROSLACK_SIMULATION_UI_REPORT");
         if (output.isEmpty()) return;
@@ -173,36 +174,34 @@ private slots:
         }
     }
     void navigationInitializationAndMetrics() {
-        NavigationWidget navigation;navigation.resize(500,400);navigation.show();
-        auto* tabs=child<QTabWidget>(&navigation,"navigationTabs");auto* bar=tabs->tabBar();
-        QCOMPARE(tabs->count(),2);QCOMPARE(tabs->tabText(0),QString("Files"));QVERIFY(tabs->tabText(1).isEmpty());
-        navigation.setActiveTab(NavigationWidget::DesignTab);navigation.setSourceFilesWidget(new QWidget);
-        QCOMPARE(tabs->count(),3);QCOMPARE(tabs->currentIndex(),1);QCOMPARE(tabs->tabText(1),QString("Design"));
+        NavigationWidget navigation; navigation.resize(500,400); navigation.show();
+        auto* tabs=child<QTabWidget>(&navigation,"navigationTabs"); auto* bar=tabs->tabBar();
+        QCOMPARE(tabs->count(),2); QCOMPARE(tabs->tabText(0),QString("Files")); QCOMPARE(tabs->tabText(1),QString("Design"));
+        navigation.setActiveTab(NavigationWidget::DesignTab);
+        QCOMPARE(tabs->currentIndex(),1); QCOMPARE(tabs->tabText(1),QString("Design"));
         class Translation final : public QTranslator {
         public:
             bool isEmpty() const override { return false; }
             QString translate(const char* context,const char* text,const char*,int) const override {
                 if(QByteArray(context)!="NavigationWidget")return {};
                 if(QByteArray(text)=="Files")return QStringLiteral("Workspace source documents");
-                if(QByteArray(text)=="Build inputs")return QString::fromUtf8("e\xCC\x81 中文 compilation dependencies");
+                if(QByteArray(text)=="Design")return QString::fromUtf8("e\xCC\x81 中文 design hierarchy");
                 return {};
             }
         } translation;
-        QVERIFY(QCoreApplication::installTranslator(&translation));QCoreApplication::processEvents();
-        navigation.setActiveTab(NavigationWidget::SourceFilesTab);QTest::qWait(30);
-        QVERIFY(bar->tabText(2).startsWith(QString::fromUtf8("e\xCC\x81")));
+        QVERIFY(QCoreApplication::installTranslator(&translation)); QCoreApplication::processEvents();
+        QVERIFY(bar->tabText(1).startsWith(QString::fromUtf8("e\xCC\x81")));
         QCOMPARE(bar->accessibleTabName(0),QString("Workspace source documents"));
         QFont large=bar->font();large.setPointSizeF(22);bar->setFont(large);navigation.resize(200,400);QTest::qWait(40);
-        for(int i=0;i<3;++i){QVERIFY(bar->rect().contains(bar->tabRect(i)));QVERIFY(bar->tabRect(i).width()>=44);}
+        for(int i=0;i<2;++i){QVERIFY(bar->rect().contains(bar->tabRect(i)));QVERIFY(bar->tabRect(i).width()>=44);}
         recordNavigation(bar,"translated-large-font");
         navigation.hide();navigation.resize(600,400);navigation.show();QTest::qWait(40);recordNavigation(bar,"translated-restored");
         QCoreApplication::removeTranslator(&translation);QCoreApplication::processEvents();
-        QCOMPARE(bar->tabText(2),QString("Build inputs"));
-        QCOMPARE(bar->accessibleTabName(0),QString("Files"));
+        QCOMPARE(bar->tabText(1),QString("Design")); QCOMPARE(bar->accessibleTabName(0),QString("Files"));
+        navigation.setActiveTab(static_cast<NavigationWidget::NavigationTab>(2)); QCOMPARE(navigation.activeTab(),0);
     }
     void navigationInputTargets() {
         NavigationWidget navigation;navigation.resize(650,350);navigation.show();
-        navigation.setSourceFilesWidget(new QWidget);
         auto* tabs=child<QTabWidget>(&navigation,"navigationTabs");auto* bar=tabs->tabBar();
         // A longer translated first label makes a stationary second click hit the following tab after reflow.
         tabs->setTabText(0,QStringLiteral("Workspace source documents"));QTest::qWait(40);
@@ -218,12 +217,12 @@ private slots:
         QCOMPARE(tabs->currentIndex(),1);QCOMPARE(changed.size(),1);
         for(const auto& args:clicked)QCOMPARE(args[0].toInt(),1);
         recordNavigation(bar,"stationary-double-click");
-        QTest::keyClick(bar,Qt::Key_Right);QCOMPARE(tabs->currentIndex(),2);
-        QTest::keyClick(bar,Qt::Key_Left);QCOMPARE(tabs->currentIndex(),1);
+        QTest::keyClick(bar,Qt::Key_Left);QCOMPARE(tabs->currentIndex(),0);
+        QTest::keyClick(bar,Qt::Key_Right);QCOMPARE(tabs->currentIndex(),1);
         QTest::mousePress(bar,Qt::LeftButton,Qt::NoModifier,bar->tabRect(0).center());
         QTest::mouseMove(bar,QPoint(-30,-30));QTest::mouseRelease(bar,Qt::LeftButton,Qt::NoModifier,QPoint(-30,-30));
         QCOMPARE(tabs->currentIndex(),0);
-        QTest::mouseClick(bar,Qt::LeftButton,Qt::NoModifier,bar->tabRect(2).center());QCOMPARE(tabs->currentIndex(),2);
+        QTest::mouseClick(bar,Qt::LeftButton,Qt::NoModifier,bar->tabRect(1).center());QCOMPARE(tabs->currentIndex(),1);
         recordNavigation(bar,"keyboard-and-cancel");
     }
     void navigationCompactMainWindow_data() {
@@ -235,158 +234,99 @@ private slots:
         QFETCH(int,width);QFETCH(bool,dark);Host f;QVERIFY(f.open());ready(f);
         f.window->resize(width,720);ApplicationThemeManager::instance().setMode(dark?ThemeMode::Dark:ThemeMode::Light);
         auto* tabs=child<QTabWidget>(f.window.get(),"navigationTabs");auto* bar=tabs->tabBar();
-        for(int target=0;target<3;++target) {
+        for(int target=0;target<2;++target) {
             QTest::keyClick(bar,Qt::Key_Right);
             QTest::mouseClick(bar,Qt::LeftButton,Qt::NoModifier,bar->tabRect(target).center());QCOMPARE(tabs->currentIndex(),target);
             QTest::qWait(40);
-            for(int i=0;i<3;++i){QCOMPARE(bar->tabText(i),i==target?bar->accessibleTabName(i):QString());QVERIFY(bar->rect().contains(bar->tabRect(i)));}
+            for(int i=0;i<2;++i){QCOMPARE(bar->tabText(i),bar->accessibleTabName(i));QVERIFY(bar->rect().contains(bar->tabRect(i)));}
             recordNavigation(bar,QString("%1-tab%2").arg(QTest::currentDataTag()).arg(target));
             capture(f,QString("navigation-%1-tab%2").arg(QTest::currentDataTag()).arg(target));
         }
         QVERIFY(f.sessions()->saveSession(false));QVERIFY(f.sessions()->openWorkspace(f.other));QVERIFY(f.sessions()->openWorkspace(f.workspace));
-        QCOMPARE(tabs->currentIndex(),2);QCOMPARE(bar->tabText(2),QString("Build inputs"));
+        QCOMPARE(tabs->currentIndex(),1);QCOMPARE(bar->tabText(1),QString("Design"));
     }
     void navigationMotionRetainsBuildInputs_data() {
         QTest::addColumn<int>("tab"); QTest::addColumn<int>("width"); QTest::addColumn<bool>("dark");
         QTest::newRow("files-light") << 0 << 1280 << false;
         QTest::newRow("design-light") << 1 << 1280 << false;
-        QTest::newRow("inputs-light") << 2 << 1280 << false;
-        QTest::newRow("inputs-narrow-dark") << 2 << 780 << true;
+        QTest::newRow("files-narrow-dark") << 0 << 780 << true;
+        QTest::newRow("design-narrow-dark") << 1 << 780 << true;
     }
     void navigationMotionRetainsBuildInputs() {
         QFETCH(int, tab); QFETCH(int, width); QFETCH(bool, dark);
-        auto& theme = ApplicationThemeManager::instance();
-        const bool animations = theme.animationsEnabled();
-        theme.setAnimationsEnabled(true);
-        const auto restore = qScopeGuard([&] { theme.setAnimationsEnabled(animations); });
-        Host f; QVERIFY(f.open()); ready(f);
-        theme.setMode(dark ? ThemeMode::Dark : ThemeMode::Light);
+        auto& theme = ApplicationThemeManager::instance(); const bool animations = theme.animationsEnabled();
+        theme.setAnimationsEnabled(true); const auto restore = qScopeGuard([&] { theme.setAnimationsEnabled(animations); });
+        Host f; QVERIFY(f.open()); ready(f); theme.setMode(dark ? ThemeMode::Dark : ThemeMode::Light);
         auto* pane = f.window->findChild<NavigationPaneCoordinator*>(); QVERIFY(pane);
-        f.window->resize(width, 720);
-        pane->setActiveTab(tab); pane->setExpanded(true, false); QTest::qWait(80);
-        const auto sourceModel = f.sources()->model();
+        f.window->resize(width, 720); pane->setActiveTab(tab); pane->setExpanded(true,false); QTest::qWait(80);
+        const auto target = f.panel()->controller()->target(); auto* session = f.panel()->controller()->session();
         QSignalSpy scanned(f.panel(), &simdock::Workbench::scanFinished);
-        QSignalSpy resets(sourceModel, &QAbstractItemModel::modelReset);
-        const auto projectId = f.saved().id;
-        const auto compilationOrder = f.saved().sources;
-        const int expandedWidth = pane->dock()->width();
-        const int contentWidth = f.navigation()->width();
-        for (int i = 0; i < 3; ++i) {
-            pane->setExpanded(false);
-            QTRY_VERIFY_WITH_TIMEOUT(!pane->isAnimating(), 1500);
-            QVERIFY(!pane->isExpanded());
-            if (i == 0) capture(f, QString::fromLatin1(QTest::currentDataTag()) + "-collapsed");
-            pane->setExpanded(true);
-            QTRY_VERIFY_WITH_TIMEOUT(!pane->isAnimating(), 1500);
-            QVERIFY(pane->isExpanded());
-            QCOMPARE(f.navigation()->width(), contentWidth);
-            if (width >= 850) QCOMPARE(pane->dock()->width(), expandedWidth);
+        const int expandedWidth=pane->dock()->width(), contentWidth=f.navigation()->width();
+        for(int i=0;i<3;++i) {
+            pane->setExpanded(false); QTRY_VERIFY_WITH_TIMEOUT(!pane->isAnimating(),1500); QVERIFY(!pane->isExpanded());
+            pane->setExpanded(true); QTRY_VERIFY_WITH_TIMEOUT(!pane->isAnimating(),1500); QVERIFY(pane->isExpanded());
+            QCOMPARE(f.navigation()->width(),contentWidth); if(width>=850)QCOMPARE(pane->dock()->width(),expandedWidth);
         }
-        pane->setExpanded(false); QTest::qWait(35);
-        pane->setExpanded(true); QTest::qWait(35);
-        pane->setExpanded(false); QTest::qWait(25);
-        pane->setExpanded(true);
-        QTRY_VERIFY_WITH_TIMEOUT(!pane->isAnimating(), 1500);
-        QVERIFY(pane->isExpanded()); QCOMPARE(pane->activeTab(), tab);
-        QCOMPARE(f.sources()->model(), sourceModel);
-        QCOMPARE(scanned.size(), 0);
-        QCOMPARE(resets.size(), 0);
-        QCOMPARE(f.saved().id, projectId); QCOMPARE(f.saved().sources, compilationOrder);
-        if (tab == 2) {
-            QVERIFY(f.sources()->isVisible());
-            f.sources()->setCurrentIndex(sourceModel->index(1, 0));
-            QVERIFY(!f.window->findChild<QWidget*>("moveSourceUp"));
-            QCOMPARE(f.saved().sources, QStringList({"dut.sv", "extra.sv"}));
-        }
-        capture(f, QString::fromLatin1(QTest::currentDataTag()) + "-motion-restored");
+        pane->setExpanded(false);QTest::qWait(35);pane->setExpanded(true);QTest::qWait(35);
+        pane->setExpanded(false);QTest::qWait(25);pane->setExpanded(true);
+        QTRY_VERIFY_WITH_TIMEOUT(!pane->isAnimating(),1500); QVERIFY(pane->isExpanded()); QCOMPARE(pane->activeTab(),tab);
+        QCOMPARE(scanned.size(),0); QVERIFY(f.panel()->controller()->target()==target); QCOMPARE(f.panel()->controller()->session(),session);
+        QCOMPARE(f.saved().sources,QStringList({"dut.sv","extra.sv"}));
+        capture(f,QString::fromLatin1(QTest::currentDataTag())+"-motion-restored");
     }
     void sourceFirstSingleOwnershipAndSessionRestore() {
-        Host f; QVERIFY(f.open()); ready(f);
-        QVERIFY(!f.context()->viewForResource(key));
-        f.navigation()->setActiveTab(NavigationWidget::SourceFilesTab);
-        auto* panel = f.panel(); auto* model = f.sources()->model(); auto* log = f.log();
-        QVERIFY(f.sources()->isVisible());
-        QVERIFY(!f.window->findChild<QWidget*>("openWorkspace"));
-        QVERIFY(!panel->findChild<QWidget*>("workbenchSection"));
-        f.sources()->setCurrentIndex(model->index(1, 0));
-        QVERIFY(!f.window->findChild<QWidget*>("moveSourceUp"));
-        QCOMPARE(f.saved().sources, QStringList({"dut.sv", "extra.sv"}));
-        const auto firstId = f.project.id;
-        QVERIFY(panel->createProject("Another project"));
-        const auto secondId = panel->saveState().value("projectId").toString();
-        QVERIFY(secondId != firstId);
-        QVERIFY(panel->openProject(firstId).isEmpty());
-        QCOMPARE(f.sources()->model(), model);
-        QVERIFY(f.simulation()); QCOMPARE(f.panel(), panel);
-        QVERIFY(!panel->isAncestorOf(f.sources())); QVERIFY(!panel->isAncestorOf(log));
-        QCOMPARE(f.window->findChildren<simdock::Workbench*>().size(), 1);
-        QVERIFY(f.context()->unpinResource(key)); QCOMPARE(f.panel(), panel);
-        f.context()->setFloatingCollapsed(true); f.context()->setFloatingCollapsed(false);
-        QVERIFY(f.context()->pinFloatingResource(key));
-        QVERIFY(f.context()->setDockVisible(false)); QVERIFY(f.context()->setDockVisible(true));
-        QVERIFY(f.context()->closePinnedResource(key));
-        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-        QCOMPARE(f.panel(), panel); QCOMPARE(f.log(), log); QCOMPARE(f.sources()->model(), model);
-        QVERIFY(panel->openProject(secondId).isEmpty());
-        QVERIFY(f.sessions()->saveSession(false));
-        QVERIFY(f.sessions()->openWorkspace(f.other)); QCOMPARE(f.panel()->workspace(), f.other);
-        QVERIFY(f.sessions()->openWorkspace(f.workspace));
-        QCOMPARE(f.panel()->saveState().value("projectId").toString(), secondId);
-        QCOMPARE(f.navigation()->activeTab(), int(NavigationWidget::SourceFilesTab));
-        QVERIFY(f.simulation()); QCOMPARE(f.panel(), panel);
+        Host f; QVERIFY(f.open()); ready(f); auto* panel=f.panel(); auto* log=f.log();
+        auto* controller=panel->controller(); const auto target=controller->target();
+        QVERIFY(panel->isVisible()); QVERIFY(!f.context()->viewForResource(key));
+        QVERIFY(!f.window->findChild<QAction*>("contextRail.simdock"));
+        QVERIFY(!f.window->findChild<QWidget*>("sourceList")); QVERIFY(!f.window->findChild<QWidget*>("projectList"));
+        QCOMPARE(f.window->findChildren<simdock::Workbench*>().size(),1);
+        controller->session()->logText("retained background log\n"); QTRY_VERIFY(log->toPlainText().contains("retained background log"));
+        panel->hide(); controller->session()->logText("while controls hidden\n"); panel->show();
+        QTRY_VERIFY(log->toPlainText().contains("while controls hidden")); QCOMPARE(panel->controller(),controller);
+        f.navigation()->setActiveTab(NavigationWidget::DesignTab);
+        QVERIFY(f.sessions()->saveSession(false)); QVERIFY(f.sessions()->openWorkspace(f.other));
+        QVERIFY(f.sessions()->openWorkspace(f.workspace)); ready(f);
+        QCOMPARE(f.panel(),panel); QCOMPARE(f.log(),log); QVERIFY(controller->target()==target);
+        QCOMPARE(f.navigation()->activeTab(),int(NavigationWidget::DesignTab));
+        QCOMPARE(f.saved().sources,QStringList({"dut.sv","extra.sv"}));
         QVERIFY(f.sessions()->closeWorkspace(f.window->workspaceManager->activeWorkspaceIndex()));
-        // Closing the last remaining workspace is covered after closing the other workspace as well.
-        if (f.window->workspaceManager->isWorkspaceOpen()) QVERIFY(f.sessions()->closeWorkspace(0));
-        QVERIFY(f.panel()->workspace().isEmpty());
-        QVERIFY(!child<QAbstractButton>(panel, "startSimulation")->isEnabled());
+        if(f.window->workspaceManager->isWorkspaceOpen())QVERIFY(f.sessions()->closeWorkspace(0));
+        QVERIFY(panel->workspace().isEmpty()); QVERIFY(!child<QAbstractButton>(panel,"startSimulation")->isEnabled());
     }
     void navigationSearchAndTransferredModalGuard() {
         Host f; QVERIFY(f.open()); ready(f);
-        f.navigation()->setSearchFilter(NavigationWidget::FileTab, "dut");
-        f.navigation()->setSearchFilter(NavigationWidget::DesignTab, "dut");
-        f.navigation()->setActiveTab(NavigationWidget::SourceFilesTab);
-        auto* search = child<QLineEdit>(f.window.get(), "navigationSearchLineEdit");
-        QVERIFY(!search->isVisible());
-        f.navigation()->setSearchFilter(NavigationWidget::SourceFilesTab, "ignored");
-        QCOMPARE(f.navigation()->searchFilter(NavigationWidget::FileTab), QString("dut"));
-        f.navigation()->setActiveTab(NavigationWidget::DesignTab);
-        QTRY_VERIFY_WITH_TIMEOUT(search->isVisible(),10000);
-        QCOMPARE(search->text(), QString());
-        QCOMPARE(f.navigation()->searchFilter(NavigationWidget::DesignTab), QString("dut"));
-        search->setText("extra");
-        QCOMPARE(f.navigation()->searchFilter(NavigationWidget::DesignTab), QString("dut"));
-        f.navigation()->setActiveTab(NavigationWidget::FileTab); QCOMPARE(search->text(), QString("dut"));
-        f.navigation()->setActiveTab(NavigationWidget::SourceFilesTab);
-        bool guarded = false;
-        QTimer::singleShot(0, f.panel(), [&] {
-            auto* modal = qobject_cast<QDialog*>(QApplication::activeModalWidget()); QVERIFY(modal);
+        f.navigation()->setSearchFilter(NavigationWidget::FileTab,"dut");
+        f.navigation()->setSearchFilter(NavigationWidget::DesignTab,"dut");
+        auto* search=child<QLineEdit>(f.window.get(),"navigationDesignSearchLineEdit");
+        f.navigation()->setActiveTab(NavigationWidget::DesignTab); QTRY_VERIFY(search->isVisible());
+        QCOMPARE(search->text(),QString()); QCOMPARE(f.navigation()->searchFilter(NavigationWidget::DesignTab),QString("dut"));
+        search->setText("extra"); QCOMPARE(f.navigation()->searchFilter(NavigationWidget::DesignTab),QString("dut"));
+        f.navigation()->setActiveTab(NavigationWidget::FileTab);
+        QCOMPARE(child<QLineEdit>(f.window.get(),"navigationSearchLineEdit")->text(),QString("dut"));
+        QCOMPARE(search->text(),QString("extra"));
+        bool guarded=false;
+        QTimer::singleShot(0,f.panel(),[&] {
+            auto* modal=qobject_cast<QDialog*>(QApplication::activeModalWidget()); QVERIFY(modal);
             QVERIFY(!f.view()->canClose()); QVERIFY(!f.sessions()->openWorkspace(f.other));
-            QCloseEvent event; QApplication::sendEvent(f.window.get(), &event); QVERIFY(!event.isAccepted());
-            guarded = true; modal->reject();
+            QCloseEvent event; QApplication::sendEvent(f.window.get(),&event); QVERIFY(!event.isAccepted());
+            guarded=true;modal->reject();
         });
-        click(f.window.get(), "newProject"); QVERIFY(guarded);
-        QVERIFY(!f.context()->viewForResource(key)); QVERIFY(f.view()->canClose());
+        click(f.window.get(),"openSettings"); QVERIFY(guarded); QVERIFY(f.view()->canClose());
     }
     void existingTestbenchAndRetiredInputs() {
         Host f; QVERIFY(f.open()); ready(f); QVERIFY(f.simulation());
-        QVERIFY(!f.panel()->findChild<QWidget*>("simulationInputMode"));
-        QVERIFY(!f.panel()->findChild<QWidget*>("editStimulus"));
-        QVERIFY(!f.panel()->findChild<QWidget*>("generatedTbPath"));
-        QCOMPARE(child<QLineEdit>(f.panel(), "tbFile")->text(), QString("tb_manual.sv"));
-        click(f.panel(), "openTb");
-        QCOMPARE(QFileInfo(f.window->tabManager->getCurrentDocumentMetadata().fileName).fileName(), QString("tb_manual.sv"));
-        const auto manual = read(f.workspace + "/tb_manual.sv");
-        child<QSpinBox>(f.panel(), "duration")->setValue(1700);
-        QCOMPARE(f.saved().durationNs, 1700LL);
-        auto* dut = child<QComboBox>(f.panel(), "dutSelector");
-        const auto other = dut->findData(QStringList({"extra.sv", "extra"}));
-        QVERIFY(other >= 0); dut->setCurrentIndex(other);
-        QCOMPARE(f.saved().tbFile, QString("tb_manual.sv"));
-        QVERIFY(f.panel()->setContext(f.workspace).isEmpty()); ready(f);
-        QCOMPARE(f.saved().durationNs, 1700LL);
-        QCOMPARE(read(f.workspace + "/tb_manual.sv"), manual);
-        QVERIFY(child<QWidget>(f.panel(), "duration")->isVisible());
-        QVERIFY(child<QWidget>(f.panel(), "tbTop")->isVisible());
+        const auto manual=read(f.workspace+"/tb_manual.sv"); const auto legacy=simdock::projectJson(f.saved());
+        for(const auto* name:{"simulationInputMode","editStimulus","generatedTbPath","duration","tbTop","sourceList","projectList","newProject"})
+            QVERIFY(!f.window->findChild<QWidget*>(name));
+        QVERIFY(f.panel()->controller()->target()==(simdock::SimulationTarget{"tb_manual.sv","tb_manual"}));
+        child<QAction>(f.panel(),"openTb")->trigger();
+        QCOMPARE(QFileInfo(f.window->tabManager->getCurrentDocumentMetadata().fileName).fileName(),QString("tb_manual.sv"));
+        QVERIFY(f.window->tabManager->openFileInTab(f.workspace+"/dut.sv"));
+        QCOMPARE(f.panel()->controller()->target().top,QString("tb_manual"));
+        QVERIFY(f.panel()->setContext(f.workspace).isEmpty()); QCOMPARE(read(f.workspace+"/tb_manual.sv"),manual);
+        QCOMPARE(simdock::projectJson(f.saved()),legacy);
+        QVERIFY(child<QWidget>(f.panel(),"simulationTarget")->isVisible());
     }
     void logSelectionScrollAndHiddenDelivery() {
         auto* originalClipboard = new QMimeData;
@@ -394,7 +334,7 @@ private slots:
             for (const auto& format : data->formats()) originalClipboard->setData(format, data->data(format));
         const auto restoreClipboard = qScopeGuard([originalClipboard] { QApplication::clipboard()->setMimeData(originalClipboard); });
         Host f; QVERIFY(f.open()); ready(f); QVERIFY(f.simulation()); f.runLog();
-        auto* session = f.panel()->findChild<simdock::QuestaSession*>(); QVERIFY(session);
+        auto* session = f.panel()->controller()->session(); QVERIFY(session);
         QString text; for (int i = 0; i < 500; ++i) text += QString("line %1\n").arg(i);
         session->logText(text); QTRY_VERIFY(f.log()->toPlainText().contains("line 499"));
         f.log()->verticalScrollBar()->setValue(0);
@@ -413,43 +353,31 @@ private slots:
         QTest::newRow("narrow-light") << 1050 << false; QTest::newRow("narrow-dark") << 1050 << true;
     }
     void hostVisualsAndMenus() {
-        QFETCH(int, width); QFETCH(bool, dark);
-        Host f; QVERIFY(f.open()); ready(f); QVERIFY(f.simulation());
-        f.navigation()->setActiveTab(NavigationWidget::SourceFilesTab); f.runLog();
-        ApplicationThemeManager::instance().setMode(dark ? ThemeMode::Dark : ThemeMode::Light);
-        const auto screen = f.window->screen()->availableGeometry();
-        f.window->resize(qMin(width, screen.width() - 24), qMin(840, screen.height() - 60));
-        f.window->move(screen.topLeft() + QPoint(12, 12));
-        f.window->resizeDocks({f.context()->dockWidget()}, {420}, Qt::Horizontal); QTest::qWait(120);
-        auto* run = child<QWidget>(f.panel(), "startSimulation");
-        auto* settings = child<QToolButton>(f.panel(), "openSettings");
-        QVERIFY(!settings->icon().isNull()); QVERIFY(!settings->accessibleName().isEmpty()); QVERIFY(settings->text().isEmpty());
-        QVERIFY(f.panel()->rect().contains(QRect(run->mapTo(f.panel(), QPoint()), run->size())));
-        QVERIFY(f.sources()->height() >= 80); QVERIFY(child<QWidget>(f.window.get(), "projectList")->height() <= 140);
-        QVERIFY(f.sources()->isVisible()); QVERIFY(f.log()->isVisible());
-        auto* tabs = child<QTabWidget>(f.window.get(), "navigationTabs")->tabBar();
-        for (int i = 0; i < 3; ++i) QVERIFY(tabs->rect().contains(tabs->tabRect(i)));
-        for (int i = 0; i < 3; ++i) {
-            QCOMPARE(tabs->tabText(i),i==tabs->currentIndex()?tabs->accessibleTabName(i):QString());
-            QVERIFY(!tabs->tabIcon(i).isNull());
-            QVERIFY(!tabs->tabToolTip(i).isEmpty());
-            QCOMPARE(tabs->accessibleTabName(i), tabs->tabToolTip(i));
-            tabs->setCurrentIndex(i);
-            QTest::qWait(30);
-            QVERIFY(tabs->rect().contains(tabs->tabRect(i)));
+        QFETCH(int,width); QFETCH(bool,dark); Host f; QVERIFY(f.open());ready(f);f.runLog();
+        ApplicationThemeManager::instance().setMode(dark?ThemeMode::Dark:ThemeMode::Light);
+        const auto screen=f.window->screen()->availableGeometry();
+        f.window->resize(qMin(width,screen.width()-24),qMin(840,screen.height()-60));f.window->move(screen.topLeft()+QPoint(12,12));QTest::qWait(120);
+        for(const auto* name:{"simulationTarget","startSimulation","openSettings"}) {
+            auto* control=child<QWidget>(f.panel(),name); QVERIFY(control->isVisible());
+            QVERIFY(f.panel()->rect().contains(QRect(control->mapTo(f.panel(),QPoint()),control->size())));
         }
-        tabs->setCurrentIndex(2);
-        QVERIFY(!f.panel()->findChild<QWidget*>("workbenchSection"));
-        QVERIFY(!f.panel()->findChild<QWidget*>("waveOptionsToggle"));
-        QVERIFY(!f.panel()->findChild<QWidget*>("waveScope"));
-        QVERIFY(!f.panel()->findChild<QWidget*>("chooseWaveSignals"));
-        QTimer::singleShot(0, f.panel(), [&] { auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget()); QVERIFY(dialog); QCOMPARE(dialog->objectName(), QString("settingsDialog")); dialog->reject(); });
+        auto* settings=child<QToolButton>(f.panel(),"openSettings"); QVERIFY(!settings->icon().isNull());
+        QVERIFY(!settings->accessibleName().isEmpty());QVERIFY(settings->text().isEmpty());QVERIFY(f.log()->isVisible());
+        auto* tabs=child<QTabWidget>(f.window.get(),"navigationTabs")->tabBar(); QCOMPARE(tabs->count(),2);
+        for(int i=0;i<tabs->count();++i) {
+            QVERIFY(!tabs->tabIcon(i).isNull());QVERIFY(!tabs->tabToolTip(i).isEmpty());QCOMPARE(tabs->accessibleTabName(i),tabs->tabToolTip(i));
+            tabs->setCurrentIndex(i);QTest::qWait(30);QVERIFY(tabs->rect().contains(tabs->tabRect(i)));
+        }
+        for(const auto* name:{"workbenchSection","waveOptionsToggle","waveScope","chooseWaveSignals","duration"})
+            QVERIFY(!f.panel()->findChild<QWidget*>(name));
+        QTimer::singleShot(0,f.panel(),[&] {
+            auto* dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget());QVERIFY(dialog);
+            QCOMPARE(dialog->objectName(),QString("settingsDialog"));QVERIFY(dialog->findChild<QPlainTextEdit*>("simulationIncludes"));
+            QVERIFY(dialog->findChild<QPlainTextEdit*>("simulationDefinitionSources"));dialog->reject();
+        });
         settings->click();
-        auto* menu = child<QToolButton>(f.panel(), "simulationActions")->menu(); QVERIFY(menu);
-        QVERIFY(!f.panel()->findChild<QAction*>("createTb"));
-        for (auto* action : menu->actions()) QVERIFY(!action->text().contains("Create Demo TB"));
-        capture(f, QString::fromLatin1(QTest::currentDataTag()) + "-existing");
-
+        auto* menu=child<QToolButton>(f.panel(),"simulationTarget")->menu(); QVERIFY(menu); QVERIFY(menu->actions().size()>=3);
+        capture(f,QString("compact-%1").arg(QTest::currentDataTag()));
     }
     void retiredCreationEntrypoints() {
         Host f; QVERIFY(f.open()); ready(f);
@@ -460,17 +388,29 @@ private slots:
         QVERIFY(tabs->openFileInTab(file));
         const auto noCreationControls = [&] {
             QVERIFY(!f.window->findChild<QAbstractButton*>("editorNewTb"));
-            for (auto* group : tabs->editorSplitController()->groups())
+            for (auto* group : tabs->editorSplitController()->groups(QStringLiteral("main")))
                 QVERIFY(!group->cornerWidget(Qt::TopRightCorner));
+            QVERIFY(f.window->findChild<QToolButton*>("leftAddDocument"));
         };
         noCreationControls(); QCOMPARE(tabs->splitCount(), 1);
         QVERIFY(tabs->splitCurrentView(EditorSplitDirection::Right));
         QCOMPARE(tabs->splitCount(), 2); noCreationControls();
         auto* group = tabs->editorSplitController()->activeGroup();
+        const auto closedGroupId = tabs->editorSplitController()->groupId(group);
+        QVERIFY(tabs->openFileInTab(f.workspace + "/dut.sv"));
+        QCOMPARE(tabs->editorSplitController()->activeGroup(), group);
+        QCOMPARE(group->count(), 2);
+        tabs->closeTab(group->currentIndex());
+        QCOMPARE(group->count(), 1);
         tabs->closeTab(group->currentIndex());
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         QCOMPARE(tabs->splitCount(), 1); noCreationControls();
         QVERIFY(tabs->reopenClosedTab()); QCOMPARE(tabs->splitCount(), 2); noCreationControls();
+        QCOMPARE(tabs->editorSplitController()->groupId(tabs->editorSplitController()->activeGroup()), closedGroupId);
+        QVERIFY(tabs->reopenClosedTab()); QCOMPARE(tabs->splitCount(), 2);
+        QCOMPARE(tabs->editorSplitController()->groupId(tabs->editorSplitController()->activeGroup()), closedGroupId);
+        QCOMPARE(tabs->editorSplitController()->activeGroup()->count(), 2);
+        QVERIFY(tabs->activateOpenFile(file));
         auto* editor = tabs->getCurrentEditor(); QVERIFY(editor);
         QMenu menu;
         editor->sourceSymbolContextMenuRequested(&menu, editor->editorSemanticContextForPosition(0, true));
@@ -483,83 +423,176 @@ private slots:
         QCOMPARE(tabs->getCurrentEditor()->toPlainText(), saved); QCOMPARE(read(file), saved.toUtf8());
         auto empty = f.saved(); empty.tbFile.clear(); empty.tbName.clear();
         QCOMPARE(simdock::validateInputs(f.workspace, empty), QString("Select an existing TB first."));
-        QVERIFY(f.panel()->createProject("Choose existing TB"));
-        QVERIFY(!child<QAbstractButton>(f.panel(), "startSimulation")->isEnabled());
-        bool chose = false;
-        QTimer::singleShot(0, f.panel(), [&] {
-            auto* dialog = f.panel()->findChild<QFileDialog*>(); QVERIFY(dialog);
-            QTimer::singleShot(5000, dialog, &QDialog::reject);
-            dialog->selectFile(file); chose = QMetaObject::invokeMethod(dialog, "accept");
+        QVERIFY(f.panel()->controller()->clearTarget().isEmpty());
+        QVERIFY(child<QAbstractButton>(f.panel(),"startSimulation")->isEnabled());
+        bool chose=false;
+        QTimer::singleShot(0,f.panel(),[&] {
+            auto* dialog=f.panel()->findChild<QFileDialog*>();QVERIFY(dialog);
+            QTimer::singleShot(5000,dialog,&QDialog::reject);dialog->selectFile(file);chose=QMetaObject::invokeMethod(dialog,"accept");
         });
-        click(f.panel(), "chooseTb"); QVERIFY(chose);
-        QCOMPARE(child<QLineEdit>(f.panel(), "tbFile")->text(), QString("tb_manual.sv"));
-        QCOMPARE(child<QLineEdit>(f.panel(), "tbTop")->text(), QString("tb_manual"));
-        click(f.panel(), "openTb"); QCOMPARE(tabs->getCurrentEditor()->toPlainText(), saved);
-        const auto projectId = f.panel()->activeProjectId();
-        QVERIFY(f.sessions()->saveSession(false)); QVERIFY(f.sessions()->openWorkspace(f.other));
-        QVERIFY(f.sessions()->openWorkspace(f.workspace));
-        QTRY_COMPARE(f.panel()->activeProjectId(), projectId);
-        QCOMPARE(child<QLineEdit>(f.panel(), "tbFile")->text(), QString("tb_manual.sv"));
+        child<QAction>(f.panel(),"chooseTb")->trigger();QVERIFY(chose);
+        QCOMPARE(f.panel()->controller()->target().file,QString("tb_manual.sv"));
+        QCOMPARE(f.panel()->controller()->target().top,QString("tb_manual"));
+        child<QAction>(f.panel(),"openTb")->trigger();QCOMPARE(tabs->getCurrentEditor()->toPlainText(),saved);
+        QVERIFY(f.sessions()->saveSession(false));QVERIFY(f.sessions()->openWorkspace(f.other));QVERIFY(f.sessions()->openWorkspace(f.workspace));
+        QCOMPARE(f.panel()->controller()->target().file,QString("tb_manual.sv"));
         QCOMPARE(read(file), saved.toUtf8()); QVERIFY(!original.isEmpty());
         QCOMPARE(QDir(f.workspace).entryList({"*.sv", "*.v"}, QDir::Files), files);
         noCreationControls();
     }
-    void liveQuestaStartStopFailureRecovery() {
-        const auto executable = qEnvironmentVariable("SIMDOCK_TEST_QUESTA");
-        QVERIFY2(QFileInfo::exists(executable), "Real Questa is required for this test.");
-        const auto output = qEnvironmentVariable("ZEROSLACK_SIMULATION_UI_REPORT");
-        QString allLog;
-        Host f; QVERIFY(f.open()); ready(f); QVERIFY(f.simulation()); f.panel()->setSimulator(executable); f.runLog();
-        auto* session = f.panel()->findChild<simdock::QuestaSession*>(); QVERIFY(session);
-        QSignalSpy finished(session, &simdock::QuestaSession::finished);
-        connect(session, &simdock::QuestaSession::logText, this, [&](const QString& text) {
-            allLog += text;
-            if (!output.isEmpty()) put(QDir(output).filePath("questa-all-runs.log"), allLog.toUtf8());
-        });
-        const auto preserveRun = [&](const QString& phase) {
-            if (output.isEmpty()) return true;
-            const QDir destination(QDir(output).filePath(phase));
-            if (!put(destination.filePath("host.log"), f.log()->toPlainText().toUtf8())) return false;
-            for (const auto& name : {"run.do", "modelsim.ini", "transcript.log"}) {
-                const auto path = QDir(session->lastRunDirectory()).filePath(QLatin1String(name));
-                if (!QFileInfo::exists(path) || !put(destination.filePath(QLatin1String(name)), read(path))) return false;
-            }
-            return put(destination.filePath("identity.json"), QJsonDocument(QJsonObject{
-                {"runDirectory", session->lastRunDirectory()}, {"processId", session->processId()},
-                {"alive", session->alive()}, {"busy", session->busy()}, {"canClose", f.view()->canClose()}}).toJson());
+    void logLocationsNavigateWithoutOpeningOutsideWorkspace() {
+        Host f; QVERIFY(f.open()); ready(f); f.runLog();
+        const auto source = f.workspace + "/rtl with spaces/failure.sv";
+        QVERIFY(put(source, "module failure;\nlogic flag;\nendmodule\n"));
+        const auto outside = f.data.filePath("outside.sv");
+        QVERIFY(put(outside, "module outside; endmodule\n"));
+        QSignalSpy located(f.panel(), &simdock::Workbench::openSourceRequested);
+        const auto probe = [&](const QString& text) {
+            f.panel()->controller()->clearLog(); f.panel()->controller()->appendLog(text + '\n');
+            QTRY_VERIFY(f.log()->toPlainText().contains(text));
+            f.log()->moveCursor(QTextCursor::Start);
+            QTest::mouseDClick(f.log()->viewport(), Qt::LeftButton, {}, f.log()->cursorRect().center());
         };
-        click(f.panel(), "startSimulation");
-        QTRY_VERIFY_WITH_TIMEOUT(session->alive(), 20000);
-        QTRY_VERIFY2_WITH_TIMEOUT(!finished.isEmpty(), qPrintable(allLog), 130000);
-        QVERIFY2(finished.takeFirst()[0].toBool(), qPrintable(allLog));
-        QVERIFY(f.view()->canClose());
-        QVERIFY(preserveRun("first-success"));
-        click(f.panel(), "stopSimulation"); QTRY_VERIFY_WITH_TIMEOUT(!session->alive(), 10000);
-        QVERIFY(f.view()->canClose());
-        child<QLineEdit>(f.panel(), "tbTop")->setText("missing_tb_top");
-        QMetaObject::invokeMethod(child<QLineEdit>(f.panel(), "tbTop"), "editingFinished");
-        click(f.window.get(), "clearLog"); click(f.panel(), "startSimulation");
-        QTRY_VERIFY2_WITH_TIMEOUT(!finished.isEmpty(), qPrintable(allLog), 130000);
-        QVERIFY2(!finished.takeFirst()[0].toBool(), qPrintable(allLog));
-        QVERIFY2(allLog.contains("missing_tb_top") && allLog.contains("Questa could not load the testbench"), qPrintable(allLog));
-        QVERIFY(session->alive()); QVERIFY(f.view()->canClose());
-        QVERIFY(preserveRun("invalid-top"));
-        click(f.panel(), "stopSimulation"); QTRY_VERIFY_WITH_TIMEOUT(!session->alive(), 10000);
-        QVERIFY(f.view()->canClose());
-        child<QLineEdit>(f.panel(), "tbTop")->setText("tb_manual"); QMetaObject::invokeMethod(child<QLineEdit>(f.panel(), "tbTop"), "editingFinished");
-        click(f.window.get(), "clearLog"); click(f.panel(), "startSimulation");
-        QTRY_VERIFY2_WITH_TIMEOUT(!finished.isEmpty(), qPrintable(allLog), 130000);
-        QVERIFY2(finished.takeFirst()[0].toBool(), qPrintable(allLog));
-        QVERIFY2(!allLog.contains("Could not publish Questa state"), qPrintable(allLog));
-        QVERIFY(f.view()->canClose());
-        QVERIFY(preserveRun("corrected-top"));
-        if (!output.isEmpty()) QVERIFY(put(QDir(output).filePath("questa-host.log"), f.log()->toPlainText().toUtf8()));
-        const auto lastRun = session->lastRunDirectory();
-        QVERIFY(f.sessions()->openWorkspace(f.other));
-        QTRY_VERIFY_WITH_TIMEOUT(!session->alive(), 10000);
-        QVERIFY(!QFileInfo::exists(lastRun));
-        QVERIFY(f.view()->canClose());
-        QVERIFY(f.window->close());
+        probe("# ** Error: " + source + "(2): expected declaration");
+        QTRY_COMPARE(located.size(), 1); QCOMPARE(located.last()[1].toInt(), 2);
+        QCOMPARE(f.window->tabManager->getCurrentEditor()->documentFileName(), source);
+        QCOMPARE(f.window->tabManager->getCurrentEditor()->textCursor().blockNumber(), 1);
+        probe("rtl with spaces/failure.sv:3: expected endmodule");
+        QTRY_COMPARE(located.size(), 2); QCOMPARE(located.last()[1].toInt(), 3);
+        probe("# ** Error: " + outside + "(1): external log text");
+        QCOMPARE(located.size(), 2);
+    }
+    void runWaitsForDiscoveryAndSupportsCancellation() {
+        Host f; QVERIFY(f.open()); ready(f);
+        auto* controller = f.panel()->controller();
+        auto* runner = f.window->simulationRunCoordinator();
+        QVERIFY(f.window->tabManager->openFileInTab(f.workspace + "/tb_manual.sv"));
+        QVERIFY(controller->clearTarget().isEmpty());
+        f.panel()->setSimulator(f.data.filePath("missing-vsim.exe"));
+        f.window->workspaceManager->refreshWorkspaceFiles();
+        QVERIFY(f.window->workspaceManager->isWorkspaceScanActive());
+        QSignalSpy finished(controller, &simdock::WorkspaceSimulationController::finished);
+        QVERIFY(runner->run().isEmpty());
+        QVERIFY(controller->preparing());
+        QCOMPARE(controller->target().top, QString("tb_manual"));
+        QVERIFY(!f.sessions()->openWorkspace(f.other));
+        controller->stop();
+        QCOMPARE(finished.size(), 1);
+        QCOMPARE(finished.takeFirst()[1].toString(), QString("Preparation cancelled"));
+        ready(f); QTest::qWait(80);
+        QVERIFY(finished.isEmpty()); QVERIFY(!controller->session()->alive());
+        f.window->workspaceManager->refreshWorkspaceFiles();
+        QVERIFY(runner->run().isEmpty());
+        QTRY_COMPARE_WITH_TIMEOUT(finished.size(), 1, 15000);
+        QVERIFY(!finished.first()[0].toBool());
+        QVERIFY2(finished.first()[1].toString().contains("vsim", Qt::CaseInsensitive), qPrintable(finished.first()[1].toString()));
+        QVERIFY(!finished.first()[1].toString().contains("discovery"));
+    }
+    void participatingDocumentSavesAndRevisionChecks() {
+        Host f;
+        QVERIFY(put(f.workspace+"/defs.svh","localparam bit MASK=1;\n"));
+        QVERIFY(put(f.workspace+"/dut.sv","module dut(input logic clk,rst,output logic q);\n`include \"defs.svh\"\nassign q=clk & ~rst & MASK;endmodule\n"));
+        QVERIFY(f.open());ready(f);auto* tabs=f.window->tabManager.get();auto* runner=f.window->simulationRunCoordinator();QVERIFY(runner);
+        QHash<QString,MyCodeEditor*> editors;
+        for(const auto* name:{"dut.sv","defs.svh","tb_manual.sv","extra.sv"}){
+            QVERIFY(tabs->openFileInTab(f.workspace+"/"+name));auto* editor=tabs->getCurrentEditor();editors.insert(name,editor);
+            auto cursor=editor->textCursor();cursor.movePosition(QTextCursor::End);cursor.insertText("// unsaved "+QString(name)+"\n");
+        }
+        const auto unrelatedDisk=read(f.workspace+"/extra.sv");
+        QString error;auto request=runner->capture(f.panel()->controller()->target(),&error);
+        QVERIFY2(error.isEmpty(),qPrintable(error));QCOMPARE(request.overrides.size(),4);
+        const auto plan=simdock::SimulationBuildPlanner::plan(request);QVERIFY2(plan->valid(),qPrintable(plan->error()));
+        QVERIFY(plan->participatingFiles.contains(SemanticInputCapture::pathKey(f.workspace+"/defs.svh")));
+        QVERIFY(!plan->participatingFiles.contains(SemanticInputCapture::pathKey(f.workspace+"/extra.sv")));
+        const auto saved=runner->saveInputs()(*plan,request);QVERIFY2(saved.isEmpty(),qPrintable(saved));
+        for(const auto* name:{"dut.sv","defs.svh","tb_manual.sv"}){
+            QVERIFY(!editors[name]->document()->isModified());QCOMPARE(read(f.workspace+"/"+name),editors[name]->toPlainText().toUtf8());
+        }
+        QVERIFY(editors["extra.sv"]->document()->isModified());QCOMPARE(read(f.workspace+"/extra.sv"),unrelatedDisk);
+        QVERIFY(request.refreshCatalog);QVERIFY(request.overrides.contains(SemanticInputCapture::pathKey(f.workspace+"/extra.sv")));
+        ready(f);request=runner->capture(f.panel()->controller()->target(),&error);QVERIFY(error.isEmpty());
+        QVERIFY(runner->checkCurrent()(request).isEmpty());
+        QVERIFY(tabs->openFileInTab(f.workspace+"/dut.sv"));QVERIFY(tabs->splitCurrentView(EditorSplitDirection::Right));
+        QVERIFY(runner->checkCurrent()(request).isEmpty()); // another view preserves document identity
+        auto* duplicate=tabs->getCurrentEditor();auto cursor=duplicate->textCursor();cursor.movePosition(QTextCursor::End);cursor.insertText("// newer\n");
+        QVERIFY(!runner->checkCurrent()(request).isEmpty());
+        auto newer=runner->capture(f.panel()->controller()->target(),&error);QVERIFY(error.isEmpty());
+        const auto newerPlan=simdock::SimulationBuildPlanner::plan(newer);QVERIFY(newerPlan->valid());
+        tabs->sharedDocumentForEditor(duplicate)->setReadOnly(true);
+        const auto denied=runner->saveInputs()(*newerPlan,newer);QVERIFY2(denied.contains("read-only"),qPrintable(denied));
+        QVERIFY(!f.panel()->controller()->session()->alive());QVERIFY(duplicate->document()->isModified());
+        tabs->sharedDocumentForEditor(duplicate)->setReadOnly(false);
+    }
+    void participatingSaveConflictBlocksRun() {
+        Host f;QVERIFY(f.open());ready(f);auto* tabs=f.window->tabManager.get();auto* runner=f.window->simulationRunCoordinator();
+        const auto file=f.workspace+"/tb_manual.sv";QVERIFY(tabs->openFileInTab(file));auto* editor=tabs->getCurrentEditor();
+        auto cursor=editor->textCursor();cursor.movePosition(QTextCursor::End);cursor.insertText("// local modification\n");
+        QString error;auto request=runner->capture(f.panel()->controller()->target(),&error);QVERIFY(error.isEmpty());
+        const auto plan=simdock::SimulationBuildPlanner::plan(request);QVERIFY(plan->valid());
+        const auto external=read(file)+"// external modification\n";QVERIFY(put(file,external));
+        QSignalSpy failure(tabs,&TabManager::fileSaveFailed);
+        const auto issue=runner->saveInputs()(*plan,request);QVERIFY2(!issue.isEmpty(),qPrintable(issue));
+        QVERIFY(!failure.isEmpty());QCOMPARE(read(file),external);QVERIFY(editor->document()->isModified());
+        QVERIFY(!f.panel()->controller()->session()->alive());
+    }
+    void automationSharesTbPlanningContract() {
+        Host f;QVERIFY(f.open());ready(f);
+        ZeroSlackAutomationService gui(f.window.get()),headless;
+        QJsonObject request{{"command","simulation.validate"},{"workspace",f.workspace},{"tb","tb_manual.sv"},{"top","tb_manual"}};
+        const auto a=gui.execute(request),b=headless.execute(request);
+        QVERIFY2(a.value("ok").toBool(),QJsonDocument(a).toJson().constData());QVERIFY2(b.value("ok").toBool(),QJsonDocument(b).toJson().constData());
+        QCOMPARE(a.value("data"),b.value("data"));QCOMPARE(a.value("data").toObject().value("compilationOrder").toArray().size(),2);
+        const auto before=simdock::projectJson(f.saved());
+        auto legacy=request;legacy.remove("tb");legacy.remove("top");legacy["projectId"]=f.project.id;
+        const auto mapped=headless.execute(legacy);QVERIFY(mapped.value("ok").toBool());QCOMPARE(mapped.value("data"),b.value("data"));
+        auto mixed=request;mixed["projectId"]=f.project.id;
+        QCOMPARE(headless.execute(mixed).value("error").toObject().value("code").toString(),QString("invalid_target"));
+        auto missing=request;missing.remove("top");
+        QCOMPARE(headless.execute(missing).value("error").toObject().value("code").toString(),QString("invalid_target"));
+        for(const auto* key:{"durationNs","timeoutMs","sources"}){
+            auto retired=request;retired[key]=key==QString("sources")?QJsonValue(QJsonArray{"dut.sv"}):QJsonValue(1);
+            QCOMPARE(gui.execute(retired).value("error").toObject().value("code").toString(),QString("retired_parameter"));
+        }
+        auto retired=request;retired["command"]="simulation.put";
+        QCOMPARE(headless.execute(retired).value("error").toObject().value("code").toString(),QString("retired_operation"));
+        QCOMPARE(simdock::projectJson(f.saved()),before);
+        QCOMPARE(ZeroSlackAutomationService::capabilities().value("data").toObject().value("simulationContract").toObject().value("version").toInt(),2);
+        auto* tabs=f.window->tabManager.get();QVERIFY(tabs->openFileInTab(f.workspace+"/tb_manual.sv"));
+        auto* editor=tabs->getCurrentEditor();editor->setPlainText("module tb_manual; missing_impl d(); endmodule\n");editor->document()->setModified(true);
+        const auto dirty=gui.execute(request);QVERIFY(!dirty.value("ok").toBool());QVERIFY(dirty.value("error").toObject().value("message").toString().contains("missing_impl"));
+        QVERIFY(headless.execute(request).value("ok").toBool()); // validation never saves or silently substitutes disk for GUI overlays
+        QCOMPARE(simdock::projectJson(f.saved()),before);
+    }
+    void liveQuestaStartStopFailureRecovery() {
+        const auto executable=qEnvironmentVariable("SIMDOCK_TEST_QUESTA"); QVERIFY2(QFileInfo::exists(executable),"Real Questa is required.");
+        Host f; QVERIFY(f.open());ready(f);f.panel()->setSimulator(executable);f.runLog();
+        auto* controller=f.panel()->controller();auto* session=controller->session();session->setInteractive(false);
+        const auto retainRunLog=qScopeGuard([&] {
+            const auto output=qEnvironmentVariable("ZEROSLACK_SIMULATION_UI_REPORT");
+            if(!output.isEmpty()) put(QDir(output).filePath("questa-mainwindow.log"),f.log()->toPlainText().toUtf8());
+        });
+        QSignalSpy finished(controller,&simdock::WorkspaceSimulationController::finished);
+        QVERIFY(f.window->tabManager->openFileInTab(f.workspace+"/tb_manual.sv"));
+        QVERIFY(controller->clearTarget().isEmpty());
+        f.window->workspaceManager->refreshWorkspaceFiles();
+        click(f.panel(),"startSimulation");QTRY_VERIFY_WITH_TIMEOUT(!finished.isEmpty(),30000);
+        QVERIFY2(finished.takeFirst()[0].toBool(),qPrintable(f.log()->toPlainText()));QCOMPARE(session->outcome(),QString("finished"));
+        const auto pid=session->processId(); const auto first=session->lastRunDirectory();
+        click(f.panel(),"startSimulation");QTRY_VERIFY_WITH_TIMEOUT(!finished.isEmpty(),30000);
+        QVERIFY(finished.takeFirst()[0].toBool());QCOMPARE(session->processId(),pid);QVERIFY(!QFileInfo::exists(first));
+        QVERIFY(put(f.workspace+"/dut.sv","module dut; syntax broken @@@; endmodule\n"));
+        click(f.panel(),"startSimulation");QTRY_VERIFY_WITH_TIMEOUT(!finished.isEmpty(),30000);
+        QVERIFY(!finished.takeFirst()[0].toBool()); QVERIFY(f.log()->toPlainText().contains("dut"));
+        QVERIFY(put(f.workspace+"/dut.sv","module dut(input logic clk,rst,output logic q);assign q=clk & ~rst;endmodule\n"));
+        auto* editor=f.window->tabManager->getCurrentEditor();QVERIFY(editor);
+        editor->setPlainText("module tb_manual;logic clk=0,rst=0,q;dut d(.*);always #5 clk=~clk;endmodule\n");
+        editor->document()->setModified(true);
+        click(f.panel(),"startSimulation");QTRY_VERIFY2_WITH_TIMEOUT(session->busy()&&controller->state()=="Running",qPrintable(controller->state()+"\n"+f.log()->toPlainText()),30000);
+        QVERIFY(!editor->document()->isModified());QCOMPARE(read(f.workspace+"/tb_manual.sv"),editor->toPlainText().toUtf8());
+        f.panel()->hide();QTest::qWait(100);QVERIFY(session->busy());f.panel()->show();
+        QVERIFY(!f.sessions()->openWorkspace(f.other)); const auto owned=QFileInfo(session->lastRunDirectory()).absolutePath();
+        click(f.panel(),"stopSimulation");QTRY_VERIFY_WITH_TIMEOUT(!session->alive(),10000);
+        QCOMPARE(session->outcome(),QString("cancelled"));QVERIFY(!QFileInfo::exists(owned));QVERIFY(f.sessions()->openWorkspace(f.other));
     }
 };
 

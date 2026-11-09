@@ -4,6 +4,7 @@
 #include "zeroslackexport.h"
 
 #include <QWidget>
+#include <QPointer>
 #include <QAbstractButton>
 #include <QTabWidget>
 #include <QTreeWidget>
@@ -23,6 +24,8 @@
 #include "workspaceconfigurationservice.h"
 #include "designcandidates.h"
 
+class EditorSplitController;
+
 class ZEROSLACK_API NavigationWidget : public QWidget
 {
     Q_OBJECT
@@ -30,8 +33,7 @@ class ZEROSLACK_API NavigationWidget : public QWidget
 public:
     enum NavigationTab {
         FileTab = 0,
-        DesignTab = 1,
-        SourceFilesTab = 2
+        DesignTab = 1
     };
     enum FileTreeItemKind {
         PlaceholderItem = 0,
@@ -46,9 +48,9 @@ public:
     explicit NavigationWidget(QWidget *parent = nullptr);
     ~NavigationWidget();
 
-    void setActiveTab(NavigationTab tab);
+    void attachPageRegistry(EditorSplitController* registry);
+    void setActiveTab(NavigationTab tab, bool activate = true);
     int activeTab() const;
-    void setSourceFilesWidget(QWidget* widget);
     void focusSearch();
     QString searchFilter(NavigationTab tab) const;
     void setSearchFilter(NavigationTab tab, const QString& filter);
@@ -69,6 +71,7 @@ public:
         const QList<WorkspaceVirtualSourceGroup>& groups);
     void updateDesignHierarchy(const DesignHierarchyReport& report);
     void clearDesignHierarchy();
+    void setDesignProjectExpanded(const QString& projectId, bool expanded);
     bool selectDesignInstance(const QString& instancePath,bool reveal=false);
     bool selectDesignModule(const QString& module,const QString& definitionFile={});
     void updateDesignSummary(const DesignHierarchyReport& report, bool structureChanged = true);
@@ -86,6 +89,7 @@ public:
     int iconCacheEntryCountForTest() const;
 
 signals:
+    void documentActionRequested(const QString& action);
     void fileDoubleClicked(const QString& filePath);
     void fileContextMenuRequested(const QString& filePath, const QPoint& globalPos);
     void fileTreeNodeContextMenuRequested(
@@ -108,7 +112,7 @@ protected:
 
 private slots:
     void onTabChanged(int index);
-    void onSearchTextChanged(const QString& text);
+    void onSearchTextChanged(int index, const QString& text);
     void processFileTreePopulationChunk();
     void onFileTreeDoubleClicked(QTreeWidgetItem* item, int column);
     void onDesignTreeDoubleClicked(QTreeWidgetItem* item, int column);
@@ -120,6 +124,8 @@ private:
     QVBoxLayout* mainLayout = nullptr;
     QTabWidget* tabWidget = nullptr;
     QLineEdit* searchLineEdit = nullptr;
+    QLineEdit* designSearchLineEdit = nullptr;
+    QPointer<EditorSplitController> pageRegistry;
 
     QWidget* fileTab = nullptr;
     QTreeWidget* fileTreeWidget = nullptr;
@@ -143,6 +149,7 @@ private:
     bool designScanning = false;
     bool designAnalysisPending = false;
     int savedDesignScroll = 0;
+    int lastActiveNavigationTab = FileTab;
     QString savedDesignSelection;
 
     QStringList currentFileList;

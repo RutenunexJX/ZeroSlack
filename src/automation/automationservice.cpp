@@ -2,6 +2,8 @@
 #include "mainwindow.h"
 #include "mycodeeditor.h"
 #include "tabmanager.h"
+#include "webdocumentpage.h"
+#include "pdfdocumentpage.h"
 #include "shareddocument.h"
 #include "documenttemplatemodel.h"
 #include "usertemplateservice.h"
@@ -19,6 +21,7 @@
 #include "../simulation/simdock/core/ownedpaths.h"
 #include "../simulation/simdock/core/questasession.h"
 #include "../simulation/simdock/ui/workbench.h"
+#include "../simulation/simdock/ui/simulationruncoordinator.h"
 #include <zeroslack/documents/documentfileread.h>
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -165,16 +168,24 @@ QJsonObject ZeroSlackAutomationService::capabilities() {
         "capabilities", "session.describe", "support.install", "templates.examples", "templates.list", "templates.get", "templates.validate", "templates.put", "templates.delete",
         "document.inspect", "document.open", "document.insert", "document.input", "document.candidates", "document.format",
         "document.save", "document.undo", "document.redo",
-        "simulation.projects", "simulation.project", "simulation.open", "simulation.put", "simulation.validate",
+        "simulation.projects", "simulation.project", "simulation.open", "simulation.validate",
         "simulation.run", "simulation.status", "simulation.events", "simulation.cancel", "simulation.clear"}},
         {"coordinates", "UTF-16 offsets; start inclusive, length in code units; all paths relative to explicit workspace"},
         {"writeContract", "expectedRevision required; dryRun previews. Online edits adopt memory only; document.save requires expectedDiskRevision. Active template editing returns conflict."},
-        {"sourceContract", "sources is an ordered array, or projectId selects saved Build inputs; open document contents are used in an explicit GUI session"},
+        {"sourceContract", "Template sources are ordered. Simulation uses explicit tb + top and derives inputs; legacy projectId maps a saved TB only."},
+        {"documentContract", QJsonObject{{"version", 1}, {"kind", "text/code buffers and template metadata"},
+            {"unsupported", QJsonArray{"markdown", "blocks", "pdf"}},
+            {"viewRegions", QJsonArray{"main", "left", "right", "bottom"}}}},
+        {"simulationContract", QJsonObject{{"version", 2}, {"termination", "TB-controlled; preparation timeout only"},
+            {"retired", QJsonArray{"simulation.put", "sources", "durationNs", "timeoutMs"}},
+            {"savePolicy", "GUI sessions save only participating modified inputs using normal conflict checks; headless sessions use disk."}}},
         {"limits", QJsonObject{{"requestBytes", 1024*1024}, {"documentBytes", 8*1024*1024}, {"sources", 512}, {"retainedEvents", 10000}}}});
 }
 QJsonObject ZeroSlackAutomationService::execute(const QJsonObject& request) {
     const auto command = request.value("command").toString();
-    const QSet<QString> stringFields{"command", "workspace", "file", "scope", "id", "templateId", "parentId", "parentSlot", "instanceId", "slot", "value", "module", "instance", "replaceId", "projectId", "runId", "simulator", "expectedRevision", "expectedDiskRevision", "expectedOutputRevision", "output", "kind"};
+    if (command.startsWith("simulation.") && (request.contains("timeoutMs") || request.contains("durationNs") || request.contains("sources")))
+        return failure("retired_parameter", "Simulation derives its inputs from tb + top and ends under TB control. sources, durationNs and timeoutMs are retired; client waiting does not stop a run.");
+    const QSet<QString> stringFields{"command", "workspace", "file", "tb", "top", "scope", "id", "templateId", "parentId", "parentSlot", "instanceId", "slot", "value", "module", "instance", "replaceId", "projectId", "runId", "simulator", "expectedRevision", "expectedDiskRevision", "expectedOutputRevision", "output", "kind"};
     const QSet<QString> integerFields{"start", "length", "offset", "limit", "timeoutMs"};
     const QSet<QString> arrayFields{"sources", "reuse"};
     const QSet<QString> objectFields{"record", "parameters", "bindings", "project"};
@@ -287,6 +298,8 @@ QJsonObject ZeroSlackAutomationService::document(const QJsonObject& request, con
     const auto file = absolute(root, request.value("file").toString());
     if (request.value("file").toString().isEmpty() || !simdock::plainPathWithin(root, file))
         return failure("invalid_file", "file must identify a plain path within the workspace.");
+    if (WebDocumentPage::supportsFile(file) || PdfDocumentPage::supportsFile(file))
+        return failure("unsupported_document_kind", "document.* operates on text/code buffers. Markdown, block and PDF pages use their GUI document sessions.");
     if (QFileInfo(file).size() > 8*1024*1024) return failure("input_limit", "The document exceeds 8 MiB.");
     MyCodeEditor* editor = nullptr;
     if (window && window->tabManager) {
@@ -451,35 +464,57 @@ QJsonObject ZeroSlackAutomationService::document(const QJsonObject& request, con
     auto result = document(query, root); auto written = result.value("data").toObject(); written.insert("written", true); written.insert("changed", before != after); result.insert("data", written); return result;
 }
 
+namespace {
+QJsonObject simulationPlanObject(const simdock::SimulationBuildPlan& plan)
+{
+    QJsonObject compilation, elaboration;
+    for (auto it = plan.compilation.dependencies.cbegin(); it != plan.compilation.dependencies.cend(); ++it)
+        compilation.insert(it.key(), strings(it.value()));
+    for (auto it = plan.elaborationDependencies.cbegin(); it != plan.elaborationDependencies.cend(); ++it)
+        elaboration.insert(it.key(), it.value());
+    return {{"target", QJsonObject{{"file", plan.target.file}, {"top", plan.target.top}}},
+        {"valid", plan.valid()}, {"compilationOrder", strings(plan.compilation.files)},
+        {"includeDirectories", strings(plan.includeDirectories)}, {"includeOnly", strings(plan.compilation.headers)},
+        {"participatingFiles", strings(plan.participatingFiles)}, {"dependencies", compilation},
+        {"elaborationDependencies", elaboration}, {"diagnostics", strings(plan.compilation.diagnostics)}};
+}
+}
 struct ZeroSlackAutomationService::Run {
-    QString id, workspace, projectId, state = "preparing", message, log;
-    bool done = false, completed = false, cancelled = false;
+    QString id, workspace, projectId, nativeRunDirectory, state = "preparing", message, log, outcome;
+    bool done = false, completed = false, cancelled = false, started = false;
     quint64 rejected = 0, dropped = 0;
     QJsonArray events;
-    std::shared_ptr<std::atomic_bool> cancellation = std::make_shared<std::atomic_bool>(false);
-    std::unique_ptr<simdock::QuestaSession> session;
+    QJsonObject plan, target;
+    std::unique_ptr<QObject> observer = std::make_unique<QObject>();
+    std::unique_ptr<simdock::WorkspaceSimulationController> ownedController;
+    QPointer<simdock::WorkspaceSimulationController> controller;
+    ~Run() { observer.reset(); if (ownedController) ownedController->shutdown(); }
     QJsonObject json() const {
-        return {{"id", id}, {"workspace", workspace}, {"projectId", projectId}, {"state", state},
-            {"done", done}, {"completed", completed}, {"cancelled", cancelled}, {"message", message},
-            {"log", log}, {"eventCount", events.size()}, {"rejectedRecords", double(rejected)},
-            {"droppedEvents", double(dropped)}, {"processAlive", session && session->alive()}};
+        return {{"id", id}, {"workspace", workspace}, {"projectId", projectId}, {"target", target}, {"plan", plan},
+            {"state", state}, {"done", done}, {"completed", completed}, {"cancelled", cancelled}, {"message", message},
+            {"outcome", outcome}, {"log", log}, {"eventCount", events.size()}, {"rejectedRecords", double(rejected)},
+            {"droppedEvents", double(dropped)}, {"processAlive", controller && !nativeRunDirectory.isEmpty()
+                && controller->session()->lastRunDirectory() == nativeRunDirectory && controller->session()->alive()}};
     }
 };
 ZeroSlackAutomationService::ZeroSlackAutomationService(MainWindow* owner, QObject* parent) : QObject(parent), window(owner) {}
-ZeroSlackAutomationService::~ZeroSlackAutomationService() { if (run) run->cancellation->store(true); }
+ZeroSlackAutomationService::~ZeroSlackAutomationService() = default;
 
-QJsonObject ZeroSlackAutomationService::simulation(const QJsonObject& request, const QString& root) {
+QJsonObject ZeroSlackAutomationService::simulation(const QJsonObject& request, const QString& root)
+{
     const auto command = request.value("command").toString();
+    if (command == "simulation.put") return failure("retired_operation",
+        "Simulation projects and manual source lists are retired. Use tb + top; saved projects remain readable.");
     if (command == "simulation.status" || command == "simulation.events" || command == "simulation.cancel" || command == "simulation.clear") {
         if (!run || run->workspace != root || request.value("runId").toString() != run->id)
             return failure("not_found", "Unknown runId in this session and workspace.");
         if (command == "simulation.clear") {
-            if (!run->done || (run->session && run->session->alive())) return failure("busy", "Wait for process cleanup before clearing the completed run.");
+            if (!run->done) return failure("busy", "Finish or cancel the retained run before clearing its result.");
             run.reset(); return success({{"cleared", true}});
         }
         if (command == "simulation.cancel" && !run->done) {
-            run->cancelled = true; run->cancellation->store(true); run->state = "cancelling";
-            if (run->session) run->session->stop();
+            run->cancelled = true; run->state = "cancelling";
+            if (run->controller) run->controller->stop();
         }
         auto data = run->json();
         if (command == "simulation.events") {
@@ -491,134 +526,137 @@ QJsonObject ZeroSlackAutomationService::simulation(const QJsonObject& request, c
         }
         return success(data);
     }
-    QStringList errors;
-    const auto projects = simdock::loadProjects(root, &errors, false);
+    QStringList errors; QSet<QString> ambiguous;
+    const auto projects = simdock::loadProjects(root, &errors, false, &ambiguous);
     if (command == "simulation.projects") {
         QJsonArray items; for (const auto& project : projects) items << projectObject(project);
-        return success({{"projects", items}, {"diagnostics", strings(errors)}});
+        return success({{"projects", items}, {"diagnostics", strings(errors)}, {"readOnlyCompatibility", true}});
     }
     const auto id = request.value("projectId").toString();
-    simdock::Project project;
-    bool found = false;
-    for (const auto& p : projects) if (p.id == id) { project = p; found = true; break; }
-    if (command == "simulation.put") {
-        const auto revision = found ? projectRevision(project) : QStringLiteral("missing");
-        if ((!found && !id.isEmpty()) || request.value("expectedRevision").toString() != revision)
-            return failure("revision_conflict", "Select an existing projectId and revision, or omit projectId and use missing to create.");
-        if (!request.value("project").isObject()) return failure("invalid_project", "project must be an object.");
-        const auto original = project;
-        const auto patch = request.value("project").toObject();
-        const QSet<QString> fields{"name", "sources", "includeDirectories", "designTopFile", "designTopModule", "dutFile", "dutName", "tbFile", "tbName", "durationNs"};
-        for (auto it = patch.begin(); it != patch.end(); ++it) if (!fields.contains(it.key())) return failure("invalid_project", "Unknown or retired project field: " + it.key());
-        for (auto it = patch.begin(); it != patch.end(); ++it) {
-            if (it.key() == "sources" || it.key() == "includeDirectories") {
-                if (!it.value().isArray()) return failure("invalid_project", "Build inputs must be arrays of paths.");
-                for (const auto& value : it.value().toArray()) if (!value.isString() || value.toString().isEmpty()) return failure("invalid_project", "Build input paths must be nonempty strings.");
-            } else if (it.key() == "durationNs") {
-                if (!it.value().isDouble() || it.value().toDouble() != double(it.value().toInteger(-1))) return failure("invalid_project", "durationNs must be an integer.");
-            } else if (!it.value().isString()) return failure("invalid_project", "Project text fields must be strings.");
-        }
-        if (!found) project = simdock::newProject(patch.value("name").toString());
-        if (patch.contains("name")) project.name = patch.value("name").toString();
-        if (patch.contains("sources")) project.sources = stringList(patch.value("sources"));
-        if (patch.contains("includeDirectories")) project.includeDirectories = stringList(patch.value("includeDirectories"));
-        if (patch.contains("designTopFile")) project.designTopFile = patch.value("designTopFile").toString();
-        if (patch.contains("designTopModule")) project.designTopModule = patch.value("designTopModule").toString();
-        if (patch.contains("dutFile")) project.dutFile = patch.value("dutFile").toString();
-        if (patch.contains("dutName")) project.dutName = patch.value("dutName").toString();
-        if (patch.contains("tbFile")) project.tbFile = patch.value("tbFile").toString();
-        if (patch.contains("tbName")) project.tbName = patch.value("tbName").toString();
-        if (patch.contains("durationNs")) project.durationNs = patch.value("durationNs").toInteger(-1);
-        const auto relative = [&](const QString& path) {
-            return QDir::isAbsolutePath(path) ? QDir(root).relativeFilePath(path) : QDir::fromNativeSeparators(path);
-        };
-        for (auto& path : project.sources) path = relative(path);
-        for (auto& path : project.includeDirectories) path = relative(path);
-        project.dutFile = relative(project.dutFile); project.tbFile = relative(project.tbFile);
-        project.designTopFile = relative(project.designTopFile);
-        QString issue = simdock::validateProject(root, project);
-        if (issue.isEmpty()) issue = simdock::validateStorageName(project.name);
-        auto* workbench = window ? window->simulationWorkbench() : nullptr;
-        const bool adopt = workbench && EditorFileIdentity::same(workbench->workspace(), root);
-        if (issue.isEmpty() && adopt) issue = workbench->automationProjectWriteIssue(found ? &original : nullptr);
-        if (!issue.isEmpty()) return failure("project_conflict", issue);
-        const auto plan = simdock::planBuildInputs(root, project);
-        if (plan.order.valid()) plan.apply(project, root);
-        if (request.value("dryRun").toBool()) return success({{"project", simdock::projectJson(project)}, {"preview", true}, {"written", false}, {"adopted", false}, {"buildDiagnostics", strings(plan.order.diagnostics)}});
-        if (!simdock::saveProject(root, project, &issue)) return failure("write_conflict", issue);
-        if (adopt) workbench->adoptAutomationProject(project);
-        return success({{"project", projectObject(project)}, {"written", true}, {"adopted", adopt}, {"diagnostic", issue},
-            {"buildDiagnostics", strings(plan.order.diagnostics)}, {"viewLocated", false}});
-    }
-    if (!found) return failure("not_found", "Unknown projectId; no implicit active-project selection is performed.");
-    if (command == "simulation.open") {
-        if (!window) return failure("session_required", "A GUI session is required for workbench adoption and view positioning.");
-        if (window->tabManager && window->tabManager->hasUnsavedChanges()) return failure("dirty_documents", "Save or resolve open documents before changing the workbench workspace.");
-        QString error;
-        if (!window->openSimDockTarget(root, id, &error)) return failure("open_failed", error);
-        return success({{"project", projectObject(project)}, {"adopted", true}, {"viewLocated", true}, {"written", false}});
-    }
+    simdock::Project project; bool found = false;
+    if (ambiguous.contains(id)) return failure("ambiguous_project", "The legacy project identity resolves to multiple records.");
+    for (const auto& p : projects) if (!id.isEmpty() && p.id == id) { project = p; found = true; break; }
+    if (!id.isEmpty() && !found) return failure("not_found", "Unknown legacy projectId.");
     if (command == "simulation.project") {
-        auto* workbench = window ? window->simulationWorkbench() : nullptr;
-        const auto memory = workbench && EditorFileIdentity::same(workbench->workspace(), root)
-            ? workbench->automationProjectState(project) : QJsonObject{{"present", false}, {"matchesDisk", false}};
-        return success({{"project", projectObject(project)}, {"origin", "disk"}, {"workbench", memory},
-            {"adopted", memory.value("matchesDisk").toBool()}, {"viewLocated", false}});
+        if (!found) return failure("not_found", "An explicit legacy projectId is required.");
+        return success({{"project", projectObject(project)}, {"origin", "disk"}, {"readOnlyCompatibility", true}});
     }
-    if (command == "simulation.validate") {
-        simdock::BuildInputPlan plan;
-        const auto issue = simdock::validateInputs(root, project, nullptr, nullptr, {}, &plan);
-        QJsonObject dependencies;
-        for (auto it = plan.order.dependencies.cbegin(); it != plan.order.dependencies.cend(); ++it) dependencies.insert(it.key(), strings(it.value()));
-        const QJsonObject data{{"project", projectObject(project)}, {"valid", issue.isEmpty()}, {"compilationOrder", strings(plan.order.files)},
-            {"includeOnly", strings(plan.order.headers)}, {"dependencies", dependencies}, {"diagnostics", strings(plan.order.diagnostics)}};
-        return issue.isEmpty() ? success(data) : failure("invalid_inputs", issue, data);
-    }
-    if (command != "simulation.run") return failure("unknown_command", "Unknown simulation operation.");
-    if (request.value("expectedRevision").toString() != projectRevision(project)) return failure("revision_conflict", "Read the project revision before starting a run.");
-    if (run) return failure("run_retained", "Query or cancel the current run, then clear it before starting another.", run->json());
-    if (window && window->tabManager && window->tabManager->workspaceHasUnsavedChanges(root))
-        return failure("dirty_inputs", "Save or resolve the selected workspace's open documents before compiling disk inputs.");
-    const auto executable = request.value("simulator").toString();
-    const auto issue = simdock::simulatorError(executable);
-    if (!issue.isEmpty()) return failure("invalid_simulator", issue);
-    const int timeout = request.value("timeoutMs").toInt(120000);
-    if (timeout < 100 || timeout > 3600000) return failure("invalid_timeout", "timeoutMs must be between 100 and 3600000.");
-    run = std::make_unique<Run>();
-    run->id = QUuid::createUuid().toString(QUuid::WithoutBraces); run->workspace = root; run->projectId = id;
-    const auto runId = run->id;
-    const auto cancellation = run->cancellation;
-    auto* watcher = new QFutureWatcher<simdock::PreparedRun>(this);
-    connect(watcher, &QFutureWatcher<simdock::PreparedRun>::finished, this, [this, watcher, runId, timeout] {
-        const auto prepared = watcher->result(); watcher->deleteLater();
-        if (!run || run->id != runId) return;
-        if (run->cancellation->load() || !prepared.error.isEmpty()) {
-            run->done = true; run->state = run->cancelled ? "cancelled" : "failed"; run->message = prepared.error; return;
-        }
-        run->session = std::make_unique<simdock::QuestaSession>();
-        auto* session = run->session.get(); session->setInteractive(false); session->setWallTimeout(timeout);
-        connect(session, &simdock::QuestaSession::stateChanged, this, [this](const QString& state) { if (run && !run->done) run->state = state; });
-        connect(session, &simdock::QuestaSession::logText, this, [this](const QString& log) { if (run) { run->log += log; if (run->log.size() > 1024*1024) run->log = run->log.right(1024*1024); } });
-        connect(session, &simdock::QuestaSession::eventRecordsRejected, this, [this](quint64 count) { if (run) run->rejected = count; });
-        connect(session, &simdock::QuestaSession::eventsReady, this, [this](const QList<simdock::SimulationEvent>& events) {
-            if (!run) return;
-            for (const auto& event : events) {
-                if (run->events.size() >= 10000) { ++run->dropped; continue; }
-                QJsonArray values; for (const auto& value : event.values) values << QJsonObject::fromVariantMap(value);
-                run->events << QJsonObject{{"runId", run->id}, {"simulatorRunId", event.runId}, {"timePs", event.timePs},
-                    {"level", event.level}, {"tag", event.tag}, {"instance", event.instance}, {"sourceFile", event.sourceFile},
-                    {"sourceLine", event.sourceLine}, {"message", event.message}, {"values", values}};
-            }
-        });
-        connect(session, &simdock::QuestaSession::finished, this, [this](bool completed, const QString& message) {
-            if (!run || run->done) return;
-            run->done = true; run->completed = completed && !run->cancelled; run->message = message;
-            run->state = run->cancelled ? "cancelled" : completed ? "completed" : "failed";
-            run->session->stop();
-        });
+    if (command != "simulation.open" && command != "simulation.validate" && command != "simulation.run")
+        return failure("unknown_command", "Unknown simulation operation.");
+    if (!id.isEmpty() && (request.contains("tb") || request.contains("top")))
+        return failure("invalid_target", "Use either tb + top or legacy projectId.");
+    const simdock::SimulationTarget target = found ? simdock::SimulationTarget{project.tbFile, project.tbName}
+        : simdock::SimulationTarget{request.value("tb").toString(), request.value("top").toString()};
+    if (target.isEmpty() || target.file.isEmpty() || target.top.isEmpty())
+        return failure("invalid_target", "Explicit tb and top are required; the filename is not used to guess a top.");
+    auto* workbench = window ? window->simulationWorkbench() : nullptr;
+    auto* coordinator = window ? window->simulationRunCoordinator() : nullptr;
+    if (command == "simulation.open") {
+        if (!window) return failure("session_required", "A GUI session is required to select and reveal the TB.");
         QString error;
-        if (!session->start(prepared, &error)) { run->done = true; run->state = "failed"; run->message = error; }
+        if (!window->openSimDockTarget(root, {}, &error)) return failure("open_failed", error);
+        auto captured = coordinator->capture(target, &error, true);
+        if (!error.isEmpty()) return failure("invalid_inputs", error);
+        QMap<QString, QByteArray> overrides;
+        for (auto it = captured.overrides.cbegin(); it != captured.overrides.cend(); ++it) overrides.insert(it.key(), it.value().toUtf8());
+        if (found) error = workbench->controller()->setSettings(project.includeDirectories, workbench->controller()->definitionSources());
+        if (error.isEmpty()) error = workbench->controller()->selectTarget(target, id, overrides);
+        if (!error.isEmpty()) return failure("invalid_target", error);
+        return success({{"target", QJsonObject{{"file", target.file}, {"top", target.top}}}, {"adopted", true}, {"viewLocated", true}});
+    }
+    QString error;
+    simdock::SimulationBuildRequest inputs;
+    if (coordinator) {
+        if (!workbench || !EditorFileIdentity::same(workbench->workspace(), root))
+            return failure("workspace_mismatch", "Activate the requested workspace in this GUI session first.");
+        inputs = coordinator->capture(target, &error, command == "simulation.run");
+    } else {
+        inputs = simdock::SimulationBuildPlanner::workspaceRequest(root, target, &error);
+        simdock::WorkspaceStateFile settings;
+        if (error.isEmpty() && !settings.open(root, "simulation", "zeroslack.simulation/v1", &error))
+            return failure("invalid_settings", error);
+        if (error.isEmpty() && settings.exists()) {
+            const auto record = settings.value();
+            if (!record.value("includeDirectories").isArray()
+                || (record.contains("definitionSources") && !record.value("definitionSources").isObject()))
+                return failure("invalid_settings", "Invalid saved simulation compilation settings.");
+            for (const auto& item : record.value("includeDirectories").toArray()) {
+                if (!item.isString() || item.toString().isEmpty()) return failure("invalid_settings", "Invalid include path.");
+                inputs.includeDirectories << item.toString();
+            }
+            const auto mappings = record.value("definitionSources").toObject();
+            for (auto it = mappings.begin(); it != mappings.end(); ++it) {
+                if (!it.value().isString() || it.key().trimmed().isEmpty() || it.value().toString().isEmpty())
+                    return failure("invalid_settings", "Invalid definition source mapping.");
+                inputs.definitionSources.insert(it.key(), it.value().toString());
+            }
+        }
+    }
+    if (!error.isEmpty()) return failure("invalid_inputs", error);
+    if (found) inputs.includeDirectories = project.includeDirectories;
+    if (command == "simulation.validate") {
+        const auto plan = simdock::SimulationBuildPlanner::plan(inputs);
+        const auto data = simulationPlanObject(*plan);
+        return plan->valid() ? success(data) : failure("invalid_inputs", plan->error(), data);
+    }
+    if (found && request.value("expectedRevision").toString() != projectRevision(project))
+        return failure("revision_conflict", "Read the legacy project revision before using its target.");
+    if (run) return failure("run_retained", "Query or cancel the current run, then clear its result before starting another.", run->json());
+    auto* controller = workbench ? workbench->controller() : nullptr;
+    if (controller && controller->busy()) return failure("busy", "A simulation is already active in this workspace.");
+    const auto executable = request.value("simulator").toString(workbench ? workbench->simulator() : QString());
+    error = simdock::simulatorError(executable);
+    if (!error.isEmpty()) return failure("invalid_simulator", error);
+    auto pending = std::make_unique<Run>();
+    if (!controller) {
+        pending->ownedController = std::make_unique<simdock::WorkspaceSimulationController>();
+        controller = pending->ownedController.get();
+        error = controller->setWorkspace(root);
+        controller->session()->setInteractive(false);
+    }
+    QMap<QString, QByteArray> overrides;
+    for (auto it = inputs.overrides.cbegin(); it != inputs.overrides.cend(); ++it) overrides.insert(it.key(), it.value().toUtf8());
+    if (error.isEmpty() && found) error = controller->setSettings(inputs.includeDirectories, inputs.definitionSources);
+    if (error.isEmpty()) error = controller->selectTarget(target, id, overrides);
+    if (!error.isEmpty()) return failure("invalid_target", error);
+    pending->controller = controller;
+    pending->id = QUuid::createUuid().toString(QUuid::WithoutBraces); pending->workspace = root; pending->projectId = id;
+    pending->target = {{"file", target.file}, {"top", target.top}};
+    run = std::move(pending);
+    auto* observer = run->observer.get();
+    auto* session = controller->session();
+    connect(controller, &simdock::WorkspaceSimulationController::stateChanged, observer, [this] {
+        if (run && !run->done && run->controller) run->state = run->controller->state();
     });
-    watcher->setFuture(QtConcurrent::run([root, project, executable, cancellation] { return simdock::prepareRun(executable, root, project, cancellation.get()); }));
+    connect(controller, &simdock::WorkspaceSimulationController::planReady, observer,
+        [this](std::shared_ptr<const simdock::SimulationBuildPlan> plan) { if (run && !run->done && plan) run->plan = simulationPlanObject(*plan); });
+    connect(session, &simdock::QuestaSession::eventRunStarted, observer, [this] {
+        if (run && !run->done) { run->started = true; run->nativeRunDirectory = run->controller->session()->lastRunDirectory(); }
+    });
+    connect(session, &simdock::QuestaSession::logText, observer, [this](const QString& log) {
+        if (run && !run->done) { run->log += log; if (run->log.size() > 1024*1024) run->log = run->log.right(1024*1024); }
+    });
+    connect(session, &simdock::QuestaSession::eventRecordsRejected, observer, [this](quint64 count) { if (run && !run->done) run->rejected = count; });
+    connect(session, &simdock::QuestaSession::eventsReady, observer, [this](const QList<simdock::SimulationEvent>& events) {
+        if (!run || run->done) return;
+        for (const auto& event : events) {
+            if (run->events.size() >= 10000) { ++run->dropped; continue; }
+            QJsonArray values; for (const auto& value : event.values) values << QJsonObject::fromVariantMap(value);
+            run->events << QJsonObject{{"runId", run->id}, {"simulatorRunId", event.runId}, {"timePs", event.timePs},
+                {"level", event.level}, {"tag", event.tag}, {"instance", event.instance}, {"sourceFile", event.sourceFile},
+                {"sourceLine", event.sourceLine}, {"message", event.message}, {"values", values}};
+        }
+    });
+    connect(controller, &simdock::WorkspaceSimulationController::finished, observer, [this](bool completed, const QString& message) {
+        if (!run || run->done) return;
+        run->done = true; run->completed = completed && !run->cancelled; run->message = message;
+        run->outcome = run->cancelled ? "cancelled" : run->started ? run->controller->session()->outcome() : QStringLiteral("failed");
+        run->state = run->outcome;
+        if (run->ownedController) run->ownedController->stop();
+    });
+    controller->prepare(executable, std::move(inputs), workbench ? workbench->waveTheme() : simdock::WaveTheme::QuestaDefault,
+        coordinator ? coordinator->saveInputs() : simdock::WorkspaceSimulationController::SaveInputs(),
+        coordinator ? coordinator->checkCurrent() : simdock::WorkspaceSimulationController::CheckCurrent(),
+        coordinator ? coordinator->awaitInputs() : simdock::WorkspaceSimulationController::AwaitInputs());
     return success(run->json());
 }

@@ -3,6 +3,10 @@
 #include "filecommandcoordinator.h"
 #include "shareddocument.h"
 #include "tabmanager.h"
+#include "uicontrols.h"
+#include <QHBoxLayout>
+#include <QLineEdit>
+#include <QToolButton>
 
 #include <QApplication>
 #include <QCloseEvent>
@@ -471,6 +475,69 @@ void runLongPathRecoveryRegression()
     restored.clearCrashRecoveryAfterNormalClose();manager.clearCrashRecoveryAfterNormalClose();
 }
 
+void runUnifiedRegionDocuments()
+{
+    QTemporaryDir temporary;
+    const auto path=temporary.filePath(QStringLiteral("regions.sv"));
+    expect("region fixture created",writeFixture(path,QStringLiteral("module regions;\nendmodule\n")));
+    QWidget window;
+    auto* outer=new QVBoxLayout(&window);
+    auto* toolbar=UiControls::toolButton(&window); toolbar->setText(QStringLiteral("Toolbar")); outer->addWidget(toolbar);
+    auto* row=new QHBoxLayout; outer->addLayout(row);
+    auto* mainHost=new QWidget(&window); row->addWidget(mainHost);
+    auto* tabs=UiControls::editorTabWidget(mainHost);
+    TabManager manager(tabs);
+    manager.enableSplitLayout(mainHost);
+    manager.setWorkspaceScope({temporary.path()},temporary.path());
+    manager.setCrashRecoveryService(std::make_unique<CrashRecoveryService>(temporary.filePath(QStringLiteral("recovery"))));
+    auto* registry=manager.editorSplitController();
+    for (const auto& id : {QStringLiteral("left"),QStringLiteral("right"),QStringLiteral("bottom")}) {
+        auto* host=new QWidget(&window); row->addWidget(host); registry->registerRegion(id,host);
+    }
+    expect("document opens once for the region fixture",manager.openFileInTab(path));
+    auto* first=manager.getCurrentEditor(); auto* document=manager.sharedDocumentForEditor(first);
+    expect("duplicate view uses existing document",manager.duplicateCurrentView());
+    auto* second=manager.getCurrentEditor();
+    expect("second view has an independent identity",second!=first && manager.sharedDocumentForEditor(second)==document);
+    registry->movePage(second,registry->regionGroup(QStringLiteral("left")));
+    auto* tool=new QLineEdit;
+    auto* right=registry->regionGroup(QStringLiteral("right"));
+    right->addTab(tool,QStringLiteral("Tool"));
+    registry->registerPage(tool,QStringLiteral("tool:focus"),QStringLiteral("tool"),[=] { return registry->parkPage(tool); });
+    window.resize(1200,700); window.show(); window.activateWindow(); QApplication::processEvents();
+    registry->activatePage(first);
+    const auto pageId=registry->pageId(first);
+    const auto documentId=document->documentId();
+    auto firstCursor=first->textCursor(); firstCursor.setPosition(4); first->setTextCursor(firstCursor);
+    auto secondCursor=second->textCursor(); secondCursor.setPosition(0); second->setTextCursor(secondCursor);
+    for (const auto& id : {QStringLiteral("bottom"),QStringLiteral("right"),QStringLiteral("left"),QStringLiteral("main")})
+        expect("code view moves without reloading document",registry->movePage(first,registry->regionGroup(id))
+            && registry->pageId(first)==pageId && document->documentId()==documentId && document->viewCount()==2
+            && manager.openEditors().contains(first) && manager.openEditors().contains(second));
+    first->insertPlainText(QStringLiteral("_changed"));
+    expect("cross-region edit shares content",first->toPlainText()==second->toPlainText() && document->dirty());
+    second->undo();
+    expect("cross-region undo uses one history",first->toPlainText()==QStringLiteral("module regions;\nendmodule\n") && second->toPlainText()==first->toPlainText());
+    first->redo();
+    expect("cross-region redo uses one history",document->dirty() && first->toPlainText()==second->toPlainText());
+    registry->activatePage(second); second->setFocus(); QApplication::processEvents();
+    expect("focused sidebar is the command target",manager.editorActionTarget()==second);
+    toolbar->setFocus(); QApplication::processEvents();
+    expect("toolbar focus retains last document target",manager.editorActionTarget()==second);
+    registry->activatePage(tool); tool->setFocus(); QApplication::processEvents();
+    expect("tool page clears background code command target",manager.editorActionTarget()==nullptr);
+    expect("unknown view identity cannot use a background document",manager.editorActionTarget(QStringLiteral("missing"))==nullptr);
+    registry->activatePage(first); manager.flushCrashRecovery();
+    const int candidates=manager.listCrashRecoveryCandidates(temporary.path()).candidates.size();
+    manager.closeTab(registry->groupForPage(first)->indexOf(first));
+    manager.flushCrashRecovery();
+    expect("closing one regional view keeps the dirty document and recovery",document->viewCount()==1 && document->dirty()
+        && manager.openEditors().contains(second) && candidates==1
+        && manager.listCrashRecoveryCandidates(temporary.path()).candidates.size()==1);
+    expect("remaining sidebar view saves the shared document",manager.saveEditorView(second,false,path) && !document->dirty());
+    expect("clean final regional view closes",manager.closeAllTabs() && manager.editorCount()==0);
+}
+
 int main(int argc, char** argv)
 {
     QApplication application(argc, argv);
@@ -932,6 +999,8 @@ int main(int argc, char** argv)
                           secondView)
                       == managedDocument);
 
+    manager.editorSplitController()->activatePage(secondView);
+    expect("locked close targets the explicitly activated view",manager.getCurrentEditor()==secondView);
     manager.setTabLocked(secondView, true);
     const int lockedCount = manager.editorCount();
     manager.closeTab(
@@ -1317,6 +1386,7 @@ int main(int argc, char** argv)
                           temp.path())
                       .candidates.isEmpty());
 
+    runUnifiedRegionDocuments();
     exerciseTabIdentityGroupingAndBatchClose();
     runLongPathRecoveryRegression();
 

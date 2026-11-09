@@ -143,9 +143,10 @@ bool saveProject(const QString& root, Project& project, QString* error)
     return true;
 }
 
-QList<Project> loadProjects(const QString& root, QStringList* errors, bool migrateLegacy)
+QList<Project> loadProjects(const QString& root, QStringList* errors, bool migrateLegacy, QSet<QString>* ambiguousIds)
 {
     QList<Project> result;
+    if (ambiguousIds) ambiguousIds->clear();
     const auto base = projectDirectory(root);
     if (!plainPathWithin(root, base)) return result;
     QStringList candidates;
@@ -168,6 +169,8 @@ QList<Project> loadProjects(const QString& root, QStringList* errors, bool migra
             issue = QStringLiteral("The legacy project ID does not match its file name.");
         if (!issue.isEmpty()) { if (errors) *errors << QFileInfo(path).fileName() + QStringLiteral(": ") + issue; continue; }
         if (seen.contains(p.id)) {
+            if (ambiguousIds) for (const auto& previous : result)
+                if (previous.id == p.id && projectJson(previous) != projectJson(p)) ambiguousIds->insert(p.id);
             if (errors) *errors << QStringLiteral("Preserved a duplicate legacy project copy: %1").arg(path);
             continue;
         }

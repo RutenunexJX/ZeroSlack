@@ -94,6 +94,9 @@ private slots:
         QCOMPARE(after.copy(row), before.copy(row));
     }
     void gutterAndImageUseProjectedSpace() {
+        auto palette=editor->palette();
+        palette.setColor(QPalette::AlternateBase,QColor(219,228,234));
+        editor->setPalette(palette);
         insert(); QCoreApplication::processEvents(); editor->repaint();
         auto* gutter=editor->findChild<QWidget*>("editorLineNumberGutter"); QVERIFY(gutter);
         const auto capture=gutter->grab().toImage(); const auto scale=capture.devicePixelRatio();
@@ -101,8 +104,15 @@ private slots:
         const int to=qFloor((editor->blockGeometry(1).top-3)*scale);
         QVERIFY(to>from+50);
         const auto background=editor->palette().color(QPalette::AlternateBase).rgb();
-        for(int y=from;y<to;++y) for(int x=qCeil(18*scale);x<qFloor((gutter->width()-20)*scale);++x)
+        for(int y=from;y<to;++y) for(int x=qCeil(18*scale);x<qFloor((gutter->width()-20)*scale);++x) {
+            if (capture.pixel(x,y)!=background) {
+                qWarning()<<"gutter pixel"<<QPoint(x,y)<<Qt::hex<<capture.pixel(x,y)<<background
+                    <<"gap"<<from<<to<<"gutter"<<gutter->geometry()<<"viewport"<<editor->viewport()->geometry();
+                const auto artifacts=qEnvironmentVariable("ZEROSLACK_TEST_ARTIFACT_DIR");
+                if (!artifacts.isEmpty()) capture.save(artifacts+"/gutter-gap.png");
+            }
             QVERIFY2(capture.pixel(x,y)==background,"Line numbers must not appear in association space");
+        }
         QTemporaryDir root; QVERIFY(root.isValid()); QImage original(240,120,QImage::Format_RGB32); original.fill(Qt::blue);
         const auto path=root.filePath("preview.png"); QVERIFY(original.save(path)); QString error;
         EditorAssociatedBlock block; block.type="image"; block.height=150; block.width=360;

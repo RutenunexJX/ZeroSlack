@@ -4,6 +4,7 @@ body{display:flex;flex-direction:column}
 #editor{min-height:0;min-width:0;flex:1;overflow:auto;position:relative;container:viewport/inline-size;--affine-editor-side-padding:48px}
 .affine-page-root-block-container{box-sizing:border-box}
 editor-host{min-width:0;width:100%}
+@media(max-width:600px){#editor{--affine-editor-side-padding:28px}}
 html.dark{color-scheme:dark;--affine-text-primary-color:#d7e0ed;--affine-text-secondary-color:#a4afbf;--affine-background-primary-color:#20242c;--affine-background-secondary-color:#292f39;--affine-hover-color:#394456;--affine-border-color:#475163}
 html.dark,html.dark body{color:#d7e0ed;background:#20242c}
 :root{--affine-placeholder-color:#8492a5}

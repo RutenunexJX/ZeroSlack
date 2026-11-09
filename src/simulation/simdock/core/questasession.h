@@ -4,6 +4,7 @@
 #include "wavepalette.h"
 #include "sessionfiles.h"
 #include "simulationevents.h"
+#include "simulationbuildplanner.h"
 #include <QObject>
 #include <QProcess>
 #include <QTimer>
@@ -13,7 +14,8 @@
 namespace simdock {
 QString tclWord(const QString& text);
 QString runScript(const QString& root, const Project& project, const QString& runDir, const QString& iniPath,
-                  WaveTheme waveTheme = WaveTheme::QuestaDefault, bool reuseDesign = false, const QString& workDirectory = {}, bool interactive = true);
+                  WaveTheme waveTheme = WaveTheme::QuestaDefault, bool reuseDesign = false, const QString& workDirectory = {}, bool interactive = true,
+                  const QStringList& bindCompilationUnits = {});
 QString simulatorError(const QString& executable);
 QString scoreboardResultScript(const QString& tbName);
 struct PreparedRun {
@@ -21,7 +23,11 @@ struct PreparedRun {
     Project project;
     QByteArray designFingerprint;
     QMap<QString, QByteArray> inputFingerprints;
+    QMap<QString, QByteArray> toolFingerprints;
+    std::shared_ptr<const SimulationBuildPlan> plan;
 };
+PreparedRun prepareRun(const QString& executable, const SimulationBuildRequest& request,
+                       const std::atomic_bool* cancelled = nullptr);
 PreparedRun prepareRun(const QString& executable, const QString& root, const Project&,
                        const std::atomic_bool* cancelled = nullptr,
                        const QMap<QString, QByteArray>& overrides = {});
@@ -39,7 +45,8 @@ public:
     bool alive() const { return m_process.state() != QProcess::NotRunning; }
     qint64 processId() const { return m_process.processId(); }
     QString lastRunDirectory() const { return m_runDir; }
-    void setWallTimeout(int ms) { m_wallTimeout = ms; }
+    void setPreparationTimeout(int ms) { m_preparationTimeout = qMax(1, ms); }
+    QString outcome() const { return m_outcome; }
     void setInteractive(bool enabled) { if (!alive()) m_interactive = enabled; }
 signals:
     void logText(const QString& text);
@@ -52,17 +59,18 @@ signals:
 private:
     bool launch(const QString& executable, QString* error);
     void poll();
-    void finish(bool success, const QString& message);
+    void finish(bool success, const QString& message, const QString& outcome = {});
     bool sendPending(QString* error);
     QProcess m_process;
     QTimer m_poll, m_deadline;
     void releaseFiles();
     std::unique_ptr<SessionFiles> m_sessionDir;
-    QString m_executable, m_pending, m_runId, m_runDir, m_lastState;
+    QString m_executable, m_pending, m_runId, m_runDir, m_lastState, m_outcome;
     qint64 m_logOffset = 0;
     bool m_busy = false, m_ready = false, m_stopping = false;
     bool m_interactive = true;
-    int m_wallTimeout = 120000;
+    bool m_executionEntered = false;
+    int m_preparationTimeout = 120000;
     void* m_job = nullptr;
     QByteArray m_cachedDesign, m_pendingDesign;
     QString m_cachedWork, m_pendingWork;

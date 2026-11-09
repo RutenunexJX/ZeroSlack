@@ -2,6 +2,7 @@
 #include "../integrations/simdock/simdockcontextprovider.h"
 #include "../integrations/simdock/simdockcontextview.h"
 #include "../simulation/simdock/ui/workbench.h"
+#include "../simulation/simdock/core/workspace.h"
 
 #include "contextworkspacecontroller.h"
 #include "linkedcontextcontroller.h"
@@ -73,11 +74,11 @@ bool MainWindow::openSimDockTarget(const QString& workspace, const QString& proj
     const auto root = QFileInfo(workspace).canonicalFilePath();
     if (!QDir::isAbsolutePath(workspace) || root.isEmpty() || !QFileInfo(root).isDir())
         return fail(tr("The simulation workspace must be an existing absolute directory."));
-    if (!workspaceManager || !contextWorkspaceController)
+    if (!workspaceManager || !simulationWorkspace)
         return fail(tr("The simulation workspace is unavailable."));
     if (!projectId.isEmpty()) {
         bool found = false;
-        for (const auto& project : simdock::loadProjects(root)) if (project.id == projectId) found = true;
+        for (const auto& project : simdock::loadProjects(root, nullptr, false)) if (project.id == projectId) found = true;
         if (!found) return fail(tr("The simulation project no longer exists."));
     }
     if ((simulationWorkspace && !simulationWorkspace->canClose(error))
@@ -85,16 +86,12 @@ bool MainWindow::openSimDockTarget(const QString& workspace, const QString& proj
     if (QFileInfo(workspaceManager->getWorkspacePath()).canonicalFilePath() != root
         && !workspaceManager->openWorkspace(root))
         return fail(tr("The workspace change was cancelled or could not be completed."));
-    SimDockContextProvider provider;
-    const auto resource = provider.activationResource(root);
-    if (!contextWorkspaceController->openResource(resource,
-            {ContextSurface::Docked, ContextPersistence::Kept}, error)) return false;
     auto* view = simulationWorkspace.get();
     if (!view || !view->isReady())
         return fail(view ? view->property("nativeComponentError").toString() : tr("The simulation workbench is unavailable."));
     const auto issue = view->workbench()->openProject(projectId);
     if (!issue.isEmpty()) return fail(issue);
-    contextWorkspaceController->focusResource(resource.stableKey());
+    view->workbench()->setFocus(Qt::OtherFocusReason);
     showNormal(); raise(); activateWindow();
     return true;
 }
@@ -107,7 +104,8 @@ void MainWindow::setupContextWorkspace()
         std::make_unique<ContextWorkspaceController>(
             this,
             editorSplitHost,
-            this);
+            this,
+            tabManager->editorSplitController());
     contextWorkspaceController->setExternalResourceHandler(
         [this](const ContextResource& resource, bool restoring) -> std::optional<bool> {
             LiveInsightKind kind;
@@ -158,7 +156,7 @@ void MainWindow::setupContextWorkspace()
                     controller->setWorkspaceRoot(path);
                     simulationWorkspace->activate(SimDockContextProvider().activationResource(path));
                     if (tabManager) {
-                        const QString file = tabManager->getCurrentDocumentMetadata().fileName;
+                        const QString file = tabManager->contextDocumentMetadata().fileName;
                         controller->setActiveDocument(file.isEmpty() ? QString() : QDir(path).relativeFilePath(file));
                     }
                     coordinator->setWorkspaceRoot(path);
@@ -195,7 +193,7 @@ void MainWindow::setupContextWorkspace()
                     }
                     controller->documentClosed(relativeDocument(file));
                 });
-        contextWorkspaceController->setActiveDocument(relativeDocument(tabManager->getCurrentDocumentMetadata().fileName));
+        contextWorkspaceController->setActiveDocument(relativeDocument(tabManager->contextDocumentMetadata().fileName));
     }
 
     auto temporaryProvider =
@@ -360,12 +358,11 @@ void MainWindow::setupContextWorkspace()
     contextWorkspaceController->registerProvider(
         std::move(pinloomProvider));
 
-    simulationCommands = std::make_unique<SimulationCommandService>(tabManager.get(), workspaceManager.get(), simulationWorkspace->workbench(), this);
+    simulationCommands = std::make_unique<SimulationCommandService>(tabManager.get(), workspaceManager.get(), this);
     simulationCommands->showBrowser = [this] { contextWorkspaceController->openTool(QStringLiteral("xips")); };
     connect(simulationCommands.get(), &SimulationCommandService::message, this, [this](const QString& message) { postActivityMessage(message, 8000); });
     contextWorkspaceController->registerProvider(
         std::make_unique<XipsContextProvider>(tabManager.get(), workspaceManager.get(), simulationCommands.get()));
-    contextWorkspaceController->registerProvider(std::make_unique<SimDockContextProvider>(simulationWorkspace.get()));
 
     connect(contextWorkspaceController.get(), &ContextWorkspaceController::resourceCloseRejected,
             this, [this](const QString &reason) { postActivityMessage(reason, 6000); });
@@ -375,6 +372,8 @@ void MainWindow::setupContextWorkspace()
         const QPointer<SimulationCommandService> commands(simulationCommands.get());
         workspaceManager->setWorkspaceTransitionGuard([this, controller, simulation, commands] {
             QString error;
+            if (workspaceSimulation) error = workspaceSimulation->canChangeWorkspace();
+            if (!error.isEmpty()) return error;
             if (simulation && !simulation->canClose(&error)) return error;
             if (commands && !commands->canClose(&error)) return error;
             if (controller && !controller->canCloseResources(&error))
@@ -412,12 +411,12 @@ LiveInsightToolContext MainWindow::activeLiveInsightToolContext(bool includeDocu
     if (!tabManager)
         return context;
 
-    MyCodeEditor* editor = tabManager->getCurrentEditor();
+    MyCodeEditor* editor = tabManager->contextEditor();
     if (!editor)
         return context;
     context.instancePath=editor->hierarchyInstanceContext().instancePath;
     const DocumentSnapshot document =
-        tabManager->getCurrentDocumentMetadata();
+        tabManager->contextDocumentMetadata();
     context.documentId = document.documentId.trimmed();
     if (context.documentId.isEmpty())
         context.documentId = document.fileName.trimmed();
@@ -471,7 +470,7 @@ bool MainWindow::beginLiveInsightTargetPick(
         picked)
 {
     MyCodeEditor* editor =
-        tabManager ? tabManager->getCurrentEditor() : nullptr;
+        tabManager ? tabManager->contextEditor() : nullptr;
     if (!editor) {
         postActivityMessage(
             QStringLiteral(
@@ -529,7 +528,7 @@ bool MainWindow::beginLiveInsightTargetPick(
             };
             const auto contextCurrent = [this, sourceEditor, key] {
                 const auto current = activeLiveInsightToolContext(false);
-                return sourceEditor && tabManager && tabManager->getCurrentEditor() == sourceEditor
+                return sourceEditor && tabManager && tabManager->contextEditor() == sourceEditor
                     && current.workspaceId == key.workspaceId && current.documentId == key.documentId
                     && current.documentRevision == key.documentRevision
                     && current.semanticRevision == key.semanticRevision;
@@ -646,7 +645,7 @@ void MainWindow::requestLiveInsightUpdates()
     }
     refreshLiveInsightToolPages(static_cast<int>(LiveInsightKind::Module));
     refreshLiveInsightToolPages(static_cast<int>(LiveInsightKind::State));
-    MyCodeEditor* editor = tabManager->getCurrentEditor();
+    MyCodeEditor* editor = tabManager->contextEditor();
     if (!editor) {
         for (LiveInsightKind kind : {
                  LiveInsightKind::Kernel,
@@ -659,7 +658,7 @@ void MainWindow::requestLiveInsightUpdates()
     }
 
     const DocumentSnapshot document =
-        tabManager->getCurrentDocumentMetadata();
+        tabManager->contextDocumentMetadata();
     SharedDocument* sharedDocument =
         tabManager->sharedDocumentForEditor(editor);
     // Scheduling uses identity, revision and scope only. The visible tool's

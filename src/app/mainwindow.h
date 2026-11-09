@@ -34,6 +34,7 @@ class NavigationPaneCoordinator;
 class NotificationCenter;
 class EditingTimeService;
 class SimDockContextView;
+namespace simdock { class SimulationRunCoordinator; }
 class SignalTracePanel;
 struct SignalTraceEvidence;
 class PanelLayoutController;
@@ -84,7 +85,8 @@ struct ScopedSearchPanelContext;
 enum class ScopedSearchScope;
 struct ContextResource;
 class SimulationCommandService;
-namespace simdock { class Workbench; }
+namespace simdock { class Workbench; class WorkspaceSimulationController; }
+class DesignProjectService;
 struct LiveInsightToolContext;
 
 
@@ -112,6 +114,7 @@ public:
                            int columnNumber = 1);
     bool openSimDockTarget(const QString& workspace, const QString& projectId, QString* error);
     simdock::Workbench* simulationWorkbench() const;
+    simdock::SimulationRunCoordinator* simulationRunCoordinator() const { return simulationRunner.get(); }
 
 protected:
     void closeEvent(QCloseEvent *event) override;
@@ -129,7 +132,10 @@ private:
     std::unique_ptr<NavigationPaneCoordinator> navigationPane;
     std::unique_ptr<NotificationCenter> notificationCenter;
     std::unique_ptr<EditingTimeService> editingTimeService;
+    std::unique_ptr<DesignProjectService> designProjectService;
+    std::unique_ptr<simdock::WorkspaceSimulationController> workspaceSimulation;
     std::unique_ptr<SimDockContextView> simulationWorkspace;
+    std::unique_ptr<simdock::SimulationRunCoordinator> simulationRunner;
     std::unique_ptr<SimulationCommandService> simulationCommands;
     SignalTracePanel* hotspotPanel = nullptr;
     void updateSignalTraceContext();

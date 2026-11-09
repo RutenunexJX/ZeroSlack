@@ -31,6 +31,7 @@
 #include <QTimer>
 #include <QTreeWidget>
 #include <QWidget>
+#include <QtTest>
 
 #include <cstdio>
 #include <memory>
@@ -627,13 +628,16 @@ int main(int argc, char** argv)
            projectContextIssue.isEmpty()
                && (!projectScan.isEmpty() || projectScan.wait(10000)));
     projectWorkbench.markDesignMigrationCompleted();
+    expect("Design action definition belongs to the completed workspace scan",
+           QTest::qWaitFor([&] { return workspaceManager.getSystemVerilogFiles().contains(hierarchyDefinitionTarget); }, 5000));
     navigationManager.setNavigationService(&projectNavigation);
-    navigationManager.connectToWorkbench(&projectWorkbench);
+    navigationManager.connectToDesignProjects(projectWorkbench.designService());
     const ActionExecutionResult setTopResult =
         navigationManager.requestDesignNodeAction(
             QString::fromLatin1(ActionIds::NavigationDesignSetTop),
             hierarchyNode);
     DesignHierarchyNode topNode = hierarchyNode;
+    std::printf("Design action diagnostic: success=%d reason=%s roots=%lld active=%s selected=%s\n", setTopResult.succeeded, qPrintable(setTopResult.failureReason), static_cast<long long>(projectWorkbench.designRoots().size()), qPrintable(projectWorkbench.designService()->activeProjectId()), qPrintable(navigationManager.selectedDesignTopModule()));
     topNode.isTop = true;
     const QList<DesignHierarchyContextAction>
         topNodeActions =
@@ -652,15 +656,15 @@ int main(int argc, char** argv)
                && projectWorkbench.designRoots().size() == 1
                && EditorFileIdentity::same(projectWorkbench.designRoots().first().file,
                                            hierarchyDefinitionTarget)
-               && !projectWorkbench.activeProjectId().isEmpty());
-    const QString createdProject = projectWorkbench.activeProjectId();
+               && !projectWorkbench.designService()->activeProjectId().isEmpty());
+    const QString createdProject = projectWorkbench.designService()->activeProjectId();
     const auto repeatedProject = navigationManager.requestDesignNodeAction(
         QString::fromLatin1(ActionIds::NavigationDesignSetTop), hierarchyNode);
     expect("Repeated Add Design Project reuses the persisted project",
            repeatedProject.succeeded
                && projectWorkbench.designRoots().size() == 1
-               && projectWorkbench.activeProjectId() == createdProject);
-    navigationManager.connectToWorkbench(nullptr);
+               && projectWorkbench.designService()->activeProjectId() == createdProject);
+    navigationManager.connectToDesignProjects(nullptr);
     navigationManager.setNavigationService(NavigationService::getInstance());
 
     const ActionDescriptor* routeRenameDescriptor =

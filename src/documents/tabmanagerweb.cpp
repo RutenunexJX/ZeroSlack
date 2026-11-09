@@ -2,6 +2,10 @@
 #include "documentrecoveryqueue.h"
 #include "editorfileidentity.h"
 #include "uidialogs.h"
+#include "roundedicons.h"
+#include <QDir>
+#include <QEventLoop>
+#include <QElapsedTimer>
 #include <QFileInfo>
 #include <QFileDialog>
 #include <QJsonDocument>
@@ -18,7 +22,7 @@ WebDocumentPage* TabManager::currentWebDocument() const {
     const auto* group = activeTabWidget();
     return group ? qobject_cast<WebDocumentPage*>(group->currentWidget()) : nullptr;
 }
-bool TabManager::hasCurrentDocument() const { return getCurrentEditor() || currentWebDocument(); }
+bool TabManager::hasCurrentDocument() const { return getCurrentEditor() || currentWebDocument() || currentPdfDocument(); }
 bool TabManager::importMarkdownDocument(const QString& requested) {
     const QString source = requested.isEmpty() ? QFileDialog::getOpenFileName(activeTabWidget(), QStringLiteral("Import Markdown as Block Document"), QString(), QStringLiteral("Markdown (*.md *.markdown)")) : requested;
     if (source.isEmpty()) return false;
@@ -32,20 +36,73 @@ WebDocumentPage* TabManager::createWebDocument(WebDocumentPage::Kind kind, const
     if (!page->setInitialContent(text, &error)) { delete page; UiDialogs::warning(group, QStringLiteral("Open Document"), error); return nullptr; }
     registerWebDocument(page, group); return page;
 }
-WebDocumentPage* TabManager::openWebDocument(const QString& fileName, QTabWidget* group) {
+WebDocumentPage* TabManager::createWebDocumentFile(WebDocumentPage::Kind kind, const QString& requested, const QString& region, QString* error) {
+    auto* group = region.isEmpty() ? activeTabWidget() : splitController->regionGroup(region);
+    if (!group) return nullptr;
+    QString target = requested;
+    const auto extension = kind == WebDocumentPage::Kind::Markdown ? QStringLiteral(".md") : QStringLiteral(".zblock");
+    if (target.isEmpty()) {
+        const auto title = kind == WebDocumentPage::Kind::Markdown ? QStringLiteral("New Markdown") : QStringLiteral("New Block Document");
+        const auto filter = kind == WebDocumentPage::Kind::Markdown ? QStringLiteral("Markdown (*.md)") : QStringLiteral("ZeroSlack Block Document (*.zblock)");
+        target = QFileDialog::getSaveFileName(group, title, activeWorkspaceRoot.isEmpty() ? QString() : QDir(activeWorkspaceRoot).filePath(QStringLiteral("Untitled") + extension), filter, nullptr, QFileDialog::DontConfirmOverwrite);
+        if (target.isEmpty()) return nullptr;
+    }
+    if (QFileInfo(target).suffix().isEmpty()) target += extension;
+    QString why;
+    const auto fail = [&]() -> WebDocumentPage* { if (error) *error = why; else UiDialogs::warning(group, QStringLiteral("Create Document"), why); return nullptr; };
+    if (QFileInfo::exists(target)) { why = QStringLiteral("A file already exists at this path. Choose another name."); return fail(); }
+    QPointer<WebDocumentPage> page = new WebDocumentPage(kind, group);
+    if (!page->setInitialContent(QString(), &why)) { delete page; return fail(); }
+    registerWebDocument(page, group); splitController->activatePage(page);
+    QEventLoop waiting; QTimer timeout; timeout.setSingleShot(true); timeout.setInterval(30000);
+    connect(page, &WebDocumentPage::statusChanged, &waiting, [&] { if (!page || page->ready()) waiting.quit(); });
+    connect(page, &QObject::destroyed, &waiting, &QEventLoop::quit); connect(&timeout, &QTimer::timeout, &waiting, &QEventLoop::quit);
+    timeout.start(); if (!page->ready()) waiting.exec();
+    if (!page) return nullptr;
+    if (!page->ready()) why = QStringLiteral("The document editor did not finish loading. No file was created.");
+    else if (page->documentSession()->createFile(target, &why)) return page;
+    closeWebDocument(page, false, false); return fail();
+}
+bool TabManager::openFileInRegion(const QString& path, const QString& region) {
+    auto* group = splitController->regionGroup(region); if (!group) return false;
+    splitController->setActiveGroup(group);
+    if (!openFileInTab(path)) return false;
+    auto* current = activeTabWidget() ? activeTabWidget()->currentWidget() : nullptr;
+    return current && (splitController->groupForPage(current) == group ? splitController->activatePage(current) : splitController->movePage(current, group));
+}
+WebDocumentPage* TabManager::openWebDocument(const QString& fileName, QTabWidget* group, const QString& viewId, const QString& documentId, QString* failure) {
     if (!group) group = activeTabWidget(); if (!group) return nullptr;
-    auto* page = new WebDocumentPage(WebDocumentPage::kindForFile(fileName), group); QString error;
-    if (!page->openFile(fileName, &error)) { delete page; UiDialogs::warning(group, QStringLiteral("Open Document"), error); return nullptr; }
+    for (auto* existing : webDocuments()) if (EditorFileIdentity::same(existing->fileName(), fileName)) {
+        if (existing->busy()) return nullptr;
+        auto* page = new WebDocumentPage(existing->documentSession(), group, viewId); registerWebDocument(page, group); return page;
+    }
+    auto* page = new WebDocumentPage(WebDocumentPage::kindForFile(fileName), group, {{}, {}, documentId}, viewId); QString error;
+    if (!page->openFile(fileName, &error)) { delete page; if (failure) *failure = error; else UiDialogs::warning(group, QStringLiteral("Open Document"), error); return nullptr; }
     registerWebDocument(page, group); return page;
 }
 void TabManager::registerWebDocument(WebDocumentPage* page, QTabWidget* group) {
-    page->setTargetValidator([this, page](const QString& target, QString* error) {
-        for (auto* other : webDocuments()) if (other != page && !other->fileName().isEmpty() && EditorFileIdentity::same(other->fileName(), target)) {
-            if (error) *error = QStringLiteral("This file is already open in another document tab."); return false;
-        }
-        if (sharedDocuments->documentForFile(target)) { if (error) *error = QStringLiteral("This file is already open in a text editor tab."); return false; }
-        return true;
-    });
+    splitController->registerPage(page, {}, page->documentKind() == WebDocumentPage::Kind::Markdown ? QStringLiteral("markdown") : QStringLiteral("blocks"));
+    connect(page, &WebDocumentPage::viewStateChanged, this, &TabManager::workspaceSessionStateChanged);
+    auto* session = page->documentSession().get();
+    if (!observedWebDocuments.contains(session)) {
+        observedWebDocuments.insert(session);
+        connect(session, &QObject::destroyed, this, [this, session] { observedWebDocuments.remove(session); webRecoveryKeys.remove(session); });
+        session->setTargetValidator([this, session](const QString& target, QString* error) {
+            for (auto* other : webDocuments()) if (other->documentSession().get() != session && !other->fileName().isEmpty() && EditorFileIdentity::same(other->fileName(), target)) {
+                if (error) *error = QStringLiteral("This file is already open in another document session."); return false;
+            }
+            if (sharedDocuments->documentForFile(target)) { if (error) *error = QStringLiteral("This file is already open in a text editor tab."); return false; }
+            return true;
+        });
+        connect(session, &WebDocumentSession::fileSaveFailed, this, &TabManager::fileSaveFailed);
+        connect(session, &WebDocumentSession::fileSaved, this, [this, session](const QString& name) {
+            clearWebRecovery(session->views().value(0)); applyWorkspaceScope(); emit fileSaved(name);
+        });
+        connect(session, &WebDocumentSession::identityChanged, this, [this, session](const QString& previous, const QString& name) {
+            emit documentIdentityChanged(session->documentId(), previous, session->documentId(), name);
+        });
+        connect(session, &WebDocumentSession::recoveryCheckpointRequested, this, [this, session] { checkpointWebRecovery(session->views().value(0)); });
+    }
     connect(page, &WebDocumentPage::statusChanged, this, [this, page] {
         if (auto* owner = splitController->groupForPage(page)) {
             const int index = owner->indexOf(page); if (index >= 0) { owner->setTabText(index, page->title()); owner->setTabToolTip(index, page->fileName()); }
@@ -60,13 +117,7 @@ void TabManager::registerWebDocument(WebDocumentPage* page, QTabWidget* group) {
     connect(page, &WebDocumentPage::fileCommandRequested, this, [this](const QString& command) {
         if (command == QStringLiteral("new")) createNewTab(); else if (command == QStringLiteral("open")) openFileInTab(QString());
     });
-    connect(page, &WebDocumentPage::fileSaveFailed, this, &TabManager::fileSaveFailed);
-    connect(page, &WebDocumentPage::fileSaved, this, [this, page](const QString& name) { clearWebRecovery(page); applyWorkspaceScope(); emit fileSaved(name); });
-    connect(page, &WebDocumentPage::identityChanged, this, [this, page](const QString& previous, const QString& name) {
-        emit documentIdentityChanged(page->documentId(), previous, page->documentId(), name);
-    });
-    connect(page, &WebDocumentPage::recoveryCheckpointRequested, this, [this, page] { checkpointWebRecovery(page); });
-    group->addTab(page, page->title()); group->setCurrentWidget(page); splitController->setActiveGroup(group);
+    group->addTab(page, RoundedIcons::icon(page->documentKind() == WebDocumentPage::Kind::Markdown ? RoundedIcons::File : RoundedIcons::Grid), page->title()); group->setCurrentWidget(page); splitController->setActiveGroup(group);
     emit webDocumentOpened(page);
     applyWorkspaceScope(); emit workspaceSessionStateChanged();
 }
@@ -76,18 +127,24 @@ bool TabManager::closeWebDocument(WebDocumentPage* page, bool confirm, bool reme
     auto* group = splitController->groupForPage(page); if (!group) return false;
     const QString name = page->fileName();
     if (remember && !name.isEmpty()) {
-        ClosedTabState state; state.webDocument = true; state.webKind = page->documentKind(); state.fileName = name; state.groupIndex = groupIndex(group);
+        ClosedTabState state; state.webDocument = true; state.webKind = page->documentKind(); state.fileName = name; rememberClosedGroup(state, group);
         recentlyClosedTabs.append(state); while (recentlyClosedTabs.size() > 32) recentlyClosedTabs.removeFirst();
     }
-    clearWebRecovery(page); group->removeTab(group->indexOf(page)); page->deleteLater();
+    if (page->documentSession()->views().size() == 1) clearWebRecovery(page);
+    splitController->unregisterPage(page);
+    group->removeTab(group->indexOf(page)); page->releaseView(); page->deleteLater();
     if (!closingBatch) splitController->removeEmptyGroups(); emit tabClosed(name); emit workspaceSessionStateChanged(); return true;
 }
 bool TabManager::confirmWebDocuments(const QList<WebDocumentPage*>& pages) {
-    for (auto* page : pages) if (!page->confirmClose()) return false;
+    QHash<WebDocumentSession*, int> counts;
+    for (auto* page : pages) if (page) ++counts[page->documentSession().get()];
+    for (auto it = counts.cbegin(); it != counts.cend(); ++it)
+        if (it.value() == it.key()->views().size() && !it.key()->confirmClose()) return false;
     return true;
 }
 void TabManager::checkpointWebRecovery(WebDocumentPage* page) {
     if (recoveryClosing || !crashRecoveryService || !page || !page->dirty()) return;
+    if (page->documentSession()->views().value(0) != page) return;
     CrashRecoverySnapshotRequest request;
     if (!page->captureRecovery(&request.text, &request.documentRevision)) return;
     QString workspace = workspaceForFile(page->fileName()); if (workspace.isEmpty()) workspace = temporaryRecoveryWorkspace();
@@ -98,16 +155,18 @@ void TabManager::checkpointWebRecovery(WebDocumentPage* page) {
     request.savedBaselineSha256 = page->savedBaseline();
     if (!recoveryQueue) recoveryQueue = std::make_unique<DocumentRecoveryQueue>(*crashRecoveryService,
         [this](QObject* owner, const auto& snapshot, const auto& result) { completeRecoverySnapshot(owner, snapshot, result); }, this);
-    auto& keys = webRecoveryKeys[page];
+    auto* session = page->documentSession().get();
+    auto& keys = webRecoveryKeys[session];
     const QString recoveryId = crashRecoveryService->recoveryIdForDocument(request.document);
     bool known = false; for (const auto& key : keys) if (crashRecoveryService->recoveryIdForDocument(key) == recoveryId) known = true;
     if (!known) keys.append(request.document);
-    recoveryQueue->enqueue(page, std::move(request));
+    recoveryQueue->enqueue(session, std::move(request));
 }
 void TabManager::clearWebRecovery(WebDocumentPage* page) {
     if (!page || !crashRecoveryService) return;
-    if (recoveryQueue) recoveryQueue->cancel(page);
-    const auto keys = webRecoveryKeys.take(page);
+    auto* session = page->documentSession().get();
+    if (recoveryQueue) recoveryQueue->cancel(session);
+    const auto keys = webRecoveryKeys.take(session);
     for (const auto& key : keys) { const auto result = crashRecoveryService->clearAfterNormalClose(key);
         if (!result.succeeded()) emit crashRecoveryOperationFailed(page->documentId(), result.reason);
     }

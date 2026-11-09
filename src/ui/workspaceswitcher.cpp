@@ -31,13 +31,13 @@ QWidget* WorkspaceSwitcher::createStrip(QWidget* parent)
 {
     auto* strip = new QWidget(parent);
     strip->setObjectName(QStringLiteral("workspaceIconStrip"));
-    strip->setMinimumWidth(96);
     strip->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Preferred);
     auto* layout = new QHBoxLayout(strip);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(4);
     auto* bar = UiControls::tabBar(strip);
     bar->setObjectName(QStringLiteral("workspaceIconTabs"));
+    bar->setProperty("compactIconTabs",true);
     bar->setAccessibleName(tr("Open workspaces"));
     bar->setExpanding(false);
     bar->setDrawBase(false);
@@ -96,7 +96,10 @@ void WorkspaceSwitcher::refresh()
             bar->setTabWhatsThis(i, tr("Click to switch. Right-click or middle-click to close this workspace."));
         }
         bar->setCurrentIndex(workspaces->activeWorkspaceIndex());
+        bar->setMinimumWidth(qMax(48,qMin(3,int(entries.size()))*(bar->iconSize().width()+24)));
         bar->setVisible(!entries.isEmpty());
+        if (auto* strip=bar->parentWidget(); strip && strip->layout())
+            strip->setMinimumWidth(strip->layout()->minimumSize().width());
     }
 }
 

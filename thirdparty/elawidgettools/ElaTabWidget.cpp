@@ -113,7 +113,7 @@ void ElaTabWidget::tabInserted(int index)
 void ElaTabWidget::setHostedTabs(QObject* scope, SplitResolver split, ReturnTarget returnTarget)
 {
     Q_D(ElaTabWidget);
-    if (_host || !scope || count() != 0)
+    if (_host || !scope)
         return;
     // Retain Ela's gesture controller; hosted callbacks only adapt page ownership.
     d->_allTabWidgetList.clear();
@@ -130,11 +130,11 @@ bool ElaTabWidget::isFloatingTabWidget() const { return _host && _host->floating
 void ElaTabWidget::setHostedTabBar(ElaTabBar* bar)
 {
     Q_D(ElaTabWidget);
-    if (!_host || !bar || count() != 0)
+    if (!bar || count() != 0)
         return;
     d->_tabBar = bar;
-    bar->setNativeTabBehavior(true);
-    bar->setHostedDragEnabled(true);
+    bar->setNativeTabBehavior(_host != nullptr);
+    bar->setHostedDragEnabled(_host != nullptr);
     bar->setSmoothScrollEnabled(true);
     setTabBar(bar);
     bar->setAcceptDrops(true);

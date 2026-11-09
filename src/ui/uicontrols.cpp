@@ -751,10 +751,19 @@ QTabWidget* UiControls::tabWidget(QWidget* parent) {
     return new UiTabWidget(parent);
 }
 QTabWidget* UiControls::navigationTabWidget(QWidget* parent) {
-    class NavigationTabs final : public UiTabWidget {
+#ifdef ZEROSLACK_ENABLE_ELA
+    using NavigationTabBase = ElaTabWidget;
+#else
+    using NavigationTabBase = UiTabWidget;
+#endif
+    class NavigationTabs final : public NavigationTabBase {
     public:
-        explicit NavigationTabs(QWidget* parent) : UiTabWidget(parent) {
+        explicit NavigationTabs(QWidget* parent) : NavigationTabBase(parent) {
+#ifdef ZEROSLACK_ENABLE_ELA
+            setHostedTabBar(qobject_cast<ElaTabBar*>(UiControls::tabBar(this)));
+#else
             setTabBar(UiControls::tabBar(this));
+#endif
             auto* bar=tabBar();
             bar->setProperty("currentLabelTabs",true);
             bar->setExpanding(false);bar->setUsesScrollButtons(false);bar->setDrawBase(false);
@@ -764,7 +773,11 @@ QTabWidget* UiControls::navigationTabWidget(QWidget* parent) {
 #endif
         }
     };
+#ifdef ZEROSLACK_ENABLE_ELA
+    return prepare(new NavigationTabs(parent));
+#else
     return new NavigationTabs(parent);
+#endif
 }
 QListWidget* UiControls::listWidget(QWidget* parent) {
     auto* list = new QListWidget(parent);

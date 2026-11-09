@@ -9,6 +9,7 @@
 #include "../integrations/simdock/simdockcontextview.h"
 #include "simulationcommandservice.h"
 #include "../simulation/simdock/ui/workbench.h"
+#include "../simulation/simdock/ui/simulationruncoordinator.h"
 
 #include "actionregistry.h"
 #include "applicationthememanager.h"
@@ -337,6 +338,8 @@ MainWindow::MainWindow(QWidget *parent)
             this, &MainWindow::refreshWelcomePage);
     connect(tabManager.get(), &TabManager::tabCreated,
             this, [this]() { refreshWelcomePage(); });
+    connect(tabManager->editorSplitController(), &EditorSplitController::pageMoved,
+            this, [this]() { refreshWelcomePage(); });
     connect(initialEditorTabs, &QTabWidget::currentChanged,
             this, [this](int) {
                 if (centralContentStack->currentWidget() == welcomePage)
@@ -416,6 +419,9 @@ void MainWindow::setupNotificationCenter()
 
 MainWindow::~MainWindow()
 {
+    // Service-owned tool pages can change the active tab during their teardown.
+    // Disconnect chrome observers before destroying any of those services.
+    if (tabManager) QObject::disconnect(tabManager.get(), nullptr, this, nullptr);
     for(const auto& panel:tracePanels)if(panel){
         panel->cancel();panel->setMarkerHandler({});panel->setNavigationHandler({});panel->setSelectionHandler({});
     }
@@ -441,7 +447,11 @@ MainWindow::~MainWindow()
     workspaceSwitcher.reset();
     workspaceSessionCoordinator.reset();
     simulationCommands.reset();
+    // Context pages use TabManager's shared registry and workspace services.
+    contextWorkspaceController.reset();
     simulationWorkspace.reset();
+    workspaceSimulation.reset();
+    designProjectService.reset();
 
     // TabManager owns SharedDocuments whose teardown rebinds every attached
     // editor to an independent QTextDocument.  That operation legitimately
@@ -457,7 +467,6 @@ MainWindow::~MainWindow()
                 QObject::disconnect(editor, nullptr, this, nullptr);
             }
         }
-        QObject::disconnect(tabManager.get(), nullptr, this, nullptr);
         tabManager.reset();
     }
     delete ui;
@@ -767,8 +776,10 @@ void MainWindow::refreshWelcomePage()
     }
     bool hasTabs = false;
     if (tabManager) {
-        for (QTabWidget* group : tabManager->editorSplitController()->groups())
-            hasTabs |= group->count() > 0;
+        hasTabs = !tabManager->openEditors().isEmpty()
+            || !tabManager->webDocuments().isEmpty()
+            || !tabManager->pdfDocuments().isEmpty()
+            || tabManager->editorSplitController()->regionHasPages(QStringLiteral("main"));
     }
     const bool showWelcome = workspaceManager
         && !workspaceManager->isWorkspaceOpen()
@@ -1368,7 +1379,7 @@ ScopedSearchPanelContext MainWindow::scopedSearchContext(ScopedSearchScope scope
         return context;
 
     MyCodeEditor* const activeEditor =
-        tabManager->getCurrentEditor();
+        tabManager->contextEditor();
     SharedDocument* const activeDocument =
         tabManager->sharedDocumentForEditor(activeEditor);
     if (activeEditor) {
@@ -1804,28 +1815,12 @@ void MainWindow::setupCommandLayer()
 void MainWindow::setupPanelLayoutController()
 {
     panelLayoutController =
-        std::make_unique<PanelLayoutController>(this, this);
-    panelLayoutController->setMainAreaRequestHandler([this](const QString& id, QWidget* content, QWidget* home) {
-        if (tabManager->toolPage(id)) tabManager->activateToolPage(id);
-        else {
-            auto* page = new BorrowedPanelPage(content, home);
-            if (id == QStringLiteral("hotspot")) {
-                hotspotPanel->setInMainArea(true);
-                const QPointer<SignalTracePanel> hotspot(hotspotPanel);
-                const QPointer<PanelLayoutController> layout(panelLayoutController.get());
-                const QPointer<WorkspaceManager> manager(workspaceManager.get());
-                const QString workspace = workspaceManager->getWorkspacePath();
-                connect(page, &QObject::destroyed, panelLayoutController.get(), [hotspot, layout, manager, workspace] {
-                    if (hotspot) hotspot->setInMainArea(false);
-                    if (layout) QTimer::singleShot(0, layout, [layout, manager, workspace] {
-                        if (layout && manager && manager->getWorkspacePath() == workspace)
-                            layout->restorePanel(QStringLiteral("hotspot"));
-                    });
-                });
-            }
-            tabManager->openToolPage(page, id, id == QStringLiteral("hotspot") ? tr("Signal Trace") : tr("Connections"));
-        }
-    });
+        std::make_unique<PanelLayoutController>(this, this, tabManager->editorSplitController());
+    connect(tabManager->editorSplitController(), &EditorSplitController::pageMoved, this,
+        [this](QWidget* page,QTabWidget*,QTabWidget* target) {
+            if (page==hotspotPanel && hotspotPanel)
+                hotspotPanel->setInMainArea(tabManager->editorSplitController()->regionForGroup(target)==QStringLiteral("main"));
+        });
     panelLayoutController
         ->setRegisteredPanelActionRequestHandler(
             [this](const QString& actionId,
@@ -1898,11 +1893,15 @@ void MainWindow::setupPanelLayoutController()
         semanticDocks->problemsPanelCoordinator()->setWorkspaceRootProvider([this] {
             return workspaceManager ? workspaceManager->getWorkspacePath() : QString();
         });
-    simulationWorkspace = std::make_unique<SimDockContextView>(this);
-    simulationWorkspace->hide();
+    designProjectService = std::make_unique<DesignProjectService>(this);
+    workspaceSimulation = std::make_unique<simdock::WorkspaceSimulationController>(this);
+    simulationWorkspace = std::make_unique<SimDockContextView>(this, workspaceSimulation.get(), designProjectService.get());
+    simulationWorkspace->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    qobject_cast<QVBoxLayout*>(editorCentralPage->layout())->insertWidget(0, simulationWorkspace.get());
     auto* simulation = simulationWorkspace->workbench();
-    navigationPane->setSourceFilesWidget(simulation->sourceFilesWidget());
-    navigationManager->connectToWorkbench(simulation);
+    simulation->setWorkspaceConfigurationHandler([this] { showWorkspaceConfigurationDialog(); });
+    simulationRunner = std::make_unique<simdock::SimulationRunCoordinator>(tabManager.get(), workspaceManager.get(), simulation, this);
+    navigationManager->connectToDesignProjects(designProjectService.get());
     auto* runLogDock = new QDockWidget(tr("Run log"), this);
     runLogDock->setObjectName(QStringLiteral("simulationRunLogDock"));
     runLogDock->setWidget(simulation->runLogWidget());
@@ -1924,8 +1923,8 @@ void MainWindow::setupPanelLayoutController()
         hotspotPanel->setMainAreaHandler([this](bool expanded) {
             if (expanded) panelLayoutController->openPanelInMainArea(QStringLiteral("hotspot"));
             else {
-                tabManager->activateToolPage(QStringLiteral("hotspot"));
-                tabManager->closeActiveToolPage(QStringLiteral("hotspot"));
+                auto* registry=tabManager->editorSplitController();
+                registry->movePage(hotspotPanel,registry->regionGroup(QStringLiteral("bottom")));
             }
         });
         panelLayoutController->setPanelStateHandlers(QStringLiteral("hotspot"),
@@ -2079,6 +2078,7 @@ void MainWindow::setupLinkedContext()
     });
     connect(linkedContextController.get(), &LinkedContextController::aboutToEnter, this, [this] {
         linkedNormalState = std::make_unique<WorkspaceSessionUiState>();
+        linkedNormalState->pageLayout = tabManager->workspaceSessionPageLayout(workspaceManager->getWorkspacePath());
         linkedNormalState->mainWindowGeometry = saveGeometry();
         linkedNormalState->mainWindowState = saveState();
         if (panelLayoutController)
@@ -2787,9 +2787,9 @@ ActionExecutionResult MainWindow::executeActionRoute(
         if (route == QStringLiteral("ui.file.new")) {
             fileCommandCoordinator->newFile();
         } else if (route == QStringLiteral("ui.file.newMarkdown")) {
-            if (!tabManager || !tabManager->createWebDocument(WebDocumentPage::Kind::Markdown)) return fail();
+            if (!tabManager || !tabManager->createWebDocumentFile(WebDocumentPage::Kind::Markdown)) return fail();
         } else if (route == QStringLiteral("ui.file.newBlocks")) {
-            if (!tabManager || !tabManager->createWebDocument(WebDocumentPage::Kind::Blocks)) return fail();
+            if (!tabManager || !tabManager->createWebDocumentFile(WebDocumentPage::Kind::Blocks)) return fail();
         } else if (route == QStringLiteral("ui.file.importMarkdown")) {
             if (!tabManager || !tabManager->importMarkdownDocument()) return fail();
         } else if (route == QStringLiteral("ui.file.exportMarkdown")) {
@@ -2918,6 +2918,10 @@ ActionExecutionResult MainWindow::executeActionRoute(
         return succeeded();
     }
 
+    if (route == QStringLiteral("editor.edit.find") && tabManager && tabManager->currentPdfDocument()
+        && invocation.parameters.value(QStringLiteral("editorViewId")).toString().isEmpty()) {
+        tabManager->currentPdfDocument()->executeCommand(QStringLiteral("find")); return succeeded();
+    }
     if (route == QStringLiteral("editor.standard.undo")
         || route == QStringLiteral("editor.standard.redo")
         || route == QStringLiteral("editor.standard.cut")
@@ -2928,6 +2932,11 @@ ActionExecutionResult MainWindow::executeActionRoute(
             invocation.parameters
                 .value(QStringLiteral("editorViewId"))
                 .toString();
+        if (preferredViewId.isEmpty() && tabManager && tabManager->currentPdfDocument()) {
+            const auto command = route.section(QLatin1Char('.'), -1);
+            if (command != QStringLiteral("copy") && command != QStringLiteral("selectAll")) return fail(QStringLiteral("PDF documents are read-only."));
+            tabManager->currentPdfDocument()->executeCommand(command); return succeeded();
+        }
         if (preferredViewId.isEmpty() && tabManager && tabManager->currentWebDocument()) {
             tabManager->currentWebDocument()->executeCommand(route.section(QLatin1Char('.'), -1));
             return succeeded();
@@ -3924,6 +3933,8 @@ void MainWindow::setupWorkspaceSessionCoordinator()
             if (linkedContextController && linkedContextController->isActive() && linkedNormalState)
                 return *linkedNormalState;
             WorkspaceSessionUiState state;
+            if (tabManager && workspaceManager)
+                state.pageLayout = tabManager->workspaceSessionPageLayout(workspaceManager->getWorkspacePath());
             if (rememberPanelState) {
                 state.mainWindowGeometry = saveGeometry();
                 state.mainWindowState = saveState();
@@ -3943,6 +3954,8 @@ void MainWindow::setupWorkspaceSessionCoordinator()
                 state.contextWorkspace =
                     contextWorkspaceController->captureState();
             }
+            if (simulationWorkspace)
+                state.contextWorkspace.providerStates.insert(QStringLiteral("simdock"), simulationWorkspace->saveState());
             return state;
         };
     bridge.restoreUiState =
@@ -3965,7 +3978,7 @@ void MainWindow::setupWorkspaceSessionCoordinator()
                 navigationPane->setSearchQueries(
                     state.navigationFilesQuery,
                     state.navigationDesignQuery);
-                navigationPane->setActiveTab(state.navigationActiveTab);
+                navigationPane->setActiveTab(state.navigationActiveTab, false);
             }
             if (rememberPanelState
                 && !result.dockStateRestored) {
@@ -3980,15 +3993,35 @@ void MainWindow::setupWorkspaceSessionCoordinator()
                 }
             }
             if (contextWorkspaceController) {
+                auto contextState=state.contextWorkspace;
+                auto simulationState=contextState.providerStates.value(QStringLiteral("simdock")).toMap();
+                contextState.pinnedResources.removeIf([&](const QVariantMap& encoded) {
+                    const auto resource=ContextResource::fromVariantMap(encoded);
+                    if (resource.providerId!=QStringLiteral("simdock") || resource.resourceId!=QStringLiteral("workbench")) return false;
+                    if (simulationState.isEmpty()) simulationState=resource.state;
+                    return true;
+                });
+                // The compact workspace service owns the former provider state.
+                // Preserve legacy preferences/layout without recreating its retired page.
+                if (simulationWorkspace && !simulationState.isEmpty()) {
+                    simulationWorkspace->restoreState(simulationState);
+                    if (!simulationWorkspace->isReady()) result.warnings.append(simulationWorkspace->property("nativeComponentError").toString());
+                }
                 contextWorkspaceController->setWorkspaceRoot(
                     workspaceManager
                         ? workspaceManager->getWorkspacePath()
                         : QString());
                 contextWorkspaceController->restoreState(
-                    state.contextWorkspace,
+                    contextState,
                     rememberPanelState
                         && result.dockStateRestored);
             }
+            if (tabManager)
+                result.warnings += tabManager->editorSplitController()->restorePageLayout(state.pageLayout);
+            // Rebuilding dock contents can temporarily enlarge their minimum size.
+            // Reapply the saved window bounds after the final page topology exists.
+            if (result.geometryRestored)
+                result.geometryRestored = restoreGeometry(state.mainWindowGeometry);
             return result;
         };
     bridge.showStatus =
@@ -4767,6 +4800,8 @@ void MainWindow::closeEvent(QCloseEvent *event)
         return;
     }
     QString componentError;
+    if (workspaceSimulation) componentError = workspaceSimulation->canChangeWorkspace();
+    if (!componentError.isEmpty()) { event->ignore(); postActivityMessage(componentError, 6000); return; }
     if ((simulationWorkspace && !simulationWorkspace->canClose(&componentError))
         || (simulationCommands && !simulationCommands->canClose(&componentError))
         || (contextWorkspaceController && !contextWorkspaceController->canCloseResources(&componentError))) {

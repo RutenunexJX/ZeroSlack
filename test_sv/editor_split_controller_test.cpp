@@ -1,8 +1,10 @@
 #include "actionregistry.h"
 #include "editordroppreviewoverlay.h"
 #include "editorsplitcontroller.h"
+#include "uicontrols.h"
 
 #include <QApplication>
+#include <QContextMenuEvent>
 #include <QDragEnterEvent>
 #include <QDragLeaveEvent>
 #include <QDragMoveEvent>
@@ -10,6 +12,7 @@
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QJsonArray>
 #include <QMimeData>
 #include <QPlainTextEdit>
 #include <QPlainTextDocumentLayout>
@@ -587,12 +590,119 @@ void testSharedDocumentViewsKeepIndependentState()
 }
 }
 
+void testUnifiedRegions()
+{
+    QWidget window;
+    auto* layout=new QHBoxLayout(&window);
+    auto* mainHost=new QWidget(&window); layout->addWidget(mainHost);
+    auto* first=UiControls::editorTabWidget(mainHost);
+    EditorSplitController registry(first);
+    registry.setHost(mainHost);
+    QList<QTabWidget*> anchors{first};
+    for (const auto& id : {QStringLiteral("left"),QStringLiteral("right"),QStringLiteral("bottom")}) {
+        auto* host=new QWidget(&window); layout->addWidget(host);
+        anchors.append(registry.registerRegion(id,host));
+    }
+    auto* editor=new QPlainTextEdit;
+    editor->setPlainText(QStringLiteral("alpha\nbeta\ngamma"));
+    first->addTab(editor,QStringLiteral("code.sv"));
+    registry.registerPage(editor,QStringLiteral("test:code"),QStringLiteral("code"));
+    auto* tool=new QLabel(QStringLiteral("background data"));
+    first->addTab(tool,QStringLiteral("Tool"));
+    check(registry.registerPage(tool,QStringLiteral("test:tool"),QStringLiteral("tool"),[&] { return registry.parkPage(tool); }),
+          "generic pages register without editorViewId");
+    const auto identity=registry.pageId(editor);
+    window.resize(1200,700); window.show(); QApplication::processEvents();
+    registry.activatePage(editor);
+    auto cursor=editor->textCursor(); cursor.setPosition(3); editor->setTextCursor(cursor); editor->insertPlainText(QStringLiteral("!"));
+    const int position=editor->textCursor().position();
+    bool atomic=true; int moves=0;
+    QObject::connect(&registry,&EditorSplitController::pageMoved,&window,[&](QWidget* page,QTabWidget* source,QTabWidget* target) {
+        ++moves; atomic &= source->indexOf(page)<0 && target->indexOf(page)>=0;
+    });
+    for (auto* group : anchors) {
+        check(registry.movePage(editor,group),"page moves through registered regions");
+        check(registry.pageId(editor)==identity && editor->textCursor().position()==position
+              && registry.groupForPage(editor)==group,"movement retains page identity and cursor");
+    }
+    check(atomic && moves==3,"cross-region layout is published only after ownership commits");
+    editor->undo(); check(editor->toPlainText()==QStringLiteral("alpha\nbeta\ngamma"),"move preserves undo history");
+    editor->redo(); check(editor->toPlainText().contains(QStringLiteral("alp!ha")),"move preserves redo history");
+    QTabWidget foreign;
+    const auto originalGroup=registry.groupForPage(editor);
+    const int originalIndex=originalGroup->indexOf(editor);
+    check(!registry.movePage(editor,&foreign) && registry.groupForPage(editor)==originalGroup
+          && originalGroup->indexOf(editor)==originalIndex,"invalid destination leaves original page and order intact");
+    check(registry.movePage(tool,anchors[1]) && registry.requestPageClose(tool)
+          && !registry.groupForPage(tool) && registry.pageById(QStringLiteral("test:tool"))==tool,
+          "closing tool view parks its existing instance");
+    tool->setText(QStringLiteral("background update"));
+    check(registry.restorePage(tool,first) && registry.groupForPage(tool)==anchors[1]
+          && tool->text()==QStringLiteral("background update"),"reopening restores tool location and background state");
+    registry.removeEmptyGroups();
+    check(registry.groupCount()==4 && registry.regionGroup(QStringLiteral("main"))==first,
+          "fixed region anchors remain available after their last page moves");
+}
+
+void testStableLayoutRoundTrip()
+{
+    QWidget window;
+    auto* row = new QHBoxLayout(&window);
+    auto* mainHost = new QWidget; row->addWidget(mainHost);
+    auto* initial = UiControls::editorTabWidget(mainHost);
+    EditorSplitController registry(initial); registry.setHost(mainHost);
+    for (const auto& id : {QStringLiteral("left"), QStringLiteral("right"), QStringLiteral("bottom")}) {
+        auto* host = new QWidget; row->addWidget(host); registry.registerRegion(id, host);
+    }
+    auto* a = page("layout:a", "A"); auto* b = page("layout:b", "B"); auto* c = page("layout:c", "C");
+    initial->addTab(a, "a"); initial->addTab(b, "b"); initial->addTab(c, "c");
+    for (auto* item : {a, b, c}) registry.registerPage(item, {}, "code");
+    auto* right = registry.createSplit(initial, EditorSplitDirection::Right);
+    registry.movePage(b, right);
+    auto* above = registry.createSplit(right, EditorSplitDirection::Above);
+    registry.movePage(c, above);
+    auto* tool = page("layout:tool", "Background");
+    registry.regionGroup("left")->addTab(tool, "tool");
+    registry.registerPage(tool, {}, "tool", [&] { return registry.parkPage(tool); });
+    registry.parkPage(tool);
+    window.resize(1300, 750); window.show(); QApplication::processEvents();
+    registry.activatePage(c);
+    const auto aGroup = registry.groupId(initial), bGroup = registry.groupId(right), cGroup = registry.groupId(above);
+    const auto saved = registry.savePageLayout();
+    for (auto* item : {a, b, c}) registry.movePage(item, registry.regionGroup("bottom"));
+    registry.removeEmptyGroups();
+    check(registry.restorePageLayout(saved).isEmpty(), "stable layout restores after original split widgets are removed");
+    check(registry.groupId(registry.groupForPage(a)) == aGroup && registry.groupId(registry.groupForPage(b)) == bGroup
+        && registry.groupId(registry.groupForPage(c)) == cGroup, "group identities survive reconstruction without replacing pages");
+    auto* nested = qobject_cast<QSplitter*>(registry.groupForPage(c)->parentWidget());
+    check(nested && nested->orientation() == Qt::Vertical && nested->widget(0) == registry.groupForPage(c)
+        && nested->widget(1) == registry.groupForPage(b), "nested split orientation and order are restored");
+    check(registry.activeGroup()->currentWidget() == c && registry.pageById("layout:tool") == tool
+        && !registry.groupForPage(tool), "active page and parked background tool survive restoration");
+    const int groupCount = registry.groupCount();
+    check(registry.restorePageLayout(saved).isEmpty() && registry.groupCount() == groupCount,
+        "repeated restore does not accumulate groups or duplicate views");
+    check(registry.restorePage(tool, initial) && registry.regionForGroup(registry.groupForPage(tool)) == "left",
+        "parked tool returns to its restored stable group");
+    auto damaged = saved; auto regions = damaged.value("regions").toArray();
+    for (int i = 0; i < regions.size(); ++i) {
+        auto region = regions[i].toObject();
+        if (region.value("id") == "left") { region.insert("tree", QJsonObject{}); regions[i] = region; }
+    }
+    damaged.insert("regions", regions);
+    damaged.insert("hidden", QJsonArray{});
+    check(!registry.restorePageLayout(damaged).isEmpty() && registry.groupForPage(tool)
+        && registry.regionForGroup(registry.groupForPage(a)) == "main", "a damaged region does not discard valid regions or existing pages");
+}
+
 int main(int argc, char* argv[])
 {
     qputenv(
         "QT_QPA_PLATFORM",
         QByteArrayLiteral("offscreen"));
     QApplication app(argc, argv);
+    testUnifiedRegions();
+    testStableLayoutRoundTrip();
     testPreviewGeometryAndDragVisual();
     testPreviewLifecycle();
     testDropResultMatchesPreview();
@@ -690,15 +800,15 @@ int main(int argc, char* argv[])
         first,
         EditorSplitDirection::Below,
         initial);
-    check(below && controller.groupCount() == 2
+    check(below && controller.groupCount() == 3
               && below->currentWidget() == first,
-          "moving the last page creates a nested split and removes empty group");
+          "moving the last page retains the fixed main region anchor");
 
     check(controller.handleDropForTest(
               QStringLiteral("view-b"),
               below,
               EditorSplitDirection::Left)
-              && controller.groupCount() == 2,
+              && controller.groupCount() == 3,
           "edge drop creates a directional split");
     check(controller.groupForPage(second)
               != right,
@@ -738,6 +848,28 @@ int main(int argc, char* argv[])
     QApplication::processEvents();
     check(controller.groupForPage(second) == below,
           "merged pages share the destination group");
+
+    auto* nestedTabs=new QTabWidget;
+    nestedTabs->addTab(new QLabel("Nested tool page"),"Tool workflow");
+    below->addTab(nestedTabs,"Tool");
+    below->setCurrentWidget(nestedTabs);
+    QTabBar unrelatedTabs;
+    unrelatedTabs.addTab("Workspace");
+    unrelatedTabs.show();
+    QApplication::processEvents();
+    for (auto* bar:{nestedTabs->tabBar(),&unrelatedTabs}) {
+        int requested=0;
+        bar->setContextMenuPolicy(Qt::CustomContextMenu);
+        const auto connection=QObject::connect(bar,&QWidget::customContextMenuRequested,bar,
+            [&](const QPoint&) { ++requested; });
+        const auto point=bar->tabRect(0).center();
+        QContextMenuEvent event(QContextMenuEvent::Mouse,point,bar->mapToGlobal(point));
+        QApplication::sendEvent(bar,&event);
+        QObject::disconnect(connection);
+        check(requested==1,bar==&unrelatedTabs
+            ? "unrelated workspace tabs retain their context menu"
+            : "nested tool tabs retain their context menu");
+    }
 
     std::cout << (checks - failures) << "/" << checks
               << " editor split checks passed\n";

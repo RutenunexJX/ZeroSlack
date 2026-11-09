@@ -8,7 +8,7 @@
 #include "navigationwidget.h"
 #include "tabmanager.h"
 #include "workspacemanager.h"
-#include "../simulation/simdock/ui/workbench.h"
+#include "../workspace/designprojectservice.h"
 #include <QMessageBox>
 #include "roundedicons.h"
 
@@ -373,8 +373,8 @@ void NavigationManager::onDesignNodeContextMenuRequested(
         return;
     if (selected == refresh) { refreshDesignHierarchy(true); return; }
     if (selected == add) { chooseDesignProject(); return; }
-    if (connectedWorkbench && (selected == activate || selected == remove)) {
-        const auto issue = selected == activate ? connectedWorkbench->openProject(node.projectId) : connectedWorkbench->removeDesignRoot(node.projectId);
+    if (designProjects && (selected == activate || selected == remove)) {
+        const auto issue = selected == activate ? designProjects->activateProject(node.projectId) : designProjects->removeDesignRoot(node.projectId);
         if (!issue.isEmpty()) QMessageBox::warning(navigationWidget, tr("Design project"), issue);
         return;
     }
@@ -406,7 +406,7 @@ void NavigationManager::navigateToDesignNodeFile(
     if (filePath.isEmpty())
         return;
 
-    if (connectedWorkbench && node.projectId != connectedWorkbench->activeProjectId()) {
+    if (designProjects && node.projectId != designProjects->activeProjectId()) {
         emit navigationRequested(filePath, lineNumber);
         return;
     }
@@ -431,16 +431,16 @@ void NavigationManager::setupConnections()
         if (!issue.isEmpty()) navigationWidget->finishDesignProjectSelection(issue, file, module);
     });
     connect(navigationWidget, &NavigationWidget::designExpansionChanged, this, [this](const QString& id, bool expanded) {
-        if (connectedWorkbench) connectedWorkbench->setDesignExpanded(id, expanded);
+        if (designProjects) designProjects->setDesignExpanded(id, expanded);
         for (auto& root : caches.designRoots) if (root.projectId == id) root.expanded = expanded;
         for (auto& node : caches.designHierarchy.nodes) if (node.isTop && node.projectId == id) node.expanded = expanded;
     });
     connect(navigationWidget, &NavigationWidget::designProjectActivated, this, [this](const QString& id) {
-        if (!connectedWorkbench) return;
+        if (!designProjects) return;
         for (const auto& node : caches.designHierarchy.nodes) if (node.isTop && node.projectId == id && node.unresolved) {
             QMessageBox::information(navigationWidget, tr("Design project"), node.unresolvedReason); return;
         }
-        const auto issue = connectedWorkbench->openProject(id);
+        const auto issue = designProjects->activateProject(id);
         if (!issue.isEmpty()) QMessageBox::warning(navigationWidget, tr("Design project"), issue);
     });
     // Wire NavigationWidget signals.

@@ -5,6 +5,7 @@
 
 #include <QHash>
 #include <QIcon>
+#include <QColor>
 #include <QList>
 #include <QMetaObject>
 #include <QObject>
@@ -12,6 +13,9 @@
 #include <QPoint>
 #include <QString>
 #include <QVariant>
+#include <QStringList>
+#include <QJsonObject>
+#include <functional>
 
 class QMouseEvent;
 class QSplitter;
@@ -19,6 +23,7 @@ class QTabBar;
 class QTabWidget;
 class QWidget;
 class EditorDropPreviewOverlay;
+class QDrag;
 
 enum class EditorSplitDirection {
     Left,
@@ -46,6 +51,31 @@ public:
     ~EditorSplitController() override;
 
     void setHost(QWidget* host);
+    QTabWidget* registerRegion(const QString& regionId, QWidget* host, QTabWidget* initial = nullptr);
+    QStringList regions() const;
+    QString regionForGroup(QTabWidget* group) const;
+    QTabWidget* regionGroup(const QString& regionId) const;
+    QTabWidget* regionActiveGroup(const QString& regionId) const;
+    QWidget* regionRoot(const QString& regionId) const;
+    QWidget* regionHost(const QString& regionId) const;
+    bool regionHasPages(const QString& regionId) const;
+    QList<QTabWidget*> groups(const QString& regionId) const;
+    QString groupId(QTabWidget* group) const;
+    QTabWidget* groupById(const QString& id) const;
+    QString pageId(QWidget* page) const;
+    QWidget* pageById(const QString& id) const;
+    bool registerPage(QWidget* page, const QString& id = {}, const QString& kind = {},
+                      std::function<bool()> close = {});
+    bool parkPage(QWidget* page);
+    bool takePage(QWidget* page);
+    void unregisterPage(QWidget* page);
+    bool restorePage(QWidget* page, QTabWidget* fallback = nullptr, bool activate = true);
+    bool requestPageClose(QWidget* page);
+    bool hasPageCloseHandler(QWidget* page) const;
+    bool activatePage(QWidget* page, bool focus = true);
+    QJsonObject savePageLayout(const std::function<bool(QWidget*)>& include = {}) const;
+    QStringList restorePageLayout(const QJsonObject& layout);
+    void setRegionRevealHandler(const QString& regionId, std::function<void()> reveal);
     QWidget* host() const;
     QTabWidget* initialGroup() const;
     QTabWidget* activeGroup() const;
@@ -66,6 +96,8 @@ public:
     bool mergeGroup(QTabWidget* source,
                     QTabWidget* destination = nullptr);
     void removeEmptyGroups();
+    bool retainGroup(QTabWidget* group);
+    void releaseGroup(QTabWidget* group);
     QTabWidget* floatPage(QWidget* page, const QPoint& globalPosition);
     void syncFloatingVisibility();
 
@@ -94,6 +126,11 @@ signals:
                    QTabWidget* source,
                    QTabWidget* destination);
     void layoutChanged();
+    void splitterResized(QSplitter* splitter);
+    void pageActivated(QWidget* page);
+    void pageVisibilityChanged(QWidget* page, bool visible);
+    void tabDragStarted(QDrag* drag);
+    void tabDragFinished();
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -104,7 +141,35 @@ private:
         QIcon icon;
         QString toolTip;
         QVariant data;
+        QString whatsThis;
+        QColor color;
+        bool enabled = true;
+        bool visible = true;
     };
+    struct Region {
+        QPointer<QWidget> host;
+        QPointer<QWidget> root;
+        QPointer<QTabWidget> anchor;
+        QPointer<QTabWidget> current;
+        std::function<void()> reveal;
+    };
+    struct Page {
+        QString id;
+        QString returnGroup;
+        int returnIndex = -1;
+        PagePresentation presentation;
+        std::function<bool()> close;
+    };
+    QHash<QString, Region> regionHosts;
+    QHash<QTabWidget*, QString> groupRegions;
+    QHash<QTabWidget*, int> retainedGroups;
+    QHash<QWidget*, Page> pages;
+    QPointer<QWidget> parkedPages;
+    QString maximizedRegion;
+    bool restoringPageLayout = false;
+    void revealGroup(QTabWidget* group);
+    void updateGroupMinimumWidth(QTabWidget* group);
+    void updateRegionRoot(const QString& regionId, QWidget* root);
 
     QPointer<QWidget> splitHost;
     QPointer<QWidget> rootWidget;
@@ -122,7 +187,7 @@ private:
     QMetaObject::Connection previewSourceDestroyedConnection;
     bool groupMaximized = false;
 
-    QTabWidget* createGroup();
+    QTabWidget* createGroup(const QString& regionId);
     void configureGroup(QTabWidget* group);
     void bindGroupDropTargets(QTabWidget* group);
     void bindDropTarget(QWidget* target);
