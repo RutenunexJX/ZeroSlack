@@ -4,6 +4,8 @@
 #include "tsdocument.h"
 
 #include <QApplication>
+#include <QClipboard>
+#include <QInputMethodEvent>
 #include <QKeyEvent>
 #include <QTextBlock>
 #include <QTextCursor>
@@ -77,6 +79,92 @@ int main(int argc, char* argv[])
 {
     QApplication application(argc, argv);
     QApplication::setQuitOnLastWindowClosed(false);
+
+    for (const auto& input : QList<QPair<Qt::KeyboardModifiers, QString>>{
+             {Qt::ShiftModifier, QStringLiteral("A")},
+             {Qt::ShiftModifier, QStringLiteral("!")},
+             {Qt::NoModifier, QStringLiteral("a")}}) {
+        MyCodeEditor editor;
+        const QString original = QStringLiteral("abc\nnext");
+        editor.resize(520, 160);
+        editor.setLineWrapMode(QPlainTextEdit::NoWrap);
+        editor.setPlainText(original);
+        editor.show();
+        editor.setFocus();
+        QApplication::processEvents();
+        QTest::mouseClick(editor.viewport(), Qt::LeftButton, Qt::AltModifier,
+                         pointBeyondLineEnd(editor, 0, 4));
+        const int column = editor.virtualCursorColumnForTest();
+        expect("text fixture has a virtual caret beyond EOL", column > 3);
+        const QString expected = QStringLiteral("abc")
+            + QString(column - 3, QLatin1Char(' ')) + input.second + "\nnext";
+        std::printf("virtual input text=%s modifiers=%d column=%d\n",
+                    qPrintable(input.second), int(input.first), column);
+        sendTextKey(editor, input.second == "!" ? Qt::Key_Exclam : Qt::Key_A,
+                    input.first, input.second);
+        expect("Qt text key materializes padding at the virtual column",
+               editor.toPlainText() == expected
+                   && editor.textCursor().positionInBlock() == column + 1
+                   && !editor.virtualCursorActiveForTest());
+        editor.undo();
+        expect("virtual padding and text undo together", editor.toPlainText() == original);
+        editor.redo();
+        expect("virtual padding and text redo together", editor.toPlainText() == expected);
+        sendTextKey(editor, Qt::Key_Z, Qt::NoModifier, "z");
+        expect("subsequent text follows the materialized caret",
+               editor.toPlainText() == expected.left(column + 1) + "z\nnext"
+                   && editor.textCursor().positionInBlock() == column + 2);
+    }
+
+    for (int input = 0; input < 7; ++input) {
+        MyCodeEditor editor;
+        const QString original = QStringLiteral("abc\nnext");
+        editor.resize(520, 160);
+        editor.setPlainText(original);
+        editor.show();
+        editor.setFocus();
+        QApplication::processEvents();
+        QTest::mouseClick(editor.viewport(), Qt::LeftButton, Qt::AltModifier,
+                         pointBeyondLineEnd(editor, 0, 4));
+        const int column = editor.virtualCursorColumnForTest();
+        if (input < 2) {
+            QApplication::clipboard()->setText("p");
+            QTest::keyClick(&editor, input == 0 ? Qt::Key_V : Qt::Key_Insert,
+                            input == 0 ? Qt::ControlModifier : Qt::ShiftModifier);
+        } else if (input == 2) {
+            QInputMethodEvent commit;
+            commit.setCommitString(QString::fromUtf8("测"));
+            QApplication::sendEvent(&editor, &commit);
+        } else if (input >= 5) {
+            sendTextKey(editor, input == 5 ? Qt::Key_Backtab : Qt::Key_Return,
+                        Qt::ShiftModifier, input == 5 ? "\t" : "\r");
+            expect("shifted control keys do not materialize virtual padding",
+                   !editor.toPlainText().contains("    ") && !editor.virtualCursorActiveForTest());
+            continue;
+        } else {
+            sendTextKey(editor, Qt::Key_Left, input == 3 ? Qt::ControlModifier
+                        : Qt::AltModifier | Qt::ShiftModifier, {});
+            expect("command modifiers do not materialize virtual padding",
+                   editor.toPlainText() == original);
+            continue;
+        }
+        const QString expected = "abc" + QString(column - 3, QLatin1Char(' '))
+            + (input == 2 ? QString::fromUtf8("测") : QStringLiteral("p")) + "\nnext";
+        expect("paste and IME retain virtual insertion semantics", editor.toPlainText() == expected);
+        editor.undo();
+        expect("paste and IME retain the existing separate padding undo step",
+               editor.toPlainText() == "abc" + QString(column - 3, QLatin1Char(' ')) + "\nnext");
+        editor.undo();
+        expect("paste and IME undo restore the original document", editor.toPlainText() == original);
+        editor.redo();
+        editor.redo();
+        expect("paste and IME redo include virtual padding", editor.toPlainText() == expected);
+    }
+
+    if (application.arguments().contains(QStringLiteral("--virtual-input-only"))) {
+        std::printf("%d checks, %d failed\n", checks, failures);
+        return failures == 0 ? 0 : 1;
+    }
 
     {
         MyCodeEditor editor;

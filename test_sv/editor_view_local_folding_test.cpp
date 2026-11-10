@@ -829,10 +829,83 @@ void exerciseDocumentOwnedSyntax()
            EditorSyntaxState::liveDocumentCountForTest() == ownersBefore);
 }
 
+void exerciseFoldedBottomBoundary()
+{
+    for (int scenario = 0; scenario < 4; ++scenario) {
+        MyCodeEditor editor;
+        QString source = QStringLiteral("module bottom;\ninitial begin\n  a = 1;\nend\nendmodule\n");
+        for (int row = 0; row < 40; ++row)
+            source += QStringLiteral("// visible row %1\n").arg(row);
+        source += scenario >= 2 ? "// " + QString(scenario == 3 ? 2000 : 100, QLatin1Char('x'))
+                                : QStringLiteral("// final line");
+        if (scenario == 1)
+            source += '\n';
+        editor.setLineWrapMode(scenario >= 2 ? QPlainTextEdit::WidgetWidth : QPlainTextEdit::NoWrap);
+        editor.resize(411, 243);
+        editor.setPlainText(source);
+        editor.show();
+        editor.setFocus();
+        pumpEvents();
+        editor.toggleFoldAtLineForTest(1);
+        pumpEvents();
+        expect("bottom fixture activates local folding", editor.viewProjectionActive());
+        const qreal expectedDpr = qEnvironmentVariable("ZEROSLACK_EXPECT_DPR").toDouble();
+        if (expectedDpr > 0)
+            expect("native window uses requested measured DPR", qAbs(editor.devicePixelRatioF() - expectedDpr) < 0.01);
+        for (int width : {411, 239, 411}) {
+            editor.resize(width, 243);
+            pumpEvents();
+            editor.viewProjectionActive();
+            editor.verticalScrollBar()->setValue(editor.verticalScrollBar()->maximum());
+            renderEditor(&editor);
+            const QTextBlock last = editor.document()->lastBlock();
+            const auto geometry = editor.blockGeometry(last.blockNumber());
+            const QTextLine line = last.layout()->lineAt(last.layout()->lineCount() - 1);
+            const qreal top = geometry.top + line.y();
+            const qreal bottom = top + line.height();
+            std::printf("bottom scenario=%d dpr=%.2f width=%d viewport=%d rowHeight=%.3f range=%d value=%d last=[%.3f,%.3f] blockBottom=%.3f\n",
+                        scenario, editor.devicePixelRatioF(), width, editor.viewport()->height(),
+                        line.height(), editor.verticalScrollBar()->maximum(), editor.verticalScrollBar()->value(),
+                        top, bottom, geometry.top + geometry.height);
+            expect("last visual line is fully reachable after folding and resizing",
+                   top >= -0.01 && bottom <= editor.viewport()->height() + 0.01);
+            expect("folded bottom has no excessive blank space or negative range",
+                   editor.verticalScrollBar()->minimum() == 0
+                       && editor.verticalScrollBar()->maximum() >= 0
+                       && qAbs(geometry.top + geometry.height - editor.viewport()->height()) < 1.0);
+            const QTextCursor hit = editor.cursorForPosition(QPoint(25, qRound(top + line.height() / 2)));
+            expect("bottom hit testing uses the same projected origin", hit.blockNumber() == last.blockNumber());
+            editor.verticalScrollBar()->setValue(0);
+            QTest::keyClick(&editor, Qt::Key_End, Qt::ControlModifier);
+            pumpEvents();
+            const QRect caret = editor.cursorRect();
+            expect("keyboard navigation reveals the final wrapped caret",
+                   caret.top() >= 0 && caret.y() + caret.height() <= editor.viewport()->height() + 1);
+        }
+        editor.toggleFoldAtLineForTest(1);
+        pumpEvents();
+        expect("unfold restores the native layout", !editor.viewProjectionActive());
+        QTest::keyClick(&editor, Qt::Key_Home, Qt::ControlModifier);
+        QTest::keyClick(&editor, Qt::Key_End, Qt::ControlModifier);
+        pumpEvents();
+        expect("unfolded final caret remains fully reachable", editor.cursorRect().top() >= 0
+               && editor.cursorRect().y() + editor.cursorRect().height() <= editor.viewport()->height() + 1);
+        editor.toggleFoldAtLineForTest(1);
+        pumpEvents();
+        expect("refolding retains canonical document visibility", editor.viewProjectionActive()
+               && allBlocksCanonicalVisible(editor.document()));
+    }
+}
+
 int main(int argc, char** argv)
 {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     QApplication application(argc, argv);
+    exerciseFoldedBottomBoundary();
+    if (application.arguments().contains(QStringLiteral("--bottom-boundary-only"))) {
+        std::printf("Checks: %d, Failures: %d\n", checks, failures);
+        return failures == 0 ? 0 : 1;
+    }
     exerciseDocumentOwnedSyntax();
     exerciseTwoViewsOwnTheirFoldPresentation();
     exerciseFoldAnchorBoundariesAndFindReveal();

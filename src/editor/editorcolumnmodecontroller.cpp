@@ -48,6 +48,30 @@ constexpr int kManualIndentWidth = 4;
 constexpr const char* kColumnCaretAnnotationSource =
     "column-carets";
 
+bool hasTextModifiers(const QKeyEvent* event)
+{
+    return !(event->modifiers()
+             & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier));
+}
+
+bool isPrintableTextInput(const QKeyEvent* event)
+{
+    if (!hasTextModifiers(event) || event->text().isEmpty())
+        return false;
+    switch (event->key()) {
+    case Qt::Key_Backspace:
+    case Qt::Key_Delete:
+    case Qt::Key_Tab:
+    case Qt::Key_Backtab:
+    case Qt::Key_Return:
+    case Qt::Key_Enter:
+    case Qt::Key_Escape:
+        return false;
+    default:
+        return true;
+    }
+}
+
 bool hasColumnSelection(const EditorColumnModeController::State& state)
 {
     return state.modes
@@ -776,9 +800,7 @@ bool handleColumnSelectionKeyInput(MyCodeEditor* editor,
     if (!editor || !event || !hasColumnSelection(state)
         || !editor->canApplyInsertion())
         return false;
-    if (event->modifiers().testFlag(Qt::ControlModifier)
-        || event->modifiers().testFlag(Qt::MetaModifier)
-        || event->modifiers().testFlag(Qt::AltModifier)) {
+    if (!hasTextModifiers(event)) {
         return false;
     }
     const Qt::KeyboardModifiers textModifiers =
@@ -800,11 +822,7 @@ bool handleColumnSelectionKeyInput(MyCodeEditor* editor,
 
     const bool backspace = event->key() == Qt::Key_Backspace;
     const bool deleteKey = event->key() == Qt::Key_Delete;
-    const bool printable = !event->text().isEmpty()
-        && !backspace
-        && !deleteKey
-        && !forwardTab
-        && !backwardTab;
+    const bool printable = isPrintableTextInput(event);
     if (!printable && !backspace && !deleteKey && !forwardTab && !backwardTab)
         return false;
 
@@ -1592,9 +1610,7 @@ bool EditorColumnModeController::
         event->matches(QKeySequence::Paste)
         || (plainControlShortcut
             && event->key() == Qt::Key_V);
-    const bool printable =
-        relevantModifiers == Qt::NoModifier
-        && !event->text().isEmpty();
+    const bool printable = isPrintableTextInput(event);
     const bool textControl =
         relevantModifiers == Qt::NoModifier
         && (event->key() == Qt::Key_Tab

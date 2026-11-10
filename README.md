@@ -1,6 +1,8 @@
 # ZeroSlack
 
-Current version: `v0.35.0`
+Current version: `v0.35.1`
+
+Release 0.35.1 fixes virtual-column editing and local-folding boundaries. It includes native xIPs 2.16.2; the asset adapter remains 2.14.2. Functional acceptance is reused with release-specific build and package verification.
 
 Release 0.35.0 runs simulation from the selected testbench and resolves its compilation dependencies automatically. Main, left, right and bottom hosts share movable tabs; code, Markdown and block views share document content, while PDF tabs provide read-only viewing. The left host can create Markdown and block documents. Simulation duration is controlled by the testbench. Acceptance reuses the recorded full run plus successful targeted repairs and actual GUI/Questa checks; nine policy-restricted tests remain unverified. Suite SDK/Runtime remains 1.0.2, native xIPs 2.16.1 and the independent asset adapter 2.14.2.
 
@@ -152,12 +154,13 @@ including every shortcut and edge case, lives in the linked chapter or contract 
 | Insights | State-transition and FSM views, nested module block diagrams, signal-kernel graphs, and usage hotspots with Track/Matrix views. | [manual §15](用户手册.md) |
 | Insights | Each insight section renders the real view through the same surface the full view uses; source Actions retarget and pin the matching section instead of opening a central tab. | [manual §3, §16](用户手册.md), [architecture](ARCHITECTURE.md) |
 | RTL edits | Preview-first rename, connection transform, expose-to-top, scoped replace, instance-pair connection and multi-signal propagation, including module-port synchronization across all instances in one Change Preview transaction. | [manual §17](用户手册.md) |
+| Simulation | Select an existing TB and top in Simulation, then Run with automatically resolved compilation dependencies. Run log and Simulation events show the current run; Questa's Wave window displays the recorded hierarchy signals. | [manual §3.4](用户手册.md) |
 | Suite | Independent context panels and versioned cross-application associations remain available through public contracts and read-only CLI queries. | [AppSuite integration](docs/suite.md), [manual §20](用户手册.md) |
 | Settings | Themes including Catppuccin, fonts, shortcuts by Action ID, annotations, analysis, integration and layout; every category except the theme can be scoped globally or per workspace. | [manual §18](用户手册.md) |
 
 Ownership boundary: native documents and external application data stay with their owners.
-External application resources use the Suite integration boundary. The integrated simulation
-workbench owns its Questa sessions and transient results; independent application data remains
+External application resources use the Suite integration boundary. ZeroSlack's workspace simulation
+controller owns its Questa session, run log and event model independently of their panels; external application data remains
 with its owner.
 Checks that have never been run on a real desktop are listed in
 [unverified manual checks](docs/unverified-manual-checks.md).
@@ -234,8 +237,11 @@ Settings, Search / Replace, Change Preview and Connections construct their heavy
 on first use. Settings values and workspace context remain available before opening Settings.
 Hidden drawer state is retained until its page exists; closing and reopening reuses that page.
 Problems and Activity retain their lightweight models and badge updates. Specialized insight
-surfaces remain provider-created on demand. Fold Shelf, custom Fold Region, static Wave Preview and Wave Simulation are removed;
-syntax folding and the four specialized diagrams remain available.
+surfaces remain provider-created on demand. Fold Shelf, custom Fold Region and the old static
+Wave Preview / Wave Simulation insight pages are retired. Syntax folding, the four specialized
+diagrams and the current TB-driven Questa simulation remain available. Run log and Simulation
+events can be closed or moved without stopping the run; reopening them restores the current
+results. Run waveforms are viewed in Questa, independently of the retired insight pages.
 
 The retired Module Brief, Signal Journey and Clock/Reset Map report pages are removed.
 Shared signal-relationship analysis, clock/reset facts and semantic Diff rendering remain available.
@@ -243,7 +249,7 @@ Shared signal-relationship analysis, clock/reset facts and semantic Diff renderi
 ## Versioning and release
 
 `VERSION` is the single manually maintained product version source and must contain exactly
-one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.35.0`.
+one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.35.1`.
 CMake generates `generated/version.h`, which supplies the application title/status version and
 the GUI tests. `version_documentation_guard` checks the generated header and the version
 markers in this README, the user manual and the package README.
@@ -278,7 +284,7 @@ end/endcase/endmodule align with their opening structure. Generated delimiter
 tracking preserves continuation indentation and repeated-close behavior after undo/redo.
 Release 0.31.17 fixes workspace-analysis handoff and removes redundant search, document, catalog, marker and semantic-query work.
 
-The current release is `0.35.0`. Ela is the sole formal package,
+The current release is `0.35.1`. Ela is the sole formal package,
 replacing the former classic package with the normal ZeroSlack name. The existing
 `ZeroSlack/ZeroSlack-Ela` INI storage identity is retained to preserve settings and sessions.
 `package-ela.ps1` forwards to the same release script for compatibility.

@@ -262,18 +262,16 @@ void EditorViewProjection::configureVerticalScrollBar(
     }
     const qreal targetTop = qMax<qreal>(
         0.0, projectedDocumentHeight - editor->viewport()->height());
-    const auto maximumIt = std::upper_bound(visibleRowTops.cbegin(),
+    const auto maximumIt = std::lower_bound(visibleRowTops.cbegin(),
                                              visibleRowTops.cend(),
                                              targetTop);
-    const int maximum = visibleRowTops.isEmpty()
-        ? 0
-        : qBound(0,
-                 static_cast<int>(maximumIt - visibleRowTops.cbegin()) - 1,
-                 visibleRowTops.size() - 1);
+    // The final stop is the exact bottom offset, including inside a wrapped block.
+    const int maximum = static_cast<int>(maximumIt - visibleRowTops.cbegin());
     const int boundedValue = qBound(0, bar->value(), maximum);
-    const int first = qBound(0, boundedValue, visibleRowTops.size() - 1);
-    const qreal pageBottom = visibleRowTops.at(first)
-        + editor->viewport()->height();
+    const qreal origin = boundedValue == maximum ? targetTop : visibleRowTops.at(boundedValue);
+    const int first = qMax(0, static_cast<int>(std::upper_bound(
+        visibleRowTops.cbegin(), visibleRowTops.cend(), origin) - visibleRowTops.cbegin()) - 1);
+    const qreal pageBottom = origin + editor->viewport()->height();
     const auto pageEnd = std::lower_bound(visibleRowTops.cbegin() + first,
                                            visibleRowTops.cend(),
                                            pageBottom);
@@ -300,45 +298,20 @@ void EditorViewProjection::configureVerticalScrollBar(
 void EditorViewProjection::restoreCanonicalVerticalScrollBar(
     MyCodeEditor* editor) const
 {
-    if (!editor || !editor->verticalScrollBar() || !editor->document())
+    if (!editor || !editor->document())
         return;
-    QScrollBar* bar = editor->verticalScrollBar();
-    QAbstractTextDocumentLayout* layout = editor->document()->documentLayout();
-    const qreal rowHeight = blockHeight(layout,
-                                        editor->document()->begin(),
-                                        editor->fontMetrics().height());
-    const int pageRows = qMax(
-        1, static_cast<int>(editor->viewport()->height() / rowHeight));
-    const int maximum = qMax(
-        0, editor->document()->blockCount() - pageRows);
-    const int boundedValue = qBound(0, bar->value(), maximum);
-    if (bar->minimum() == 0
-        && bar->maximum() == maximum
-        && bar->singleStep() == 1
-        && bar->pageStep() == pageRows
-        && bar->value() == boundedValue) {
-        return;
-    }
-    const QSignalBlocker blocker(bar);
-    if (bar->minimum() != 0 || bar->maximum() != maximum)
-        bar->setRange(0, maximum);
-    if (bar->singleStep() != 1)
-        bar->setSingleStep(1);
-    if (bar->pageStep() != pageRows)
-        bar->setPageStep(pageRows);
-    if (bar->value() != boundedValue)
-        bar->setValue(boundedValue);
+    // Let Qt restore its visual-line range, including wrapping and bottom margins.
+    auto* layout = editor->document()->documentLayout();
+    emit layout->documentSizeChanged(layout->documentSize());
 }
-
 int EditorViewProjection::firstVisibleRow(MyCodeEditor* editor) const
 {
     if (associated.active()) return associated.rowAtY(associated.offset(editor));
     if (!editor || visibleSourceLines.isEmpty())
         return 0;
-    const QScrollBar* bar = editor->verticalScrollBar();
-    return qBound(0,
-                  bar ? bar->value() : 0,
-                  visibleSourceLines.size() - 1);
+    return qMax(0, static_cast<int>(std::upper_bound(
+        visibleRowTops.cbegin(), visibleRowTops.cend(), originTop(editor))
+        - visibleRowTops.cbegin()) - 1);
 }
 
 int EditorViewProjection::rowAtViewportY(MyCodeEditor* editor, int y) const
@@ -347,7 +320,7 @@ int EditorViewProjection::rowAtViewportY(MyCodeEditor* editor, int y) const
     if (visibleSourceLines.isEmpty())
         return -1;
     const int first = firstVisibleRow(editor);
-    const qreal documentY = visibleRowTops.at(first) + qMax(0, y);
+    const qreal documentY = originTop(editor) + qMax(0, y);
     auto it = std::upper_bound(visibleRowTops.cbegin(),
                                visibleRowTops.cend(),
                                documentY);
@@ -384,9 +357,9 @@ EditorProjectionGeometry EditorViewProjection::blockGeometry(
     if (!editor || visibleSourceLines.isEmpty())
         return result;
     const int row = visibleRowForSourceLine(sourceLine);
-    const int first = firstVisibleRow(editor);
+    const qreal origin = originTop(editor);
     if (row >= 0) {
-        result.top = visibleRowTops.at(row) - visibleRowTops.at(first);
+        result.top = visibleRowTops.at(row) - origin;
         result.height = visibleRowHeights.at(row);
         return result;
     }
@@ -395,8 +368,8 @@ EditorProjectionGeometry EditorViewProjection::blockGeometry(
                                        sourceLine);
     const int nextRow = static_cast<int>(next - visibleSourceLines.cbegin());
     result.top = nextRow < visibleRowTops.size()
-        ? visibleRowTops.at(nextRow) - visibleRowTops.at(first)
-        : projectedDocumentHeight - visibleRowTops.at(first);
+        ? visibleRowTops.at(nextRow) - origin
+        : projectedDocumentHeight - origin;
     return result;
 }
 
@@ -436,10 +409,9 @@ QPointF EditorViewProjection::contentOffset(MyCodeEditor* editor) const
         return editor->contentOffset();
     if (!editor || visibleSourceLines.isEmpty())
         return {};
-    const int first = firstVisibleRow(editor);
     const int horizontal = editor->horizontalScrollBar()
         ? editor->horizontalScrollBar()->value() : 0;
-    return QPointF(-horizontal, -visibleRowTops.at(first));
+    return QPointF(-horizontal, -originTop(editor));
 }
 
 qreal EditorViewProjection::documentHeight() const
@@ -505,7 +477,6 @@ QRect EditorViewProjection::cursorRect(
     QTextLine line = layout ? layout->lineForTextPosition(offset) : QTextLine();
     if (!line.isValid() && layout && layout->lineCount() > 0)
         line = layout->lineAt(0);
-    const int first = firstVisibleRow(editor);
     const int horizontal = editor->horizontalScrollBar()
         ? editor->horizontalScrollBar()->value() : 0;
     int adjustedOffset = offset;
@@ -531,14 +502,22 @@ void EditorViewProjection::ensureCursorVisible(
     if (row < 0)
         return;
     QScrollBar* bar = editor->verticalScrollBar();
-    const int page = qMax(1, bar->pageStep());
-    int next = bar->value();
+    const QRect caret = cursorRect(editor, editor->textCursor());
+    const qreal origin = originTop(editor);
+    const int viewportHeight = editor->viewport()->height();
+    qreal target = origin;
     if (center)
-        next = row - page / 2;
-    else if (row < next)
-        next = row;
-    else if (row >= next + page)
-        next = row - page + 1;
+        target += caret.y() + caret.height() / 2.0 - viewportHeight / 2.0;
+    else if (caret.top() < 0)
+        target += caret.top();
+    else if (caret.y() + caret.height() > viewportHeight)
+        target += caret.y() + caret.height() - viewportHeight;
+    else
+        return;
+    const auto it = target < origin
+        ? std::upper_bound(visibleRowTops.cbegin(), visibleRowTops.cend(), target)
+        : std::lower_bound(visibleRowTops.cbegin(), visibleRowTops.cend(), target);
+    const int next = static_cast<int>(it - visibleRowTops.cbegin()) - (target < origin ? 1 : 0);
     bar->setValue(qBound(bar->minimum(), next, bar->maximum()));
 }
 
@@ -635,7 +614,13 @@ void EditorViewProjection::paint(
 
 qreal EditorViewProjection::originTop(MyCodeEditor* editor) const
 {
-    return associated.active() ? associated.offset(editor) : visibleRowTops.at(firstVisibleRow(editor));
+    if (associated.active()) return associated.offset(editor);
+    if (!editor || visibleRowTops.isEmpty()) return 0.0;
+    const QScrollBar* bar = editor->verticalScrollBar();
+    const qreal bottom = qMax<qreal>(0.0, projectedDocumentHeight - editor->viewport()->height());
+    if (bar && bar->value() == bar->maximum()) return bottom;
+    return qMin(bottom, visibleRowTops.at(qBound(0, bar ? bar->value() : 0,
+                                               visibleRowTops.size() - 1)));
 }
 
 EditorViewProjectionMetrics EditorViewProjection::metrics() const
