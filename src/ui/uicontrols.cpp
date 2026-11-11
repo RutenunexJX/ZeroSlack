@@ -2,6 +2,7 @@
 #include "applicationthememanager.h"
 #include "insightvisualstyle.h"
 #include "uitypography.h"
+#include "roundedicons.h"
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDoubleSpinBox>
@@ -37,27 +38,47 @@
 #include <QStyleHints>
 #include <QTextBoundaryFinder>
 #include <QCursor>
+#include <QDynamicPropertyChangeEvent>
 
 namespace {
 template<class Base> class WorkspaceTabBar final : public Base {
 public:
-    using Base::Base;
-    QSize minimumSizeHint() const override {
-        if (!currentLabels()) return Base::minimumSizeHint();
-        return QSize(this->count() * iconWidth(), this->count() ? tabHeight() : 0);
+    explicit WorkspaceTabBar(QWidget* parent = nullptr) : Base(parent) {
+        QObject::connect(this, &QTabBar::currentChanged, this, [this] {
+            if (currentLabels()) refreshPresentation();
+        });
+        QObject::connect(this, &QTabBar::tabMoved, this, [this] {
+            clearClick();
+            if (currentLabels()) refreshPresentation();
+        });
     }
 protected:
     QSize tabSizeHint(int index) const override {
         if (currentLabels()) {
-            const auto text = this->tabText(index);
-            return QSize(iconWidth() + (text.isEmpty() ? 0 : textGap + this->fontMetrics().horizontalAdvance(text)), tabHeight());
+            const auto text = index == this->currentIndex() ? this->tabText(index) : QString();
+            return QSize(iconWidth() + (text.isEmpty() ? 0 : textGap + labelMetrics().horizontalAdvance(text))
+                         + (index == this->currentIndex() ? buttonExtent(index) : 0), tabHeight());
         }
         auto hint = Base::tabSizeHint(index);
         if (this->property("compactIconTabs").toBool()) hint.setWidth(this->iconSize().width() + 24);
         return hint;
     }
     QSize minimumTabSizeHint(int index) const override {
-        if (currentLabels()) return QSize(iconWidth(), tabHeight());
+        if (currentLabels()) {
+            if (index != this->currentIndex()) return QSize(iconWidth(), tabHeight());
+            const QString text = this->tabText(index);
+            QTextBoundaryFinder boundary(QTextBoundaryFinder::Grapheme, text);
+            int end = 0;
+            for (int grapheme = 0; grapheme < 4; ++grapheme) {
+                const int next = boundary.toNextBoundary();
+                if (next < 0) break;
+                end = next;
+            }
+            const auto metrics = labelMetrics();
+            const int textWidth = text.isEmpty() ? 0 : textGap + qMin(metrics.horizontalAdvance(text),
+                metrics.horizontalAdvance(text.left(end) + QChar(0x2026)));
+            return QSize(iconWidth() + buttonExtent(index) + textWidth, tabHeight());
+        }
         if (this->property("compactIconTabs").toBool()) return tabSizeHint(index);
         auto hint = Base::minimumTabSizeHint(index);
         if (this->property("editorFileTabs").toBool() && this->property("zeroslackElaControl").toBool()) {
@@ -99,6 +120,7 @@ protected:
     }
     void mouseReleaseEvent(QMouseEvent* event) override {
         if (!currentLabels() || event->button() != Qt::LeftButton) { Base::mouseReleaseEvent(event); return; }
+        Base::mouseReleaseEvent(event);
         if (pressedTarget >= 0 && pressRect.contains(event->globalPosition().toPoint())
             && (event->globalPosition() - pressPosition).manhattanLength() <= QApplication::startDragDistance()) {
             lastTarget = pressedTarget;
@@ -110,35 +132,84 @@ protected:
         this->update();
     }
     void mouseMoveEvent(QMouseEvent* event) override {
-        if (!currentLabels()) { Base::mouseMoveEvent(event); return; }
-        this->update();
-        event->accept();
+        Base::mouseMoveEvent(event);
+        if (currentLabels()) { syncTabButtons(); this->update(); }
     }
     void keyPressEvent(QKeyEvent* event) override {
         if (currentLabels()) clearClick();
         Base::keyPressEvent(event);
     }
     bool event(QEvent* event) override {
+        if (event->type() == QEvent::DynamicPropertyChange
+            && static_cast<QDynamicPropertyChangeEvent*>(event)->propertyName() == "currentLabelTabs")
+            refreshPresentation();
         if (currentLabels()) {
             if (event->type() == QEvent::Hide || event->type() == QEvent::WindowDeactivate
                 || (event->type() == QEvent::UngrabMouse && pressedTarget >= 0)) { pressedTarget = -1; clearClick(); }
             if (event->type() == QEvent::Enter || event->type() == QEvent::Leave
-                || event->type() == QEvent::FocusIn || event->type() == QEvent::FocusOut) this->update();
+                || event->type() == QEvent::FocusIn || event->type() == QEvent::FocusOut) {
+                syncTabButtons();
+                this->update();
+            }
         }
         return Base::event(event);
     }
-    void tabInserted(int index) override { clearClick(); Base::tabInserted(index); }
-    void tabRemoved(int index) override { clearClick(); Base::tabRemoved(index); }
+    void tabInserted(int index) override { clearClick(); Base::tabInserted(index); if (currentLabels()) refreshPresentation(); }
+    void tabRemoved(int index) override { clearClick(); Base::tabRemoved(index); if (currentLabels()) refreshPresentation(); }
+    void tabLayoutChange() override { Base::tabLayoutChange(); if (currentLabels()) syncTabButtons(); }
 private:
     static constexpr int textGap = 6;
     bool currentLabels() const { return this->property("currentLabelTabs").toBool(); }
-    int iconWidth() const { return qMax(36, this->iconSize().width() + 24); }
-    int tabHeight() const { return qMax(this->iconSize().height(), this->fontMetrics().height()) + 12; }
+    int iconWidth() const { return this->iconSize().width() + 16; }
+    int tabHeight() const { return qMax(36, this->fontMetrics().height() + 14); }
+    QFont labelFont() const { QFont font = this->font(); font.setWeight(QFont::Medium); return font; }
+    QFontMetrics labelMetrics() const { return QFontMetrics(labelFont()); }
+    bool keyboardFocus() const { return this->hasFocus() && this->testAttribute(Qt::WA_KeyboardFocusChange); }
+    bool showCurrentClose() const {
+        const QPoint pointer = this->mapFromGlobal(QCursor::pos());
+        return keyboardFocus() || (this->rect().contains(pointer) && this->tabRect(this->currentIndex()).contains(pointer));
+    }
+    int buttonExtent(int index, QTabBar::ButtonPosition side) const {
+        const auto* button = this->tabButton(index, side);
+        return button ? qMin(18, button->sizeHint().width()) + 4 : 0;
+    }
+    int buttonExtent(int index) const { return buttonExtent(index, QTabBar::LeftSide) + buttonExtent(index, QTabBar::RightSide); }
+    void syncTabButtons() {
+        const auto scrollButtons = this->template findChildren<QToolButton*>(QString(), Qt::FindDirectChildrenOnly);
+        for (int index = 0; index < this->count(); ++index) {
+            for (const auto side : {QTabBar::LeftSide, QTabBar::RightSide}) {
+                auto* button = this->tabButton(index, side);
+                if (!button) continue;
+                if (currentLabels()) {
+                    const QRect tab = this->tabRect(index);
+                    const QSize size = button->sizeHint().boundedTo(QSize(18,18));
+                    button->resize(size);
+                    button->move(side == QTabBar::LeftSide ? tab.left()+8 : tab.right()-8-size.width()+1,
+                                 tab.center().y()-size.height()/2);
+                }
+                bool exposed = (!currentLabels() || (index == this->currentIndex() && showCurrentClose()))
+                    && this->isTabVisible(index) && this->rect().contains(button->geometry());
+                for (const auto* scroll : scrollButtons)
+                    if (scroll != button && scroll->isVisible() && scroll->geometry().intersects(button->geometry())) exposed = false;
+                button->setVisible(exposed);
+            }
+        }
+    }
+    void refreshPresentation() {
+        if (currentLabels())
+            for (auto* scroll : this->template findChildren<QToolButton*>(QString(), Qt::FindDirectChildrenOnly))
+                scroll->setAutoRaise(true);
+        // Refresh Qt's cached tab geometry without changing the authoritative titles.
+        this->setElideMode(this->elideMode());
+        syncTabButtons();
+        this->updateGeometry();
+        this->update();
+    }
     QString displayText(int index, int width) const {
         const QString text = this->tabText(index);
-        const int available = width - iconWidth() - textGap;
+        const int available = width - iconWidth() - textGap - buttonExtent(index);
         if (text.isEmpty() || available <= 0) return {};
-        const auto metrics = this->fontMetrics();
+        const auto metrics = labelMetrics();
         if (metrics.horizontalAdvance(text) <= available) return text;
         QTextBoundaryFinder boundary(QTextBoundaryFinder::Grapheme, text);
         const int first = boundary.toNextBoundary();
@@ -146,12 +217,18 @@ private:
         return metrics.elidedText(text, Qt::ElideRight, available);
     }
     void paintNavigation() {
+        syncTabButtons();
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing);
+        painter.setFont(labelFont());
+        QRegion tabsClip(this->rect());
+        for (const auto* scroll : this->template findChildren<QToolButton*>(QString(), Qt::FindDirectChildrenOnly))
+            if (scroll->isVisible()) tabsClip -= scroll->geometry();
+        painter.setClipRegion(tabsClip);
         const bool dark = isDarkTheme(ApplicationThemeManager::instance().mode());
-        const QColor selected = dark ? QColor(56,56,56) : QColor(227,227,227);
-        const QColor hover = dark ? QColor(43,43,43) : QColor(238,238,238);
-        const QColor textColor = dark ? QColor(240,240,240) : QColor(32,32,32);
+        const QColor selected = dark ? QColor(58,58,57) : QColor(237,236,234);
+        const QColor hover = dark ? QColor(46,46,45) : QColor(242,241,239);
+        const QColor textColor = dark ? QColor(235,235,233) : QColor(55,53,47);
         const QColor focus = dark ? QColor(184,184,184) : QColor(90,90,90);
         const QPoint pointer = this->mapFromGlobal(QCursor::pos());
         for (int i=0; i<this->count(); ++i) {
@@ -162,20 +239,30 @@ private:
             if (active || (this->underMouse() && rect.contains(pointer))) {
                 painter.setPen(Qt::NoPen);
                 painter.setBrush(active ? selected : hover);
-                painter.drawRoundedRect(pill, 6, 6);
+                painter.drawRoundedRect(pill, 8, 8);
             }
-            const QString text = displayText(i,rect.width());
+            const QString text = active ? displayText(i,rect.width()) : QString();
             const QSize icon = this->iconSize();
-            const int x = text.isEmpty() ? rect.center().x() - icon.width()/2 : rect.left()+12;
+            const int x = active ? rect.left()+8+buttonExtent(i,QTabBar::LeftSide) : rect.center().x() - icon.width()/2;
             const QRect iconRect(QPoint(x,rect.center().y()-icon.height()/2),icon);
-            this->tabIcon(i).paint(&painter,iconRect,Qt::AlignCenter,this->isTabEnabled(i)?QIcon::Normal:QIcon::Disabled);
+            const auto tabIcon = this->tabIcon(i);
+            auto glyph = (tabIcon.isNull() ? RoundedIcons::icon(RoundedIcons::File) : tabIcon).pixmap(
+                icon, this->devicePixelRatioF(), this->isTabEnabled(i)?QIcon::Normal:QIcon::Disabled);
+            {
+                QPainter tint(&glyph);
+                tint.setCompositionMode(QPainter::CompositionMode_SourceIn);
+                const QColor iconColor = !this->isTabEnabled(i) ? this->palette().color(QPalette::Disabled,QPalette::Text)
+                    : active ? textColor : dark ? QColor(151,151,149) : QColor(160,159,157);
+                tint.fillRect(glyph.rect(),iconColor);
+            }
+            painter.drawPixmap(iconRect,glyph);
             if (!text.isEmpty()) {
                 painter.setPen(this->isTabEnabled(i)?textColor:this->palette().color(QPalette::Disabled,QPalette::Text));
-                painter.drawText(QRect(iconRect.right()+1+textGap,rect.top(),rect.right()-12-iconRect.right()-textGap,rect.height()),Qt::AlignVCenter|Qt::AlignLeft|Qt::TextSingleLine,text);
+                painter.drawText(QRect(iconRect.right()+1+textGap,rect.top(),rect.right()-8-iconRect.right()-textGap-buttonExtent(i,QTabBar::RightSide),rect.height()),Qt::AlignVCenter|Qt::AlignLeft|Qt::TextSingleLine,text);
             }
-            if (active && this->hasFocus()) {
-                painter.setPen(QPen(focus,1,Qt::DotLine)); painter.setBrush(Qt::NoBrush);
-                painter.drawRoundedRect(pill.adjusted(1,1,-1,-1),5,5);
+            if (active && keyboardFocus()) {
+                painter.setPen(QPen(focus,1)); painter.setBrush(Qt::NoBrush);
+                painter.drawRoundedRect(pill.adjusted(1,1,-1,-1),7,7);
             }
         }
     }
@@ -195,8 +282,16 @@ private:
             // The second press may occupy a neighbour's new rectangle after reflow.
             pressRect=pressRect.united(QRect(event->globalPosition().toPoint(),QSize(1,1)));
             this->setFocus(Qt::MouseFocusReason);
-            this->setCurrentIndex(target);
-            emit this->tabBarClicked(target);
+            if (target == this->tabAt(event->position().toPoint())) {
+                Base::mousePressEvent(event);
+            } else {
+                const QPoint position = this->tabRect(target).center();
+                QMouseEvent routed(event->type(), QPointF(position), QPointF(this->mapToGlobal(position)),
+                                   event->button(), event->buttons(), event->modifiers());
+                Base::mousePressEvent(&routed);
+            }
+        } else {
+            Base::mousePressEvent(event);
         }
         event->accept(); this->update();
     }

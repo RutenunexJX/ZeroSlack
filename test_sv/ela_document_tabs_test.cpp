@@ -17,6 +17,7 @@
 #include <QDragLeaveEvent>
 #include <QDropEvent>
 #include <QFile>
+#include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QSettings>
@@ -57,6 +58,93 @@ void sendMouse(QWidget* target, QEvent::Type type, const QPoint& point,
 class ElaDocumentTabsTest final : public QObject {
     Q_OBJECT
 private slots:
+    void leftLabelsKeepIdentityAndCloseProtection() {
+        QTemporaryDir files;
+        const auto path = files.filePath("project/long_selected_document.sv");
+        QVERIFY(writeFile(path));
+        Fixture f;
+        auto* split = f.tabs.editorSplitController();
+        QWidget leftHost;
+        auto* left = split->registerRegion("left", &leftHost);
+        leftHost.resize(300, 400); leftHost.show();
+        auto* keep = new QWidget;
+        left->addTab(keep, "Navigation");
+        QVERIFY(f.tabs.openFileInTab(path));
+        auto* editor = f.tabs.getCurrentEditor();
+        const QString original = editor->toPlainText();
+        editor->insertPlainText("// dirty\n");
+        const auto identity = split->pageId(editor);
+        QVERIFY(split->movePage(editor, left));
+        auto* bar = left->tabBar();
+        const int index = left->indexOf(editor);
+        const QString title = bar->tabText(index);
+        QVERIFY(title.contains(QChar(0x25cf)));
+        const QString tooltip = bar->tabToolTip(index);
+        QVERIFY(tooltip.contains(QDir::toNativeSeparators(path)));
+        left->setCurrentWidget(keep);
+        QApplication::processEvents();
+        const int collapsed = bar->tabRect(index).width();
+        auto* close = bar->tabButton(index, QTabBar::RightSide);
+        if (!close) close = bar->tabButton(index, QTabBar::LeftSide);
+        QVERIFY(close);
+        QVERIFY(!close->isVisible());
+        bar->setTabText(index, title + QString(120, 'W'));
+        QApplication::processEvents();
+        QCOMPARE(bar->tabRect(index).width(), collapsed);
+        bar->setTabText(index, title);
+        QTest::mouseMove(bar, bar->tabRect(index).center());
+        QApplication::processEvents();
+        QCOMPARE(bar->tabRect(index).width(), collapsed);
+        QVERIFY(!close->isVisible());
+        const QPoint press = bar->tabRect(index).center();
+        QTest::mouseClick(bar, Qt::LeftButton, {}, press);
+        QCOMPARE(left->currentWidget(), editor);
+        QVERIFY(bar->tabRect(index).width() > collapsed);
+        QTest::mouseDClick(bar, Qt::LeftButton, {}, press);
+        QCOMPARE(left->currentWidget(), editor);
+        QCOMPARE(bar->tabText(index), title);
+        QTest::mouseMove(bar, bar->tabRect(index).center());
+        QTRY_VERIFY(close->isVisible());
+        QVERIFY(bar->rect().contains(close->geometry()));
+        int reviews = 0;
+        f.tabs.unsavedDocumentManagerForTesting()->setDecisionProvider(
+            [&](const QList<PendingDocumentChange>& changes, QWidget*) {
+                ++reviews;
+                return UnsavedDocumentBatchDecision::Cancel;
+            });
+        QTest::mouseClick(close, Qt::LeftButton);
+        QCOMPARE(reviews, 1);
+        QCOMPARE(split->pageId(editor), identity);
+        QVERIFY(f.tabs.hasUnsavedChanges());
+        bar->moveTab(index, 0);
+        QCOMPARE(left->widget(0), editor);
+        QCOMPARE(bar->tabText(0), title);
+        QCOMPARE(bar->tabToolTip(0), tooltip);
+        QPointer<QTabWidget> floating = split->floatPage(editor, QPoint(80, 80));
+        QVERIFY(floating);
+        QVERIFY(!floating->tabBar()->property("currentLabelTabs").toBool());
+        QVERIFY(split->movePage(editor, left));
+        QCOMPARE(split->pageId(editor), identity);
+        QCOMPARE(bar->tabText(left->indexOf(editor)), title);
+        editor->undo();
+        QCOMPARE(editor->toPlainText(), original);
+        QVERIFY(!f.tabs.sharedDocumentForEditor(editor)->dirty());
+        editor->redo();
+        QVERIFY(editor->toPlainText().contains("// dirty"));
+        QVERIFY(f.tabs.sharedDocumentForEditor(editor)->dirty());
+        editor->undo();
+        QVERIFY(f.tabs.saveEditorView(editor));
+        QVERIFY(!f.tabs.hasUnsavedChanges());
+        QPointer<MyCodeEditor> guard(editor);
+        close = bar->tabButton(left->indexOf(editor), QTabBar::RightSide);
+        if (!close) close = bar->tabButton(left->indexOf(editor), QTabBar::LeftSide);
+        QTest::mouseMove(bar, bar->tabRect(left->indexOf(editor)).center());
+        QTRY_VERIFY(close && close->isVisible());
+        QTest::mouseClick(close, Qt::LeftButton);
+        QTRY_VERIFY(guard.isNull());
+        QCOMPARE(reviews, 1);
+    }
+
     void sharedDocumentSurvivesFloatAndReturn() {
         QTemporaryDir files;
         const auto path = files.filePath("project/top.sv");
@@ -147,22 +235,36 @@ private slots:
 
     void dragDropUsesElaAndRejectsForeignScope_data() {
         QTest::addColumn<int>("area");
-        QTest::newRow("center") << 0;
-        QTest::newRow("left") << 1;
-        QTest::newRow("right") << 2;
-        QTest::newRow("top") << 3;
-        QTest::newRow("bottom") << 4;
+        QTest::addColumn<bool>("leftSource");
+        for (bool fromLeft : {false, true}) {
+            const auto prefix = fromLeft ? "left-region-" : "";
+            QTest::newRow(qPrintable(QString(prefix) + "center")) << 0 << fromLeft;
+            QTest::newRow(qPrintable(QString(prefix) + "left")) << 1 << fromLeft;
+            QTest::newRow(qPrintable(QString(prefix) + "right")) << 2 << fromLeft;
+            QTest::newRow(qPrintable(QString(prefix) + "top")) << 3 << fromLeft;
+            QTest::newRow(qPrintable(QString(prefix) + "bottom")) << 4 << fromLeft;
+        }
     }
     void dragDropUsesElaAndRejectsForeignScope() {
         QFETCH(int, area);
+        QFETCH(bool, leftSource);
         QWidget host;
-        auto* initial = UiControls::editorTabWidget(&host);
+        auto* row = new QHBoxLayout(&host);
+        auto* mainHost = new QWidget;
+        row->addWidget(mainHost);
+        auto* initial = UiControls::editorTabWidget(mainHost);
         EditorSplitController split(initial);
-        split.setHost(&host);
+        split.setHost(mainHost);
+        if (leftSource) {
+            auto* leftHost = new QWidget;
+            row->addWidget(leftHost);
+            initial = split.registerRegion("left", leftHost);
+        }
         auto* page = new QWidget;
         initial->addTab(page, "source");
         auto* second = new QWidget;
         initial->addTab(second, "keep");
+        initial->setCurrentWidget(second); // Begin the gesture on an inactive icon.
         auto* destination = split.createSplit(initial, EditorSplitDirection::Right);
         QVERIFY(destination);
         destination->addTab(new QWidget, "destination");
@@ -196,7 +298,7 @@ private slots:
         QVERIFY(entered);
         QVERIFY(accepted);
         QCOMPARE(moved.count(), 2); // Source -> live floating group -> destination.
-        QCOMPARE(split.groupCount(), area == 0 ? 2 : 3);
+        QCOMPARE(split.groupCount(), (area == 0 ? 2 : 3) + int(leftSource));
         QVERIFY(split.groupForPage(page) != initial);
         QCOMPARE(split.groupForPage(page)->currentWidget(),page);
         QCOMPARE(initial->widget(0), second);

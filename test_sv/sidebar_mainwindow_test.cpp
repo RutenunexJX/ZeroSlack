@@ -10,6 +10,7 @@
 #include "workspacesessioncoordinator.h"
 #include "projectmodel.h"
 #include "tabmanager.h"
+#include "editorsplitcontroller.h"
 #include "crashrecoveryservice.h"
 #include "testuistyle.h"
 #include "contextworkspacecontroller.h"
@@ -40,11 +41,45 @@
 #include <QElapsedTimer>
 #include <QWindowStateChangeEvent>
 #include <QCryptographicHash>
+#include <QTabBar>
+#include <QScreen>
+#include <QPdfWriter>
+#include <QPainter>
+#include <QMouseEvent>
 
 namespace {
 void put(const QString& path,const QByteArray& bytes) {
     QDir().mkpath(QFileInfo(path).absolutePath()); QFile file(path);
     if (!file.open(QIODevice::WriteOnly)||file.write(bytes)!=bytes.size()) qFatal("fixture write");
+}
+void hoverTab(QTabBar* bar, int index) {
+    class MoveCounter final : public QObject {
+    public:
+        int count = 0;
+        bool eventFilter(QObject*, QEvent* event) override {
+            if (event->type()==QEvent::MouseMove) ++count;
+            return false;
+        }
+    } counter;
+    bar->installEventFilter(&counter);
+    QPoint position = bar->tabRect(index).center();
+    QTest::mouseMove(bar,position);
+    QApplication::processEvents();
+    if (position != bar->tabRect(index).center()) {
+        position = bar->tabRect(index).center();
+        QTest::mouseMove(bar,position);
+        QApplication::processEvents();
+    }
+    qInfo() << "LEFT_TAB_MOUSE_MOVE" << bar->tabText(index) << "nativeMoveEvents" << counter.count
+            << "rect" << bar->tabRect(index) << "pointer" << bar->mapFromGlobal(QCursor::pos());
+    if (!counter.count) {
+        // Native child hosts can consume QTest's cursor move. Deliver the widget
+        // event explicitly; physical pointer coverage is recorded separately.
+        QMouseEvent move(QEvent::MouseMove,QPointF(position),QPointF(bar->mapToGlobal(position)),
+                         Qt::NoButton,Qt::NoButton,Qt::NoModifier);
+        QApplication::sendEvent(bar,&move);
+    }
+    QVERIFY(counter.count>0);
 }
 class WelcomeMotionTrace final : public QObject {
 public:
@@ -184,6 +219,10 @@ class SidebarMainWindowTest : public QObject {
         const auto output=qEnvironmentVariable("ZEROSLACK_SIDEBAR_EVIDENCE"); if(output.isEmpty())return;
         QDir().mkpath(output); QTest::qWait(60);
         QVERIFY(host.window->grab().save(QDir(output).filePath(name+".png")));
+        if (name=="left-tabs-files" || name=="left-tabs-design") {
+            auto* bar=host.window->tabManager->editorSplitController()->regionGroup("left")->tabBar();
+            QVERIFY(bar->grab().save(QDir(output).filePath(name+"-strip.png")));
+        }
     }
     void captureIconSurfaces(Host& h) {
         if (!qEnvironmentVariableIsSet("ZEROSLACK_ICONS_EVIDENCE")) return;
@@ -244,6 +283,147 @@ class SidebarMainWindowTest : public QObject {
     }
 private slots:
     void initTestCase() { QVERIFY(initializeUiStyleForTest()); }
+    void leftTabLabelsAcrossDocumentKindsAndRestore() {
+        if (QGuiApplication::platformName()!=QStringLiteral("windows"))
+            QSKIP("Markdown/Block/PDF workers require native Windows hosts; run this case in the native DPR matrix");
+        Host h;
+        const QSize available = h.window->screen()->availableGeometry().size();
+        h.window->resize(qMin(1400, available.width()-40), qMin(900, available.height()-80));
+        const auto expectedDpr = qEnvironmentVariable("ZEROSLACK_EXPECTED_DPR");
+        if (!expectedDpr.isEmpty()) QCOMPARE(h.window->devicePixelRatioF(), expectedDpr.toDouble());
+        QVERIFY(h.sessions()->openWorkspace(h.workspace));
+        auto* tabs = h.window->tabManager.get();
+        auto* split = tabs->editorSplitController();
+        auto* left = split->regionGroup("left");
+        QVERIFY(left);
+        auto* bar = left->tabBar();
+        h.navigation()->setActiveTab(NavigationWidget::FileTab);
+        auto* files = left->currentWidget();
+        const int filesIndex = left->currentIndex();
+        QCOMPARE(left->tabText(filesIndex), QString("Files"));
+        h.navigation()->setActiveTab(NavigationWidget::DesignTab);
+        auto* design = left->currentWidget();
+        const int designIndex = left->currentIndex();
+        QCOMPARE(left->tabText(designIndex), QString("Design"));
+        QApplication::processEvents();
+        QVERIFY(bar->tabRect(designIndex).width() > bar->tabRect(filesIndex).width());
+        QCOMPARE(bar->accessibleTabName(filesIndex), QString("Files"));
+        QCOMPARE(bar->accessibleTabName(designIndex), QString("Design"));
+        QTest::mouseMove(h.window.get(),QPoint(h.window->width()-80,80));
+        capture(h, "left-tabs-design");
+        QTest::mouseClick(bar, Qt::LeftButton, {}, bar->tabRect(filesIndex).center());
+        QCOMPARE(left->currentWidget(), files);
+        QVERIFY(bar->tabRect(filesIndex).width() > bar->tabRect(designIndex).width());
+        QTest::mouseMove(h.window.get(),QPoint(h.window->width()-80,80));
+        capture(h, "left-tabs-files");
+
+        const auto markdownPath = h.workspace+"/notes.md";
+        const auto blocksPath = h.workspace+"/diagram.zblock";
+        const auto pdfPath = h.workspace+"/reference.pdf";
+        put(markdownPath, "# Sidebar labels\n\nEach document retains its full title.\n");
+        {
+            QPdfWriter writer(pdfPath); writer.setPageSize(QPageSize(QPageSize::A6));
+            QPainter painter(&writer); painter.drawText(100, 200, "Sidebar reference");
+        }
+        QVERIFY(tabs->openFileInRegion(h.workspace+"/rtl/design.sv", "main"));
+        auto* code = tabs->getCurrentEditor();
+        QVERIFY(code);
+        code->insertPlainText("// unsaved sidebar view\n");
+        QVERIFY(split->movePage(code, left));
+        const QString codeTitle = left->tabText(left->indexOf(code));
+        QVERIFY(codeTitle.contains(QChar(0x25cf)));
+        QVERIFY(tabs->openFileInRegion(markdownPath, "left"));
+        auto* markdown = tabs->currentWebDocument();
+        QVERIFY(markdown); QTRY_VERIFY(markdown->ready());
+        QString error;
+        auto* blocks = tabs->createWebDocumentFile(WebDocumentPage::Kind::Blocks, blocksPath, "left", &error);
+        QVERIFY2(blocks, qPrintable(error));
+        QVERIFY(tabs->openFileInRegion(pdfPath, "left"));
+        auto* pdf = tabs->currentPdfDocument();
+        QVERIFY(pdf); QTRY_VERIFY(pdf->ready());
+        const QList<QWidget*> pages{files, design, code, markdown, blocks, pdf};
+        for (auto* page : pages) {
+            QVERIFY(split->activatePage(page));
+            QApplication::processEvents();
+            const int current = left->indexOf(page);
+            QCOMPARE(left->currentWidget(), page);
+            hoverTab(bar,current);
+            QApplication::processEvents();
+            for (int i=0; i<left->count(); ++i) {
+                QVERIFY(!left->tabText(i).isEmpty());
+                QVERIFY(!left->tabToolTip(i).isEmpty());
+                auto* close = bar->tabButton(i,QTabBar::RightSide);
+                if (!close) close = bar->tabButton(i,QTabBar::LeftSide);
+                if (close) QTRY_COMPARE(close->isVisible(), i==current);
+            }
+            QTest::mouseMove(h.window.get(),QPoint(h.window->width()-80,80));
+            capture(h, "left-tabs-page-"+QString::number(current));
+        }
+        QCOMPARE(left->tabText(left->indexOf(code)), codeTitle);
+        bar->moveTab(left->indexOf(markdown),0);
+        QCOMPARE(left->widget(0), markdown);
+        const auto identity = split->pageId(markdown);
+        for (const auto& region : {QString("main"), QString("right"), QString("bottom"), QString("left")}) {
+            auto* target = split->regionGroup(region);
+            QVERIFY(target);
+            QVERIFY(split->movePage(markdown,target));
+            QCOMPARE(split->pageId(markdown),identity);
+            QCOMPARE(target->tabText(target->indexOf(markdown)),QString("notes.md"));
+            QCOMPARE(target->tabBar()->property("currentLabelTabs").toBool(),region=="left");
+        }
+        auto* lower = split->movePageToSplit(blocks,EditorSplitDirection::Below,left);
+        QVERIFY(lower && lower!=left);
+        QCOMPARE(split->regionForGroup(lower),QString("left"));
+        QVERIFY(lower->tabBar()->property("currentLabelTabs").toBool());
+        const auto layout = split->savePageLayout();
+        const auto blockIdentity = split->pageId(blocks);
+        QVERIFY(split->movePage(blocks,split->regionGroup("main")));
+        split->removeEmptyGroups();
+        QVERIFY(split->restorePageLayout(layout).isEmpty());
+        QCOMPARE(split->pageId(blocks),blockIdentity);
+        QCOMPARE(split->regionForGroup(split->groupForPage(blocks)),QString("left"));
+        QVERIFY(split->groupForPage(blocks)!=left);
+        capture(h,"left-tabs-restored-groups");
+        QVERIFY(split->movePage(blocks,left)); split->removeEmptyGroups();
+        split->regionHost("left")->setFixedWidth(220);
+        // Finish native WebView reparent/focus notifications before the next selection.
+        QTest::qWait(60);
+        QVERIFY(split->activatePage(code));
+        QApplication::processEvents();
+        QCOMPARE(left->currentWidget(),code);
+        auto* close = bar->tabButton(left->indexOf(code),QTabBar::RightSide);
+        if (!close) close = bar->tabButton(left->indexOf(code),QTabBar::LeftSide);
+        hoverTab(bar,left->indexOf(code));
+        qInfo() << "LEFT_TAB_NARROW_CLOSE" << bar->size() << bar->tabRect(left->indexOf(code))
+                << (close?close->geometry():QRect()) << bar->mapFromGlobal(QCursor::pos())
+                << "selected" << bar->currentIndex() << "code" << left->indexOf(code);
+        QTRY_VERIFY(close && close->isVisible());
+        QVERIFY(bar->rect().contains(close->geometry()));
+        const int narrowCurrent = bar->tabRect(left->indexOf(code)).width();
+        const int narrowInactive = bar->tabRect(left->indexOf(files)).width();
+        QVERIFY(narrowCurrent > narrowInactive);
+        qInfo() << "LEFT_TAB_GEOMETRY" << "dpr" << h.window->devicePixelRatioF()
+                << "window" << h.window->size() << "bar" << bar->size()
+                << "selected" << narrowCurrent << "inactive" << narrowInactive;
+        QTest::mouseMove(h.window.get(),QPoint(h.window->width()-80,80));
+        capture(h,"left-tabs-narrow");
+        ApplicationThemeManager::instance().setMode(ThemeMode::Dark);
+        capture(h,"left-tabs-narrow-dark");
+        ApplicationThemeManager::instance().setMode(ThemeMode::Light);
+        code->undo();
+        QVERIFY(!tabs->sharedDocumentForEditor(code)->dirty());
+        QVERIFY(tabs->saveEditorView(code));
+        QVERIFY(!tabs->hasUnsavedChanges());
+        QVERIFY(h.sessions()->saveSession(false));
+        QVERIFY(h.sessions()->openWorkspace(h.other));
+        QVERIFY(h.sessions()->openWorkspace(h.workspace));
+        auto* restored = split->pageById(identity);
+        QVERIFY(restored);
+        QCOMPARE(split->regionForGroup(split->groupForPage(restored)),QString("left"));
+        QVERIFY(split->activatePage(restored));
+        QCOMPARE(split->groupForPage(restored)->tabText(split->groupForPage(restored)->indexOf(restored)),QString("notes.md"));
+        capture(h,"left-tabs-workspace-reopened");
+    }
     void legacyExplicitSelection_data() {
         QTest::addColumn<QString>("module");
         QTest::newRow("existing-child") << QString("sidebar_leaf");

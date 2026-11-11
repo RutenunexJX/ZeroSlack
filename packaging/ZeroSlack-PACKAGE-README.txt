@@ -1,4 +1,6 @@
-ZeroSlack v0.35.0 Windows package
+ZeroSlack v0.35.2 Windows package
+
+Release 0.35.2 makes left-region tabs compact: only the selected tab shows its name; inactive tabs show icons, and the selected blue marker is removed. Closing, movement and restoration retain the accepted behavior. Scoped acceptance covers seven registered checks and native 100%, 150% and 200% interaction evidence; the known baseline synthetic drag-release failure remains recorded. Suite SDK/Runtime remains 1.0.2, native xIPs 2.16.2 and the independent asset adapter 2.14.2.
 
 Release 0.35.0 runs simulation from the selected testbench and resolves its compilation dependencies automatically. Main, left, right and bottom hosts share movable tabs; code, Markdown and block views share document content, while PDF tabs provide read-only viewing. The left host can create Markdown and block documents. Simulation duration is controlled by the testbench. Acceptance reuses the recorded full run plus successful targeted repairs and actual GUI/Questa checks; nine policy-restricted tests remain unverified. Suite SDK/Runtime remains 1.0.2, native xIPs 2.16.1 and the independent asset adapter 2.14.2.
 

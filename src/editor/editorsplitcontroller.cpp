@@ -1066,7 +1066,9 @@ void EditorSplitController::configureGroup(QTabWidget* group)
     group->setMovable(true);
     group->setElideMode(Qt::ElideMiddle);
     group->tabBar()->setProperty("editorFileTabs", true);
-    group->tabBar()->setProperty("currentLabelTabs", false);
+    const bool leftLabels = regionForGroup(group) == QStringLiteral("left") && !isFloatingGroup(group);
+    group->tabBar()->setProperty("currentLabelTabs", leftLabels);
+    if (leftLabels) group->tabBar()->setFocusPolicy(Qt::StrongFocus);
     group->tabBar()->setExpanding(false);
     group->tabBar()->setUsesScrollButtons(true);
     if (!group->tabBar()->property("zeroslackElaControl").toBool())
