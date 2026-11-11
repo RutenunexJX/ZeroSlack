@@ -2,6 +2,7 @@
 #include "applicationthememanager.h"
 #include "uicontrols.h"
 #include "uitypography.h"
+#include "uiwindowchrome.h"
 
 #include <QComboBox>
 #include <QDialog>
@@ -34,6 +35,7 @@ UiDialog::UiDialog(QWidget* parent, Qt::WindowFlags flags)
     setParent(parent, Qt::Dialog | flags);
 #endif
     setFont(UiTypography::font());
+    UiWindowChrome::ensureWindowBoundary(this);
 }
 
 UiMessageDialog::UiMessageDialog(QWidget* parent)

@@ -263,8 +263,6 @@ set(ZEROSLACK_CORE_SOURCES
     src/analysis/analysisschedulerrelationships.cpp
     src/analysis/analysisschedulerwiring.cpp
     src/ui/applicationthememanager.cpp
-    src/ui/welcomeanimation.cpp
-    src/ui/welcomeanimation.h
     src/navigation/codepreviewservice.cpp
     src/editor/columnnumbertool.cpp
     src/commands/commandlayercommandregistry.cpp
@@ -933,19 +931,6 @@ else()
 endif()
 
 target_link_libraries(demo PRIVATE zeroslack_core)
-cmake_policy(PUSH)
-if(POLICY CMP0112)
-    cmake_policy(SET CMP0112 NEW)
-endif()
-add_custom_target(zeroslack_welcome_resources ALL
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_CURRENT_SOURCE_DIR}/resources/welcome"
-        "$<TARGET_FILE_DIR:demo>/resources/welcome"
-    COMMENT "Deploying external welcome illustrations and animation resources"
-    VERBATIM)
-cmake_policy(POP)
-add_dependencies(zeroslack_core zeroslack_welcome_resources)
-add_dependencies(demo zeroslack_welcome_resources)
 target_sources(zeroslack_core PRIVATE src/automation/automationservice.cpp src/automation/automationservice.h resources/templates/templates.qrc)
 target_include_directories(zeroslack_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src/automation")
 target_link_libraries(zeroslack_cli_support PRIVATE zeroslack_core)
@@ -1670,8 +1655,6 @@ if(BUILD_TESTING)
     target_link_libraries(ui_navigation_rail_test PRIVATE zeroslack_core Qt6::Test)
     add_executable(navigation_switch_test test_sv/navigation_switch_test.cpp)
     target_link_libraries(navigation_switch_test PRIVATE zeroslack_core Qt6::Test)
-    add_executable(welcome_resource_test test_sv/welcome_resource_test.cpp)
-    target_link_libraries(welcome_resource_test PRIVATE zeroslack_core Qt6::Test)
     add_executable(welcome_mainwindow_test test_sv/welcome_mainwindow_test.cpp)
     target_link_libraries(welcome_mainwindow_test PRIVATE zeroslack_core Qt6::Test)
     if(WIN32)
@@ -2309,7 +2292,7 @@ if(BUILD_TESTING)
                 ${NARROW_TEST_COMMAND})
         set_tests_properties(narrow_layout_test_${NARROW_SCALE} PROPERTIES TIMEOUT 240)
     endforeach()
-    foreach(WELCOME_TEST IN ITEMS welcome_resource welcome_mainwindow)
+    foreach(WELCOME_TEST IN ITEMS welcome_mainwindow)
         add_test(NAME ${WELCOME_TEST}_test
             COMMAND ${CMAKE_COMMAND} -E env
                 "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"

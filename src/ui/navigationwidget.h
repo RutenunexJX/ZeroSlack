@@ -23,6 +23,7 @@
 #include "symboloutlinemodel.h"
 #include "workspaceconfigurationservice.h"
 #include "designcandidates.h"
+#include <functional>
 
 class EditorSplitController;
 
@@ -81,6 +82,8 @@ public:
                                 const QStringList& likelyTops);
     void beginDesignProjectSelection();
     void finishDesignProjectSelection(const QString& issue, const QString& file, const QString& module);
+    void setSimulationTargetProvider(std::function<QPair<QString,QString>()> provider);
+    void refreshSimulationTop();
 
     void highlightFile(const QString& filePath);
 
@@ -118,8 +121,8 @@ private slots:
     void onDesignTreeDoubleClicked(QTreeWidgetItem* item, int column);
     void onFileTreeContextMenuRequested(const QPoint& pos);
     void onDesignTreeContextMenuRequested(const QPoint& pos);
-
 private:
+    std::function<QPair<QString,QString>()> simulationTargetProvider;
     void refreshTabLabels();
     QVBoxLayout* mainLayout = nullptr;
     QTabWidget* tabWidget = nullptr;

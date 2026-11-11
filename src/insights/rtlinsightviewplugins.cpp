@@ -65,7 +65,7 @@ QString insightWorkbenchViewDisplayName(InsightWorkbenchViewKind kind)
     case InsightWorkbenchViewKind::Kernel:
         return QStringLiteral("Signal Trace");
     case InsightWorkbenchViewKind::Block:
-        return QStringLiteral("Design");
+        return QStringLiteral("Module Block Diagram");
     case InsightWorkbenchViewKind::Hotspot:
         return QStringLiteral("Signal Heatmap");
     case InsightWorkbenchViewKind::StateTransition:
@@ -124,8 +124,15 @@ QString ModuleBlockInsightViewPlugin::iconKey() const
 InsightViewBuildResult ModuleBlockInsightViewPlugin::build(
     const InsightViewContext& context) const
 {
-    return unavailable(context,pluginId(),QStringLiteral("block"),
-        QStringLiteral("This graph renderer was retired. Use the host Design instance hierarchy."));
+    LiveInsightGraphInput input;
+    input.mode = LiveInsightGraphMode::Module;
+    input.semantic = context.semantic.isValid() ? context.semantic : SemanticIndex::getInstance()->snapshotToken();
+    input.fileName = context.fileName;
+    input.moduleName = context.moduleName;
+    input.maxDepth = 2;
+    if (!input.semantic.isValid() || context.moduleName.trimmed().isEmpty())
+        return unavailable(context, pluginId(), QStringLiteral("block"), QStringLiteral("Select an analyzed RTL module to view its block diagram."));
+    return insightViewFromGraphReport(*buildLiveInsightGraphReport(input), context, pluginId());
 }
 
 InsightWorkbenchViewKind SignalHotspotInsightViewPlugin::kind() const

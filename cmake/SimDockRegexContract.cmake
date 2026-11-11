@@ -93,7 +93,6 @@ function(zeroslack_verify_reviewed_regex_contract source_dir source_revision ext
         src/simulation/simdock/core/simulationevents.cpp
         src/ui/linkedcontextcontroller.cpp
         src/ui/templatemanagerdialog.cpp
-        src/ui/welcomeanimation.cpp
     )
     _zeroslack_verify_regex_inventory("Reviewed Phase L regex" "${source_dir}"
         "${source_revision}" "${extraction_version}" "${approved_paths}" 3 ${ARGN})

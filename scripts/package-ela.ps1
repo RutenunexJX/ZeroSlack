@@ -4,7 +4,6 @@ param(
     [string]$OutputDirectory = '',
     [string]$QtDirectory = 'E:/QT6/6.10.2/mingw_64',
     [string]$CompilerDirectory = 'E:/QT6/Tools/mingw1310_64',
-    [string]$WelcomeResourceDirectory = '',
     [string]$DocumentEditorDirectory = '',
     [string]$PreparationPlan = '',
     [string]$PreparationEvidence = '',

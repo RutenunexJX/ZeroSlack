@@ -5,11 +5,9 @@
 #include <QElapsedTimer>
 #include <QThread>
 
-inline bool waitForLiveInsightReports(RtlInsightsPanelCoordinator& panel)
+inline bool waitForLiveInsightReports(LiveInsightSession& reports)
 {
-    auto* session = panel.graphSession();
-    if (!session) return false;
-    if (panel.dock() && panel.dock()->window()) panel.dock()->window()->show();
+    auto* session = &reports;
     for (auto kind : {LiveInsightKind::Module, LiveInsightKind::State}) session->flushPending(kind);
     QElapsedTimer timeout;
     timeout.start();
@@ -24,4 +22,11 @@ inline bool waitForLiveInsightReports(RtlInsightsPanelCoordinator& panel)
         if (session->hasPendingUpdate(kind) || snapshot.phase == LiveInsightPhase::Error) return false;
     }
     return true;
+}
+
+inline bool waitForLiveInsightReports(RtlInsightsPanelCoordinator& panel)
+{
+    if (panel.dock() && panel.dock()->window()) panel.dock()->window()->show();
+    auto* session = panel.graphSession();
+    return session && waitForLiveInsightReports(*session);
 }

@@ -379,9 +379,11 @@ void verifyStateCompatibility(const QStringList& arguments)
     const auto restored = controller.restoreState(initial);
     settleUi();
     const auto captured = controller.captureState();
+    auto expected = initial;
+    for (auto& section : expected.dockSections) section.collapsed = false;
     check(ContextWorkspaceState::kVersion == 8 && restored.restoredResources == 2
-              && restored.skippedResources == 0 && sameState(initial, captured),
-          "state_all_fields_roundtrip: multiple kept resources and all v3 fields survive restore");
+              && restored.skippedResources == 0 && sameState(expected, captured),
+          "state_all_fields_roundtrip: retired section collapse normalizes while every other field survives restore");
 
     const bool importing = arguments.size() == 4 && arguments.at(1) == QStringLiteral("--state-import");
     const bool exporting = arguments.size() == 3 && arguments.at(1) == QStringLiteral("--state-export");
@@ -389,11 +391,13 @@ void verifyStateCompatibility(const QStringList& arguments)
     WorkspaceSessionStateService service(storage);
     if (importing) {
         const auto loaded = service.load(root);
-        check(loaded.loaded && sameState(initial, loaded.state.ui.contextWorkspace),
+        auto normalized = loaded.state.ui.contextWorkspace;
+        for (auto& section : normalized.dockSections) section.collapsed = false;
+        check(loaded.loaded && sameState(expected, normalized),
               "cross_build_import: every serialized context field matches the old/new fixture");
         controller.restoreState(loaded.state.ui.contextWorkspace);
         settleUi();
-        check(sameState(initial, controller.captureState()),
+        check(sameState(expected, controller.captureState()),
               "cross_build_restore: imported state restores to identical live context state");
     }
     WorkspaceSessionState session;
@@ -480,9 +484,10 @@ void verifyRailCollapsedSection()
     auto* view = host->viewForResource(item.stableKey());
     host->setSectionCollapsed(item.stableKey(), true, false);
     settleUi();
-    check(controller.rail()->activeEntryId().isEmpty(),
-          "rail_collapsed_highlight: a collapsed section is not an active expanded tool");
+    check(!controller.rail()->activeEntryId().isEmpty(),
+          "rail_legacy_collapsed_highlight: obsolete collapse does not hide the active tool");
     auto* action = controller.rail()->findChild<QAction*>("contextRail.mock");
+    controller.setDockVisible(false);
     action->trigger();
     settleUi();
     check(controller.dockWidget()->isVisible() && !host->isSectionCollapsed(item.stableKey())
@@ -1376,15 +1381,15 @@ void verifySidebarStack()
     const int created = fixture.counters.created;
     const QRect geometry = host->sectionWidget(keys[1])->geometry();
     host->setSectionCollapsed(keys[1], true);
-    check(!middle->isVisible() && host->viewForResource(keys[1]) == middle && fixture.counters.created == created,
-          "stack_collapse: hiding the middle content retains the view");
+    check(middle->isVisible() && host->viewForResource(keys[1]) == middle && fixture.counters.created == created,
+          "stack_legacy_collapse: obsolete collapse requests retain visible content");
     host->setSectionCollapsed(keys[1], false);
     settleUi();
     check(host->sectionWidget(keys[1])->geometry() == geometry && middle->isVisible(),
           "stack_expand: expanded geometry returns exactly");
     for (const auto& key : keys) host->setSectionCollapsed(key, true);
     check(controller.dockWidget()->isVisible() && host->resourceCount() == 3,
-          "stack_all_collapsed: the dock remains a visible column of headers");
+          "stack_legacy_collapse_all: the dock retains all visible content");
     for (const auto& key : keys) host->setSectionCollapsed(key, false);
     QSignalSpy reordered(host, &ContextDockHost::resourceOrderChanged);
     host->moveResource(keys[2],0);
@@ -1681,8 +1686,8 @@ void verifyV5SidebarMigration()
     PlacementFixture fixture;
     fixture.controller->restoreState(loaded.state.ui.contextWorkspace);
     auto* host = fixture.controller->dockHost();
-    check(host->isSectionCollapsed("mock:migration-a") && !host->isSectionCollapsed("mock:migration-b")
-              && host->isSectionCollapsed("mock:migration-c"), "stack_v5_live: migrated collapse states apply to all three sections");
+    check(!host->isSectionCollapsed("mock:migration-a") && !host->isSectionCollapsed("mock:migration-b")
+              && !host->isSectionCollapsed("mock:migration-c"), "stack_v5_live: old collapsed layouts restore all sections expanded");
 }
 
 void verifySidebarDragOut()
@@ -1707,7 +1712,7 @@ void verifySidebarDragOut()
     auto* floating = controller.floatingWindow();
     check(floating->view() == view && fixture.counters.created == created && !host->containsResource(keys[2])
               && host->sectionHeight(keys[0]) == previousHeight && host->sectionWidget(keys[0])->height() >= previousSize.height()
-              && host->isSectionCollapsed(keys[1]), "stack_drag_out_identity: provider detach transports the view and preserves neighboring sections");
+              && !host->isSectionCollapsed(keys[1]), "stack_drag_out_identity: provider detach transports the view and preserves neighboring sections");
     check(floating->hasResource() && available.contains(floating->frameGeometry()),
           "stack_drag_out_geometry: outside-screen drop resolves to a fully visible native rectangle");
     fixture.counters.detachable = false;

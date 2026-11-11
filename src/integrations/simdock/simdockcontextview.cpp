@@ -38,6 +38,17 @@ SimDockContextView::SimDockContextView(QWidget* parent, simdock::WorkspaceSimula
             this, &SimDockContextView::synchronizeTheme);
     connect(panel, &simdock::Workbench::preferencesChanged, this, &SimDockContextView::persistPreferences);
     synchronizeTheme();
+    updateStatus();
+}
+
+void SimDockContextView::setCompactControls()
+{
+    auto* logLayout = panel->runLogWidget()->layout();
+    for (QWidget* widget : {static_cast<QWidget*>(status), static_cast<QWidget*>(retryButton), static_cast<QWidget*>(resetButton)}) {
+        layout()->removeWidget(widget);
+        logLayout->addWidget(widget);
+    }
+    setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
 }
 
 bool SimDockContextView::activate(const ContextResource& resource)
@@ -127,6 +138,9 @@ void SimDockContextView::updateStatus()
     status->setVisible(!errors.isEmpty());
     retryButton->setVisible(!errors.isEmpty());
     resetButton->setVisible(!property("nativeComponentError").toString().isEmpty() && statePending);
+    const auto issue = errors.join(QLatin1Char('\n'));
+    if (!issue.isEmpty() && issue != reportedIssue) emit issueRaised(issue);
+    reportedIssue = issue;
 }
 
 QVariantMap SimDockContextView::saveState() const

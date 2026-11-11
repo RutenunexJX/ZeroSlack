@@ -2,6 +2,7 @@
 #include "editorfileidentity.h"
 #include "roundedicons.h"
 #include "uicontrols.h"
+#include "navigationrowstyle.h"
 #include <QDir>
 #include <QHeaderView>
 #include <QPushButton>
@@ -18,6 +19,31 @@ QString candidateKey(const QTreeWidgetItem* item)
     return item ? EditorFileIdentity::lookupKey(item->data(0, CandidateFileRole).toString())
         + QChar(0x1f) + item->data(0, CandidateModuleRole).toString() : QString();
 }
+
+}
+
+void NavigationWidget::setSimulationTargetProvider(std::function<QPair<QString,QString>()> provider)
+{
+    simulationTargetProvider=std::move(provider);
+    refreshSimulationTop();
+}
+void NavigationWidget::refreshSimulationTop()
+{
+    if (!designTreeWidget) return;
+    const auto target=simulationTargetProvider ? simulationTargetProvider() : QPair<QString,QString>();
+    const QSignalBlocker blocker(designTreeWidget);
+    for (QTreeWidgetItemIterator it(designTreeWidget);*it;++it) {
+        auto* item=*it;
+        const auto node=designItemPayloads.value(item->data(0,Qt::UserRole+1).toInt());
+        const bool selected=!target.second.isEmpty() && target.second==node.moduleType
+            && EditorFileIdentity::same(target.first,node.definitionFile);
+        item->setData(0,NavigationRowStyle::SimulationRole,selected);
+        auto description=item->toolTip(0);
+        description.remove(QStringLiteral("\nSimulation top"));
+        if (selected) description+=QStringLiteral("\nSimulation top");
+        item->setToolTip(0,description);
+        item->setData(0,Qt::AccessibleDescriptionRole,description);
+    }
 }
 
 bool NavigationWidget::selectDesignInstance(const QString& instancePath,bool reveal)

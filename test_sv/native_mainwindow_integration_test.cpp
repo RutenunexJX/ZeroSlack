@@ -156,7 +156,7 @@ struct SimulationIdentity
     explicit SimulationIdentity(SimDockContextView *view) : workspace(view), panel(view->workbench())
     {
         controller = panel->controller(); session = controller->session();
-        target = panel->findChild<QWidget*>("simulationTarget");
+        target = panel->findChild<QWidget*>("startSimulation");
         logs = panel->runLogWidget(); log = logs->findChild<QPlainTextEdit*>();
         logDocument = log ? log->document() : nullptr;
     }
@@ -166,7 +166,7 @@ struct SimulationIdentity
         QCOMPARE(workspace->workbench(), panel.data()); QCOMPARE(panel->controller(), controller.data());
         QCOMPARE(controller->session(), session.data()); QCOMPARE(panel->runLogWidget(), logs.data());
         QCOMPARE(log->document(), logDocument.data()); QCOMPARE(logDocument.data(), controller->logDocument());
-        QCOMPARE(panel->findChild<QWidget*>("simulationTarget"), target.data());
+        QCOMPARE(panel->findChild<QWidget*>("startSimulation"), target.data());
         QVERIFY(window.isAncestorOf(workspace)); QVERIFY(window.isAncestorOf(logs)); QVERIFY(!panel->isAncestorOf(logs));
         QVERIFY(!window.findChild<QWidget*>("sourceList"));
     }
@@ -309,7 +309,7 @@ class NativeMainWindowIntegrationTest : public QObject
     }
     void simdockReachability(QWidget *panel)
     {
-        for (const auto* name : {"simulationTarget", "startSimulation", "openSettings"})
+        for (const auto* name : {"startSimulation", "openSettings"})
             QVERIFY2(reachable(panel->findChild<QWidget*>(QLatin1String(name))), name);
         for (const auto* name : {"sourceList", "projectList", "simulationInputMode", "dutSelector", "editStimulus", "graphicalDuration"})
             QVERIFY(!panel->findChild<QWidget*>(QLatin1String(name)));
@@ -939,6 +939,7 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(!finished.isEmpty(), 45000);
         QVERIFY2(!finished.takeFirst()[0].toBool(), qPrintable(log->toPlainText()));
         QCOMPARE(session->outcome(), QString("fatal"));
+        QTRY_COMPARE(panel->findChild<QAbstractButton*>("startSimulation")->text(),QString("Run"));
         QVERIFY(log->toPlainText().contains("HANDWRITTEN_CHECK_FAILED"));
         if (!report.isEmpty()) QVERIFY(put(QDir(report).filePath("questa-negative-check.log"), log->toPlainText().toUtf8()));
         const auto pid = session->processId();
@@ -947,6 +948,7 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(!finished.isEmpty(), 45000);
         QVERIFY2(finished.takeFirst()[0].toBool(), qPrintable(log->toPlainText()));
         QCOMPARE(session->processId(), pid); QCOMPARE(session->outcome(), QString("finished"));
+        QTRY_COMPARE(panel->findChild<QAbstractButton*>("startSimulation")->text(),QString("Run"));
         QVERIFY(log->toPlainText().contains("HANDWRITTEN_CHECK_PASS"));
         const auto plan = simulationController->lastPlan(); QVERIFY(plan && plan->valid());
         QCOMPARE(plan->compilation.files.size(), 2);
@@ -960,18 +962,25 @@ private slots:
         if (!report.isEmpty()) QVERIFY(put(QDir(report).filePath("questa.log"), log->toPlainText().toUtf8()));
         auto infiniteTb = positiveTb; infiniteTb.replace("#9; $finish;", "#9;");
         QVERIFY(put(a + "/tb_checked.sv", infiniteTb));
+        // A failed run exposes the log; restore the editor before checking
+        // that a rejected workspace transition preserves the active editor.
+        QVERIFY(window.tabManager->openFileInTab(a + "/dut.sv"));
+        QPointer<MyCodeEditor> activeEditor = window.tabManager->getCurrentEditor();
+        QVERIFY(activeEditor);
         click(panel, "startSimulation");
         QTRY_VERIFY_WITH_TIMEOUT(simulationController->state() == "Running", 15000);
         QVERIFY(!sessions->openWorkspace(b)); QVERIFY(!sessions->closeWorkspace(0));
         QCOMPARE(window.workspaceManager->getWorkspacePath(), a);
         QVERIFY(window.tabManager->getCurrentEditor());
+        QCOMPARE(window.tabManager->getCurrentEditor(), activeEditor.data());
         QCloseEvent close; QApplication::sendEvent(&window, &close); QVERIFY(!close.isAccepted());
         shost->hide(); QTest::qWait(100); QVERIFY(session->busy());
         shost->show(); simulation.verify(window); QVERIFY(!QTest::currentTestFailed());
         const auto owned = QFileInfo(session->lastRunDirectory()).absolutePath();
-        click(panel, "stopSimulation");
+        click(panel, "startSimulation");
         QTRY_VERIFY_WITH_TIMEOUT(!session->alive(), 10000);
         QCOMPARE(session->outcome(), QString("cancelled")); QVERIFY(!QFileInfo::exists(owned));
+        QTRY_COMPARE(panel->findChild<QAbstractButton*>("startSimulation")->text(),QString("Run"));
         QCOMPARE(QJsonDocument::fromJson(get(projectFile)).object(), project);
         QVERIFY(put(a + "/tb_checked.sv", positiveTb));
         QJsonArray modules;

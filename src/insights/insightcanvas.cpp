@@ -5,6 +5,7 @@
 #include "insightgraphview.h"
 #include "insightvisualstyle.h"
 #include "signalkernelgraphservice.h"
+#include <QStyle>
 
 #include <QGraphicsPathItem>
 #include <QGraphicsRectItem>
@@ -528,8 +529,13 @@ void InsightCanvas::updateMinimap()
 
 void InsightCanvas::applyTheme()
 {
-    if (graphView)
+    if (graphView) {
         graphView->applyInsightGraphStyle();
+        const int line = graphView->fontMetrics().height();
+        const int chrome = 2 * graphView->frameWidth()
+            + graphView->style()->pixelMetric(QStyle::PM_ScrollBarExtent, nullptr, graphView);
+        graphView->setMinimumSize(6 * line + chrome, 4 * line + chrome);
+    }
     if (minimapView)
         minimapView->applyInsightGraphStyle();
     const QList<InsightGraphNode> nodes = currentSnapshot.nodes.values();

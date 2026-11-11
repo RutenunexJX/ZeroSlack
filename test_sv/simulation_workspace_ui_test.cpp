@@ -8,6 +8,8 @@
 #include "contextworkspacecontroller.h"
 #include "contextfloatingwindow.h"
 #include "navigationwidget.h"
+#include "navigationmanager.h"
+#include "navigationrowstyle.h"
 #include "navigationpanecoordinator.h"
 #include "panellayoutcontroller.h"
 #include "tabmanager.h"
@@ -133,6 +135,25 @@ class SimulationWorkspaceUiTest : public QObject {
         QVERIFY(put(QDir(output).filePath(name+".json"),QJsonDocument(record).toJson()));
     }
     void ready(Host& f) { QTRY_VERIFY_WITH_TIMEOUT(!f.window->workspaceManager->isWorkspaceScanActive() && f.window->workspaceManager->projectSnapshot().sourceDiscoveryComplete,15000); }
+    void chooseSimulationTopInDesign(Host& f, const QString& file, const QString& module) {
+        auto* manager=f.window->findChild<NavigationManager*>(); QVERIFY(manager);
+        QVERIFY(manager->setDesignTop(module,file).isEmpty());
+        f.navigation()->setActiveTab(NavigationWidget::DesignTab);
+        auto* tree=child<QTreeWidget>(f.navigation(),"navigationDesignTree");
+        QTRY_VERIFY_WITH_TIMEOUT(tree->topLevelItemCount()>0,15000);
+        QVERIFY(f.navigation()->selectDesignModule(module,file));
+        auto* row=tree->currentItem(); QVERIFY(row);
+        bool chosen=false;
+        QTimer::singleShot(0,tree,[&] {
+            auto* menu=qobject_cast<QMenu*>(QApplication::activePopupWidget()); QVERIFY(menu);
+            auto* action=menu->findChild<QAction*>("setSimulationTop"); QVERIFY(action && action->isEnabled());
+            menu->setActiveAction(action); chosen=true; QTest::keyClick(menu,Qt::Key_Return);
+        });
+        tree->customContextMenuRequested(tree->visualItemRect(row).center());
+        QVERIFY(chosen);
+        QCOMPARE(f.panel()->controller()->target().top,module);
+        QTRY_VERIFY(row->data(0,NavigationRowStyle::SimulationRole).toBool());
+    }
     void capture(Host& f, const QString& name) {
         const auto output = qEnvironmentVariable("ZEROSLACK_SIMULATION_UI_REPORT");
         if (output.isEmpty()) return;
@@ -320,13 +341,13 @@ private slots:
         for(const auto* name:{"simulationInputMode","editStimulus","generatedTbPath","duration","tbTop","sourceList","projectList","newProject"})
             QVERIFY(!f.window->findChild<QWidget*>(name));
         QVERIFY(f.panel()->controller()->target()==(simdock::SimulationTarget{"tb_manual.sv","tb_manual"}));
-        child<QAction>(f.panel(),"openTb")->trigger();
+        QVERIFY(f.window->tabManager->openFileInTab(f.workspace+"/tb_manual.sv"));
         QCOMPARE(QFileInfo(f.window->tabManager->getCurrentDocumentMetadata().fileName).fileName(),QString("tb_manual.sv"));
         QVERIFY(f.window->tabManager->openFileInTab(f.workspace+"/dut.sv"));
         QCOMPARE(f.panel()->controller()->target().top,QString("tb_manual"));
         QVERIFY(f.panel()->setContext(f.workspace).isEmpty()); QCOMPARE(read(f.workspace+"/tb_manual.sv"),manual);
         QCOMPARE(simdock::projectJson(f.saved()),legacy);
-        QVERIFY(child<QWidget>(f.panel(),"simulationTarget")->isVisible());
+        QVERIFY(child<QWidget>(f.panel(),"startSimulation")->isVisible());
     }
     void logSelectionScrollAndHiddenDelivery() {
         auto* originalClipboard = new QMimeData;
@@ -357,7 +378,7 @@ private slots:
         ApplicationThemeManager::instance().setMode(dark?ThemeMode::Dark:ThemeMode::Light);
         const auto screen=f.window->screen()->availableGeometry();
         f.window->resize(qMin(width,screen.width()-24),qMin(840,screen.height()-60));f.window->move(screen.topLeft()+QPoint(12,12));QTest::qWait(120);
-        for(const auto* name:{"simulationTarget","startSimulation","openSettings"}) {
+        for(const auto* name:{"startSimulation","openSettings"}) {
             auto* control=child<QWidget>(f.panel(),name); QVERIFY(control->isVisible());
             QVERIFY(f.panel()->rect().contains(QRect(control->mapTo(f.panel(),QPoint()),control->size())));
         }
@@ -376,7 +397,8 @@ private slots:
             QVERIFY(dialog->findChild<QPlainTextEdit*>("simulationDefinitionSources"));dialog->reject();
         });
         settings->click();
-        auto* menu=child<QToolButton>(f.panel(),"simulationTarget")->menu(); QVERIFY(menu); QVERIFY(menu->actions().size()>=3);
+        QVERIFY(!f.panel()->findChild<QWidget*>("simulationTarget"));
+        QVERIFY(!f.panel()->findChild<QAction*>("chooseTb"));
         capture(f,QString("compact-%1").arg(QTest::currentDataTag()));
     }
     void retiredCreationEntrypoints() {
@@ -425,15 +447,10 @@ private slots:
         QCOMPARE(simdock::validateInputs(f.workspace, empty), QString("Select an existing TB first."));
         QVERIFY(f.panel()->controller()->clearTarget().isEmpty());
         QVERIFY(child<QAbstractButton>(f.panel(),"startSimulation")->isEnabled());
-        bool chose=false;
-        QTimer::singleShot(0,f.panel(),[&] {
-            auto* dialog=f.panel()->findChild<QFileDialog*>();QVERIFY(dialog);
-            QTimer::singleShot(5000,dialog,&QDialog::reject);dialog->selectFile(file);chose=QMetaObject::invokeMethod(dialog,"accept");
-        });
-        child<QAction>(f.panel(),"chooseTb")->trigger();QVERIFY(chose);
+        chooseSimulationTopInDesign(f,file,QStringLiteral("tb_manual"));
         QCOMPARE(f.panel()->controller()->target().file,QString("tb_manual.sv"));
         QCOMPARE(f.panel()->controller()->target().top,QString("tb_manual"));
-        child<QAction>(f.panel(),"openTb")->trigger();QCOMPARE(tabs->getCurrentEditor()->toPlainText(),saved);
+        QVERIFY(f.window->tabManager->openFileInTab(f.workspace+"/tb_manual.sv"));QCOMPARE(tabs->getCurrentEditor()->toPlainText(),saved);
         QVERIFY(f.sessions()->saveSession(false));QVERIFY(f.sessions()->openWorkspace(f.other));QVERIFY(f.sessions()->openWorkspace(f.workspace));
         QCOMPARE(f.panel()->controller()->target().file,QString("tb_manual.sv"));
         QCOMPARE(read(file), saved.toUtf8()); QVERIFY(!original.isEmpty());
@@ -469,6 +486,10 @@ private slots:
         QVERIFY(f.window->tabManager->openFileInTab(f.workspace + "/tb_manual.sv"));
         QVERIFY(controller->clearTarget().isEmpty());
         f.panel()->setSimulator(f.data.filePath("missing-vsim.exe"));
+        QVERIFY(runner->run().contains("Design"));
+        QVERIFY(controller->target().isEmpty());
+        chooseSimulationTopInDesign(f,f.workspace+"/tb_manual.sv",QStringLiteral("tb_manual"));
+        QVERIFY(f.window->tabManager->openFileInTab(f.workspace+"/extra.sv"));
         f.window->workspaceManager->refreshWorkspaceFiles();
         QVERIFY(f.window->workspaceManager->isWorkspaceScanActive());
         QSignalSpy finished(controller, &simdock::WorkspaceSimulationController::finished);
@@ -476,7 +497,8 @@ private slots:
         QVERIFY(controller->preparing());
         QCOMPARE(controller->target().top, QString("tb_manual"));
         QVERIFY(!f.sessions()->openWorkspace(f.other));
-        controller->stop();
+        QCOMPARE(child<QAbstractButton>(f.panel(),"startSimulation")->text(),QString("Cancel"));
+        click(f.panel(),"startSimulation");
         QCOMPARE(finished.size(), 1);
         QCOMPARE(finished.takeFirst()[1].toString(), QString("Preparation cancelled"));
         ready(f); QTest::qWait(80);
@@ -591,7 +613,7 @@ private slots:
         QVERIFY(!editor->document()->isModified());QCOMPARE(read(f.workspace+"/tb_manual.sv"),editor->toPlainText().toUtf8());
         f.panel()->hide();QTest::qWait(100);QVERIFY(session->busy());f.panel()->show();
         QVERIFY(!f.sessions()->openWorkspace(f.other)); const auto owned=QFileInfo(session->lastRunDirectory()).absolutePath();
-        click(f.panel(),"stopSimulation");QTRY_VERIFY_WITH_TIMEOUT(!session->alive(),10000);
+        click(f.panel(),"startSimulation");QTRY_VERIFY_WITH_TIMEOUT(!session->alive(),10000);
         QCOMPARE(session->outcome(),QString("cancelled"));QVERIFY(!QFileInfo::exists(owned));QVERIFY(f.sessions()->openWorkspace(f.other));
     }
 };

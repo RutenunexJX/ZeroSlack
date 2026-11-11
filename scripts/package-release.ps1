@@ -6,7 +6,6 @@ param(
     [string]$CompilerDirectory = 'E:/QT6/Tools/mingw1310_64',
     [string]$XipsPackageDirectory = '',
     [string]$XipsAssetAdapterDirectory = '',
-    [string]$WelcomeResourceDirectory = '',
     [string]$DocumentEditorDirectory = '',
     [string]$PreparationPlan = '',
     [string]$PreparationEvidence = '',
@@ -21,7 +20,7 @@ $PreparationPlan = Resolve-ZeroSlackReleasePath $PreparationPlan
 $PreparationEvidence = Resolve-ZeroSlackReleasePath $PreparationEvidence
 $BuildDirectory = Resolve-ZeroSlackReleasePath $BuildDirectory
 $OutputDirectory = Resolve-ZeroSlackReleasePath $OutputDirectory
-foreach ($parameter in @('QtDirectory','CompilerDirectory','XipsPackageDirectory','XipsAssetAdapterDirectory','WelcomeResourceDirectory','DocumentEditorDirectory')) {
+foreach ($parameter in @('QtDirectory','CompilerDirectory','XipsPackageDirectory','XipsAssetAdapterDirectory','DocumentEditorDirectory')) {
     Set-Variable -Name $parameter -Value (Resolve-ZeroSlackReleasePath (Get-Variable -Name $parameter -ValueOnly))
 }
 $assemblySources = $null
@@ -44,7 +43,7 @@ $preparation = Get-Content -LiteralPath $PreparationEvidence -Raw | ConvertFrom-
 if ($preparation.schema -eq 'zeroslack.release-reuse/v1') {
     if (-not $OutputDirectory) { throw 'Reused candidates require an explicit new staging directory.' }
     if ($PreparationPlan -or $PSBoundParameters.ContainsKey('BuildDirectory') -or $XipsPackageDirectory -or
-        $XipsAssetAdapterDirectory -or $WelcomeResourceDirectory -or $DocumentEditorDirectory) {
+        $XipsAssetAdapterDirectory -or $DocumentEditorDirectory) {
         throw 'Reuse staging accepts only the verified candidate and retained package; input overrides require new evidence.'
     }
     $original = Get-Content -LiteralPath $preparation.preparation -Raw | ConvertFrom-Json
@@ -64,7 +63,6 @@ if ($preparation.schema -eq 'zeroslack.release-reuse/v1') {
     $preparation = $original
     $XipsPackageDirectory = $assemblySources.sources.native.root
     $XipsAssetAdapterDirectory = $assemblySources.sources.adapter.root
-    $WelcomeResourceDirectory = $assemblySources.sources.welcome.root
     $DocumentEditorDirectory = $assemblySources.sources.documents.root
 }
 $gitExecutable = $preparation.tools.git.path
@@ -81,7 +79,6 @@ if ([IO.Path]::GetFullPath($QtDirectory) -ne [IO.Path]::GetFullPath($preparation
 foreach ($override in @(
     @{ value=$XipsPackageDirectory; expected=(Join-Path $preparation.buildDirectory 'components/xips') },
     @{ value=$XipsAssetAdapterDirectory; expected=(Join-Path $preparation.buildDirectory 'components/xips-asset-adapter') },
-    @{ value=$WelcomeResourceDirectory; expected=(Join-Path $preparation.sourceRoot 'resources/welcome') },
     @{ value=$DocumentEditorDirectory; expected=(Join-Path $preparation.buildDirectory 'resources/document-editors') }
 )) {
     if (-not $assemblySources -and $override.value -and [IO.Path]::GetFullPath($override.value) -ne [IO.Path]::GetFullPath($override.expected)) {
@@ -345,32 +342,6 @@ New-Item -ItemType Directory -Path $templateTarget -Force | Out-Null
 Get-ChildItem -LiteralPath (Join-Path $sourceRoot 'resources/templates') |
     Where-Object { $_.Name -ne '__pycache__' } |
     Copy-Item -Destination $templateTarget -Recurse
-# External illustration bundles are copied intact. A caller can explicitly retain
-# a previously customized bundle during an upgrade; no default/custom merging.
-$welcomeSource = if ($WelcomeResourceDirectory) { (Resolve-Path -LiteralPath $WelcomeResourceDirectory).Path } else { Join-Path $sourceRoot 'resources/welcome' }
-$welcomeSource = [IO.Path]::GetFullPath($welcomeSource).TrimEnd('\','/')
-if ($outputRoot.Equals($welcomeSource, [StringComparison]::OrdinalIgnoreCase) -or
-    $outputRoot.StartsWith($welcomeSource + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
-    throw 'Package output must be outside the welcome resource bundle.'
-}
-foreach ($name in @('LICENSE','NOTICE.txt')) {
-    if (-not (Test-Path -LiteralPath (Join-Path $welcomeSource $name) -PathType Leaf)) {
-        throw "Use a complete welcome resource bundle, including $name."
-    }
-}
-$welcomeManifestPath = Join-Path $welcomeSource 'manifest.json'
-$welcomeManifest = Get-Content -LiteralPath $welcomeManifestPath -Raw -Encoding utf8 | ConvertFrom-Json
-if ($welcomeManifest.format -ne 'zeroslack.welcome.bundle' -or $welcomeManifest.version -ne 1) { throw 'Unsupported welcome resource bundle.' }
-foreach ($id in @('rtl','waveform','registers')) {
-    $entry = $welcomeManifest.cards.$id
-    $path = Join-NativeRuntimePath $welcomeSource $entry.scene
-    if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $entry.sha256.ToLowerInvariant()) {
-        throw "Welcome scene checksum mismatch: $id"
-    }
-}
-$welcomeTarget = Join-Path $outputRoot 'resources/welcome'
-New-Item -ItemType Directory -Path (Split-Path -Parent $welcomeTarget) -Force | Out-Null
-Copy-Item -LiteralPath $welcomeSource -Destination $welcomeTarget -Recurse
 $editorSource = if ($DocumentEditorDirectory) { (Resolve-Path -LiteralPath $DocumentEditorDirectory).Path } else { Join-Path $buildRoot 'resources/document-editors' }
 $editorSource = [IO.Path]::GetFullPath($editorSource).TrimEnd('\','/')
 if ($outputRoot.Equals($editorSource, [StringComparison]::OrdinalIgnoreCase) -or
@@ -418,9 +389,6 @@ if ($Formal -and -not $dirty) {
         marktext=$editorManifest.inputs.marktext.commit; blocksuite=$editorManifest.inputs.blocksuite.commit;
         webview2Sdk=$editorManifest.inputs.webview2.version; runtimeBundled=$false;
         packagedManifestSha256=(Get-FileHash -LiteralPath $editorManifestPath -Algorithm SHA256).Hash.ToLowerInvariant() };
-    welcomeResources=[ordered]@{ format='zeroslack.welcome.bundle'; version=1; directory='resources/welcome';
-        origin=$(if ($WelcomeResourceDirectory) { 'custom' } else { 'default' });
-        packagedManifestSha256=(Get-FileHash -LiteralPath $welcomeManifestPath -Algorithm SHA256).Hash.ToLowerInvariant() };
     integratedFeatures=[ordered]@{ simdock=$integratedSimDock };
     appSuiteEnabled=[bool]$suiteBuild.enabled; distribution=$(if ($assemblySources) { $assemblySources.distribution } else { 'standalone' });
     suiteSdkVersion=$suiteBuild.sdkVersion; suiteGuiProvider=[bool]$suiteBuild.guiProvider;

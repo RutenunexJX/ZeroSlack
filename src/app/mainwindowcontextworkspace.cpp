@@ -110,7 +110,6 @@ void MainWindow::setupContextWorkspace()
         [this](const ContextResource& resource, bool restoring) -> std::optional<bool> {
             LiveInsightKind kind;
             if (!LiveInsightsContextProvider::kindFromResource(resource, &kind)) return std::nullopt;
-            if(kind==LiveInsightKind::Module){if(navigationPane)navigationPane->showDesign();return true;}
             if(kind!=LiveInsightKind::Hotspot && kind!=LiveInsightKind::Kernel)return std::nullopt;
             if (!hotspotPanel || !panelLayoutController) return false;
             updateSignalTraceContext();
@@ -755,11 +754,6 @@ bool MainWindow::openLiveInsightFromSourceAction(
     const QString& moduleName,
     const QString& signalAccessPath)
 {
-    if(kind==LiveInsightKind::Module){
-        if(navigationPane)navigationPane->showDesign();
-        if(auto* navigation=findChild<NavigationWidget*>())navigation->selectDesignModule(symbolName.isEmpty()?moduleName:symbolName,fileName);
-        return navigationPane!=nullptr;
-    }
     if ((kind == LiveInsightKind::Hotspot || kind==LiveInsightKind::Kernel) && hotspotPanel && panelLayoutController) {
         updateSignalTraceContext();
         hotspotPanel->showForSymbol(symbolName, fileName, moduleName, signalAccessPath);

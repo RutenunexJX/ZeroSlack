@@ -561,6 +561,7 @@ void NavigationWidget::populateDesignTree()
     }
     updateDesignPresentation();
     revealPendingDesignProject();
+    refreshSimulationTop();
 }
 
 QTreeWidgetItem* NavigationWidget::createFileItem(const QString& filePath)

@@ -2,6 +2,7 @@
 #include "../core/questasession.h"
 #include "../core/workspacesimulationcontroller.h"
 #include "uistyle.h"
+#include "uiwindowchrome.h"
 #include <ElaLineEdit.h>
 #include <ElaPlainTextEdit.h>
 #include <ElaPushButton.h>
@@ -19,6 +20,7 @@ SettingsDialog::SettingsDialog(const QString& executable, QWidget* parent, bool 
     WorkspaceSimulationController* controller, std::function<void()> configureWorkspace) : ElaDialog(parent)
 {
     setWindowTitle(QStringLiteral("Simulation settings"));
+    UiWindowChrome::ensureWindowBoundary(this);
     setObjectName(QStringLiteral("settingsDialog"));
     setIsDefaultClosed(true);
     setIsStayTop(false);

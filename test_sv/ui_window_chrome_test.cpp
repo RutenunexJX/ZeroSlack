@@ -5,6 +5,7 @@
 #include "tabmanager.h"
 #include "testuistyle.h"
 #include "uiwindowchrome.h"
+#include "uidialogs.h"
 #include "workspacechrome.h"
 #include <QAbstractAnimation>
 #include <QClipboard>
@@ -37,6 +38,25 @@ protected:
 class UiWindowChromeTest final : public QObject {
     Q_OBJECT
 private slots:
+    void floatingBoundaryRemainsVisibleWithoutInterceptingInput() {
+        for (auto theme : {ThemeMode::Light,ThemeMode::Dark}) {
+            ApplicationThemeManager::instance().setMode(theme);
+            UiDialog dialog; dialog.resize(460,320);
+            auto* content=new QPushButton("Content",&dialog); content->setGeometry(dialog.rect());
+            QSignalSpy clicked(content,&QPushButton::clicked);
+            dialog.show(); settle();
+            auto* border=dialog.findChild<QWidget*>("windowBoundary"); QVERIFY(border && border->isVisible());
+            const auto pixels=dialog.grab().toImage();
+            const auto edge=pixels.pixelColor(pixels.width()/2,0);
+            const auto inside=pixels.pixelColor(pixels.width()/2,qMax(2,qRound(4*dialog.devicePixelRatioF())));
+            QVERIFY(qAbs(edge.lightness()-inside.lightness())>20);
+            QCOMPARE(dialog.childAt(dialog.rect().center()),static_cast<QWidget*>(content));
+            QTest::mouseClick(dialog.windowHandle(),Qt::LeftButton,{},dialog.rect().center());
+            QCOMPARE(clicked.size(),1);
+            dialog.resize(520,360); settle(); QCOMPARE(border->size(),dialog.size());
+        }
+        ApplicationThemeManager::instance().setMode(ThemeMode::Light);
+    }
     void hostOwnershipAndCloseVeto() {
         CloseVetoWindow host;
         host.setWindowTitle("ZeroSlack");

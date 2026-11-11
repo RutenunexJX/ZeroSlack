@@ -75,6 +75,20 @@ def verify_smoke(path,package):
     require(result.get('logs') and all(digest(p)==h for p,h in result['logs'].items()),'Smoke logs missing/changed')
 
 
+def updated_suite_manifest(manifest,info,installed_version):
+    updated=json.loads(json.dumps(manifest))
+    components=[x for x in updated['components'] if x['id']=='zeroslack']
+    require(len(components)==1,'Ambiguous suite ownership')
+    item=components[0]
+    require(item['version']==installed_version,'Suite index does not match old package')
+    for key,value in info.items():
+        if key in item or key in {'preparationEvidenceSha256','suiteGuiProvider','suiteCliClient'}:item[key]=value
+    if 'welcomeResources' not in info:
+        item.pop('welcomeResources',None)
+    updated['generatedUtc']=stamp()
+    return updated
+
+
 def install(package,suite,backup,work,smoke,post_verify=None,checkpoint=None):
     from test_policy import read_json
     package=absolute(package);suite=absolute(suite);backup=absolute(backup);work=absolute(work)
@@ -100,12 +114,7 @@ def install(package,suite,backup,work,smoke,post_verify=None,checkpoint=None):
     require(version(info['suiteSdkVersion'])>=version(oldinfo['suiteSdkVersion']),'SDK downgrade refused')
     indexes={name:(suite/name).read_bytes() for name in ['suite-manifest.json','SHA256SUMS.txt']}
     manifest=json.loads(indexes['suite-manifest.json'].decode('utf-8-sig'))
-    components=[x for x in manifest['components'] if x['id']=='zeroslack'];require(len(components)==1,'Ambiguous suite ownership')
-    require(components[0]['version']==oldinfo['version'],'Suite index does not match old package')
-    updated=json.loads(json.dumps(manifest));item=next(x for x in updated['components'] if x['id']=='zeroslack')
-    for key,value in info.items():
-        if key in item or key in {'preparationEvidenceSha256','suiteGuiProvider','suiteCliClient'}:item[key]=value
-    updated['generatedUtc']=stamp()
+    updated=updated_suite_manifest(manifest,info,oldinfo['version'])
     work.mkdir(parents=True);backup.mkdir(parents=True)
     for name,value in indexes.items():(backup/name).write_bytes(value)
     shutil.copytree(package,ready)

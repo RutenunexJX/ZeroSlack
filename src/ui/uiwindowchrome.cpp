@@ -9,6 +9,50 @@
 #include <QLabel>
 #include <QMainWindow>
 #include <QToolButton>
+#include <QPainter>
+#include <QTimer>
+
+namespace {
+class WindowBoundary final : public QWidget {
+public:
+    explicit WindowBoundary(QWidget* host) : QWidget(host) {
+        setObjectName(QStringLiteral("windowBoundary"));
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        setAttribute(Qt::WA_NoSystemBackground);
+        setFocusPolicy(Qt::NoFocus);
+        host->installEventFilter(this);
+        connect(&ApplicationThemeManager::instance(),&ApplicationThemeManager::themeChanged,this,[this]{update();});
+        refresh();
+    }
+protected:
+    bool eventFilter(QObject*,QEvent* event) override {
+        if (event->type()==QEvent::Resize || event->type()==QEvent::Show
+            || event->type()==QEvent::WindowStateChange) refresh();
+        if (event->type()==QEvent::ChildAdded)
+            QTimer::singleShot(0,this,[this]{raise();});
+        return false;
+    }
+    void paintEvent(QPaintEvent*) override {
+        QPainter painter(this);
+        const bool dark=isDarkTheme(ApplicationThemeManager::instance().mode());
+        painter.setPen(QPen(dark ? QColor(112,118,130) : QColor(137,143,154),1));
+        painter.setBrush(Qt::NoBrush);
+        painter.drawRect(QRectF(rect()).adjusted(.5,.5,-.5,-.5));
+    }
+private:
+    void refresh() {
+        setGeometry(parentWidget()->rect());
+        setVisible(parentWidget()->isWindow() && !parentWidget()->isMaximized() && !parentWidget()->isFullScreen());
+        raise();
+    }
+};
+}
+
+void UiWindowChrome::ensureWindowBoundary(QWidget* window)
+{
+    if (window && !window->findChild<QWidget*>(QStringLiteral("windowBoundary"),Qt::FindDirectChildrenOnly))
+        new WindowBoundary(window);
+}
 
 #ifdef ZEROSLACK_ENABLE_ELA
 #include "ElaAppBar.h"

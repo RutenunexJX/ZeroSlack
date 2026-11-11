@@ -1,5 +1,6 @@
 #include <memory>
 #include "editorsplitcontroller.h"
+#include "uiwindowchrome.h"
 
 #include "actionregistry.h"
 #include "editordroppreviewoverlay.h"
@@ -1067,6 +1068,7 @@ void EditorSplitController::configureGroup(QTabWidget* group)
     group->setElideMode(Qt::ElideMiddle);
     group->tabBar()->setProperty("editorFileTabs", true);
     const bool leftLabels = regionForGroup(group) == QStringLiteral("left") && !isFloatingGroup(group);
+    if (isFloatingGroup(group)) UiWindowChrome::ensureWindowBoundary(group->window());
     group->tabBar()->setProperty("currentLabelTabs", leftLabels);
     if (leftLabels) group->tabBar()->setFocusPolicy(Qt::StrongFocus);
     group->tabBar()->setExpanding(false);

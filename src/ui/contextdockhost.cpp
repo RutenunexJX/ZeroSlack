@@ -11,7 +11,6 @@
 #include "applicationthememanager.h"
 #ifdef ZEROSLACK_ENABLE_ELA
 #include "ElaDragHandle.h"
-#include "ElaDrawerArea.h"
 #endif
 #include <QApplication>
 #include <QEvent>
@@ -36,14 +35,13 @@
 
 namespace {
 constexpr int resizeHeight = 5;
-struct SectionExtent { int minimum; int requested; bool collapsed; };
+struct SectionExtent { int minimum; int requested; };
 QList<int> distributeExtents(int extent,const QList<SectionExtent>& items)
 {
     QList<int> lengths,flexible; qint64 weights=0; int remaining=extent,minimumTotal=0;
     for (int i=0;i<items.size();++i) {
         lengths.append(items[i].minimum); minimumTotal+=items[i].minimum;
-        if (items[i].collapsed) remaining-=items[i].minimum;
-        else { flexible.append(i); weights+=qMax(1,items[i].requested); }
+        flexible.append(i); weights+=qMax(1,items[i].requested);
     }
     if (minimumTotal>=extent) return lengths;
     while (!flexible.isEmpty()) {
@@ -76,18 +74,13 @@ struct ContextDockHost::Section {
     QWidget* header;
     QWidget* view;
     QPointer<QWidget> resize;
-#ifdef ZEROSLACK_ENABLE_ELA
-    ElaDrawerArea* drawer = nullptr;
-#endif
     QLabel* title;
     QLabel* status;
     QToolButton* scope;
-    QToolButton* toggle;
     QToolButton* fullView;
     QToolButton* fit;
     QToolButton* drag;
     bool detachable = false;
-    bool collapsed = false;
     int height = 0;
     int retainedHeight = 0;
     int width = 0;
@@ -153,7 +146,7 @@ ContextDockHost::ContextDockHost(QWidget* parent, EditorSplitController* sharedR
             auto* group=groupForResource(it.key());
             if (!group || group->parentWidget()!=splitter) continue;
             if (splitter->orientation()==Qt::Horizontal) it.value()->width=group->width();
-            else if (!it.value()->collapsed) it.value()->height=group->height();
+            else it.value()->height=group->height();
         }
     });
     connect(registry,&EditorSplitController::layoutChanged,this,[this] {
@@ -312,12 +305,6 @@ bool ContextDockHost::addResource(const ContextResource& resource, QWidget* view
     auto* row = new QHBoxLayout(section->header);
     row->setContentsMargins(4, 0, 4, 0);
     row->setSpacing(2);
-    section->toggle = UiControls::toolButton(section->header);
-    section->toggle->setObjectName(QStringLiteral("contextSectionToggle"));
-    section->toggle->setProperty("panelMotionToggle", true);
-    section->toggle->setArrowType(Qt::DownArrow);
-    section->toggle->setToolTip(tr("Collapse or expand section"));
-    row->addWidget(section->toggle);
     section->drag = UiControls::toolButton(section->header);
     section->drag->setObjectName(QStringLiteral("contextSectionDrag"));
     section->drag->setIcon(style()->standardIcon(QStyle::SP_TitleBarNormalButton));
@@ -377,7 +364,6 @@ bool ContextDockHost::addResource(const ContextResource& resource, QWidget* view
     close->setIcon(style()->standardIcon(QStyle::SP_TitleBarCloseButton));
     close->setToolTip(tr("Close section"));
     row->addWidget(close);
-    connect(section->toggle, &QToolButton::clicked, this, [this, key] { setSectionCollapsed(key, !isSectionCollapsed(key)); });
     connect(unpin, &QToolButton::clicked, this, [this, key] { emit unpinResourceRequested(key); });
     connect(close, &QToolButton::clicked, this, [this, key] { emit closeResourceRequested(key); });
     connect(section->fullView, &QToolButton::clicked, this, [this, key] { emit fullViewResourceRequested(resources.value(key)); });
@@ -391,20 +377,7 @@ bool ContextDockHost::addResource(const ContextResource& resource, QWidget* view
     column->setSizeConstraint(QLayout::SetNoConstraint);
     section->header->setFixedHeight(row->sizeHint().height());
     column->addWidget(section->header);
-#ifdef ZEROSLACK_ENABLE_ELA
-    section->drawer = new ElaDrawerArea(section->frame);
-    section->drawer->setObjectName(QStringLiteral("contextSectionDrawer"));
-    section->drawer->setDrawerHeaderVisible(false);
-    section->drawer->setBorderRadius(0);
-    section->drawer->addDrawer(view);
-    section->drawer->setExpanded(true, false);
-    column->addWidget(section->drawer, 1);
-    connect(section->drawer, &ElaDrawerArea::drawerAnimationFinished, this, [this, key] {
-        if (sections.contains(key)) arrangeSections();
-    });
-#else
     column->addWidget(view, 1);
-#endif
     sections.insert(key, section);
     // A shared area can belong to an earlier-created dock and be destroyed
     // before this host. Drop its records while the frame is still identifiable.
@@ -466,8 +439,6 @@ void ContextDockHost::refreshSectionStatus(const QString& key)
     section->scope->setToolTip(section->view->property("contextScopeTooltip").toString());
     section->scope->setVisible(!scope.isEmpty());
     section->fit->setVisible(section->view->property("contextFitAvailable").toBool());
-    const QVariant toggleVisible = section->view->property("contextSectionToggleVisible");
-    section->toggle->setVisible(!toggleVisible.isValid() || toggleVisible.toBool());
     const QVariant fullView = section->view->property("contextFullViewActionVisible");
     section->fullView->setVisible(section->fullView->isEnabled()
         && (!fullView.isValid() || fullView.toBool()));
@@ -501,9 +472,6 @@ QWidget* ContextDockHost::takeResource(const QString& key)
     settleMotion();
     auto* section=sections.take(key); if (!section) return nullptr;
     auto* view=section->view;
-#ifdef ZEROSLACK_ENABLE_ELA
-    if (section->drawer) section->drawer->removeDrawer(view);
-#endif
     view->removeEventFilter(this); view->hide(); view->setProperty("contextResourceKey",QVariant()); view->setParent(nullptr);
     resources.remove(key);
     disconnect(section->frame,nullptr,this,nullptr);
@@ -518,45 +486,17 @@ bool ContextDockHost::removeResource(const QString& key)
 { auto* view = takeResource(key); if (!view) return false; view->deleteLater(); return true; }
 int ContextDockHost::indexOfResource(const QString& key) const { return resourceKeys().indexOf(key.trimmed()); }
 bool ContextDockHost::isSectionCollapsed(const QString& key) const
-{ auto* section = sections.value(key); return section && section->collapsed; }
+{ Q_UNUSED(key); return false; }
 int ContextDockHost::sectionHeight(const QString& key) const
 { auto* section = sections.value(key); return section ? section->height : 0; }
 bool ContextDockHost::setSectionCollapsed(const QString& key, bool collapsed, bool animate)
 {
-    auto* section = sections.value(key);
-    if (!section) return false;
-    animate = animate && ApplicationThemeManager::instance().animationsEnabled();
-    if (auto* host = qobject_cast<QMainWindow*>(window()))
-        if (auto* transition = host->findChild<ContextDockTransition*>()) transition->finish();
-    if (section->collapsed == collapsed) {
-#ifdef ZEROSLACK_ENABLE_ELA
-        if (!animate && section->drawer) section->drawer->finishDrawerAnimation();
-#endif
-        return true;
-    }
-#ifdef ZEROSLACK_ENABLE_ELA
-    if (section->drawer) {
-        for (auto* other : sections) other->retainedHeight = 0;
-        section->collapsed = collapsed;
-        section->toggle->setArrowType(collapsed ? Qt::RightArrow : Qt::DownArrow);
-        if (!collapsed && !section->drawer->isDrawerAnimating()) {
-            arrangeSections();
-            section->frame->layout()->activate();
-        }
-        section->drawer->setExpanded(!collapsed, animate);
-        if (!section->drawer->isDrawerAnimating()) arrangeSections();
-        emit sectionLayoutChanged();
-        return true;
-    }
-#endif
-    Q_UNUSED(animate)
-    for (auto* other : sections) other->retainedHeight = 0;
-    section->collapsed = collapsed;
-    section->toggle->setArrowType(collapsed ? Qt::RightArrow : Qt::DownArrow);
-    arrangeSections();
-    emit sectionLayoutChanged();
-    return true;
+    // Compatibility with existing callers/layouts: tab pages always expose their contents.
+    Q_UNUSED(collapsed);
+    Q_UNUSED(animate);
+    return sections.contains(key);
 }
+
 int ContextDockHost::minimumSectionHeight(const Section* section) const
 { return section->header->height() + resizeHeight
     + qMax(48, qMax(section->view->minimumHeight(), section->view->minimumSizeHint().height())); }
@@ -592,10 +532,6 @@ bool ContextDockHost::moveResource(const QString& key,int index)
 }
 void ContextDockHost::settleMotion()
 {
-#ifdef ZEROSLACK_ENABLE_ELA
-    for (auto* section : sections)
-        if (section->drawer) section->drawer->finishDrawerAnimation();
-#endif
     if (auto* host = qobject_cast<QMainWindow*>(window())) {
         if (auto* transfer = host->findChild<ContextDockTransition*>()) transfer->finish();
     }
@@ -608,16 +544,14 @@ void ContextDockHost::arrangeSections()
     QSet<QSplitter*> splitters;
     for (auto it=sections.begin();it!=sections.end();++it) {
         auto* section=it.value(); auto* group=groupForResource(it.key()); if (!group) continue;
-        const int minimum=section->collapsed ? section->header->height() : minimumSectionHeight(section);
+        const int minimum=minimumSectionHeight(section);
         section->frame->setMinimumWidth(resourceArea(it.key())==Qt::BottomDockWidgetArea
             ? qMax(180,section->header->minimumSizeHint().width()) : 0);
         section->frame->setMinimumHeight(minimum);
-        section->frame->setMaximumHeight(section->collapsed ? minimum : QWIDGETSIZE_MAX);
-        group->setMaximumHeight(section->collapsed && group->count()==1 ? minimum+group->tabBar()->sizeHint().height() : QWIDGETSIZE_MAX);
+        section->frame->setMaximumHeight(QWIDGETSIZE_MAX);
+        group->setMaximumHeight(QWIDGETSIZE_MAX);
         if (auto* splitter=qobject_cast<QSplitter*>(group->parentWidget())) splitters.insert(splitter);
-#ifndef ZEROSLACK_ENABLE_ELA
-        section->view->setVisible(!section->collapsed);
-#endif
+        section->view->show();
     }
     for (const auto& region : {QStringLiteral("right"),QStringLiteral("left"),QStringLiteral("bottom")}) {
         auto* host=registry->regionHost(region); auto* root=registry->regionRoot(region);
@@ -636,9 +570,9 @@ void ContextDockHost::arrangeSections()
             const int chrome=horizontal ? 2*group->style()->pixelMetric(QStyle::PM_DefaultFrameWidth,nullptr,group)
                 : group->minimumSizeHint().height()-qMax(section->frame->minimumHeight(),section->frame->minimumSizeHint().height());
             const int minimum=horizontal ? qMax(180,section->header->minimumSizeHint().width())
-                : section->collapsed ? section->header->height() : minimumSectionHeight(section);
+                : minimumSectionHeight(section);
             const int requested=horizontal ? section->width : section->height;
-            extents.append({minimum+qMax(0,chrome),requested>0 ? requested : 1,!horizontal && section->collapsed});
+            extents.append({minimum+qMax(0,chrome),requested>0 ? requested : 1});
         }
         if (allResources) {
             const int extent=horizontal ? splitter->width() : splitter->height();
@@ -677,13 +611,13 @@ QRect ContextDockHost::projectedSectionRect(bool bottom,int index,const QRect& v
         if (auto* splitter=qobject_cast<QSplitter*>(group->parentWidget())) handleWidth=splitter->handleWidth();
         if (i<index) ++insertion;
         const int minimum=(bottom ? qMax(180,section->header->minimumSizeHint().width())
-            : section->collapsed ? header : minimumSectionHeight(section))+minimumChrome;
+            : minimumSectionHeight(section))+minimumChrome;
         const int request=bottom ? section->width : section->height;
-        extents.append({minimum,request>0 ? request : 1,!bottom && section->collapsed});
+        extents.append({minimum,request>0 ? request : 1});
     }
     const int incomingMinimum=bottom ? qMax(180,incoming->minimumWidth())+minimumChrome
         : header+resizeHeight+qMax(48,qMax(incoming->minimumHeight(),incoming->minimumSizeHint().height()))+qMax(tabHeight,minimumChrome);
-    extents.insert(insertion,{incomingMinimum,1,false});
+    extents.insert(insertion,{incomingMinimum,1});
     const int extent=bottom ? viewport.width() : viewport.height();
     const auto lengths=distributeExtents(qMax(0,extent-(extents.size()-1)*handleWidth),extents);
     int position=insertion*handleWidth; for (int i=0;i<insertion;++i) position+=lengths[i];

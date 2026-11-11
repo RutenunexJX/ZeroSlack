@@ -31,7 +31,6 @@ public:
     QString selectTarget(const QString& file, const QMap<QString, QByteArray>& overrides = {});
     void setSimulator(const QString& executable);
     void setRunHandler(std::function<QString()> handler) { m_runHandler = std::move(handler); }
-    void setTargetHandler(std::function<QString(const QString&)> handler) { m_targetHandler = std::move(handler); }
     void setWorkspaceConfigurationHandler(std::function<void()> handler) { m_configureWorkspace = std::move(handler); }
     QList<DesignHierarchyRoot> designRoots() const;
     QString addDesignProject(const QString& file, const QString& module, bool activate = true);
@@ -51,6 +50,7 @@ public:
 public slots:
     void startSimulation();
 signals:
+    void issueRaised(const QString& issue);
     void openFileRequested(const QString& file);
     void openSourceRequested(const QString& file, int line);
     void stateChanged();
@@ -64,16 +64,14 @@ private:
     void setPreference(const QString& key, const QVariant& value);
     void buildUi();
     void openSettings();
-    void chooseTb();
     void updateControls();
     void reportIssue(const QString& issue);
     QString contextError() const;
     QPointer<QWidget> m_logs;
     QPointer<ElaPlainTextEdit> m_log;
     QPointer<SimulationEventsPanel> m_events;
-    QToolButton *m_target = nullptr, *m_settings = nullptr;
-    QPushButton *m_run = nullptr, *m_stop = nullptr;
-    QLabel* m_status = nullptr;
+    QToolButton* m_settings = nullptr;
+    QPushButton* m_run = nullptr;
     WorkspaceSimulationController* m_controller;
     DesignProjectService* m_design;
     QString m_simulator;
@@ -81,7 +79,6 @@ private:
     bool m_standalone = false, m_logFollow = true;
     int m_logPosition = 0;
     std::function<QString()> m_runHandler;
-    std::function<QString(const QString&)> m_targetHandler;
     std::function<void()> m_configureWorkspace;
 };
 }

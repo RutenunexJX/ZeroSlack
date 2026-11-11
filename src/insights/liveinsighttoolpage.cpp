@@ -207,13 +207,6 @@ void LiveInsightToolPage::createSurface()
         trace->setHeatmapMode(insightKind==LiveInsightKind::Hotspot);
         return;
     }
-    if(insightKind==LiveInsightKind::Module){
-        auto* open=new QPushButton(QStringLiteral("Open module in Design"),this);open->setObjectName("openExistingDesign");
-        open->setEnabled(false);
-        layout->addWidget(open);layout->addStretch();
-        connect(open,&QPushButton::clicked,this,[this]{if(designHandler)designHandler();});
-        return;
-    }
 
     workbench = new RtlInsightWorkbench(this, true);
     const InsightWorkbenchViewKind viewKind =
@@ -280,5 +273,4 @@ QVariantMap LiveInsightToolPage::saveNativeState()const{return trace ? trace->sa
 void LiveInsightToolPage::restoreNativeState(const QVariantMap& state){if(state.isEmpty())return;if(trace && !currentContext.workspaceId.isEmpty())trace->restoreViewState(state);else pendingNativeState=state;}
 void LiveInsightToolPage::setDesignHandler(std::function<void()> handler){
     designHandler=std::move(handler);
-    if(auto* button=findChild<QPushButton*>("openExistingDesign"))button->setEnabled(bool(designHandler));
 }

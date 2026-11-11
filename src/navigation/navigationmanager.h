@@ -63,6 +63,8 @@ public:
     void connectToTabManager(TabManager* tabManager);
     void connectToWorkspaceManager(WorkspaceManager* workspaceManager);
     void connectToDesignProjects(DesignProjectService* service);
+    void setSimulationHandlers(std::function<QPair<QString,QString>()> target,
+                               std::function<QString(const QString&,const QString&)> select);
     void setTemporaryEditorOpenHandler(
         std::function<bool(const EditorLocation&)> handler);
 
@@ -138,6 +140,8 @@ private slots:
     void onViewChanged(int index);
 
 private:
+    std::function<QPair<QString,QString>()> simulationTarget;
+    std::function<QString(const QString&,const QString&)> selectSimulationTop;
     bool eventFilter(QObject* watched, QEvent* event) override;
     struct NavigationContext {
         QString currentFileName;

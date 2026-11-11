@@ -17,14 +17,6 @@ public:
             traceValue=new SignalTracePanel(dockValue);
             traceValue->setHeatmapMode(kind==InsightWorkbenchViewKind::Hotspot);
             dockValue->setWidget(traceValue);
-        }else if(kind==InsightWorkbenchViewKind::Block){
-            dockValue=new QDockWidget(parent);
-            designButton=new QPushButton(QStringLiteral("Open module in Design"),dockValue);
-            designButton->setEnabled(false);
-            QObject::connect(designButton,&QPushButton::clicked,designButton,[this]{
-                if(designHandler)designHandler(context.fileName,context.moduleName);
-            });
-            dockValue->setWidget(designButton);
         }else{
             rtlValue=std::make_unique<RtlInsightsPanelCoordinator>(parent);
             dockValue=rtlValue->dock();
@@ -57,8 +49,7 @@ public:
         else if(rtlValue)rtlValue->setStatusMessageHandler(std::move(handler));
     }
     void setDesignHandler(std::function<void(const QString&,const QString&)> handler){
-        designHandler=std::move(handler);
-        if(designButton)designButton->setEnabled(bool(designHandler));
+        if(rtlValue)rtlValue->setDesignHandler(std::move(handler));
     }
     void setContext(const InsightViewContext& c){
         const bool sameTarget=context.workspaceId==c.workspaceId && context.projectId==c.projectId
@@ -82,14 +73,12 @@ public:
         if(traceValue)return traceValue->exportGraph(path,options);
         if(rtlValue)return rtlValue->exportCurrentGraph(path,options);
         GraphExportResult result;result.outputPath=path;result.failure=GraphExportFailure::InvalidSource;
-        result.failureReason=QStringLiteral("Module hierarchy is available in Design; the retired diagram has no graph export.");return result;
+        result.failureReason=QStringLiteral("No graph is available to export.");return result;
     }
 private:
     InsightWorkbenchViewKind kindValue;
     InsightViewContext context;
     QDockWidget* dockValue=nullptr;
     SignalTracePanel* traceValue=nullptr;
-    QPushButton* designButton=nullptr;
     std::unique_ptr<RtlInsightsPanelCoordinator> rtlValue;
-    std::function<void(const QString&,const QString&)> designHandler;
 };

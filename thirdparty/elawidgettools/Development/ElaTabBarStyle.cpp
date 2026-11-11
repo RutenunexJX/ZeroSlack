@@ -1,4 +1,5 @@
 #include "ElaTabBarStyle.h"
+#include "ElaTabBarMetrics.h"
 
 #include "ElaApplication.h"
 #include <QDebug>
@@ -24,6 +25,8 @@ ElaTabBarStyle::~ElaTabBarStyle()
 
 int ElaTabBarStyle::pixelMetric(PixelMetric metric, const QStyleOption* option, const QWidget* widget) const
 {
+    if (metric==PM_TabCloseIndicatorWidth || metric==PM_TabCloseIndicatorHeight)
+        return ElaTabBarMetrics::CloseExtent;
     if (_nativeTabBehavior && metric == PM_TabBar_ScrollButtonOverlap) return 0;
     int value = QProxyStyle::pixelMetric(metric, option, widget);
     if (_nativeTabBehavior && metric == PM_TabBarScrollButtonWidth) {
@@ -76,11 +79,7 @@ void ElaTabBarStyle::drawPrimitive(PrimitiveElement pe, const QStyleOption* opt,
             p->setBrush(ElaThemeColor(_themeMode, BasicHoverAlpha));
             p->drawRoundedRect(opt->rect, 2, 2);
         }
-        p->setPen(QPen(ElaThemeColor(_themeMode, BasicText), 1.4, Qt::SolidLine, Qt::RoundCap));
-        const qreal half = qMin(4.0, qMin(opt->rect.width(), opt->rect.height()) / 4.0);
-        const QPointF center = QRectF(opt->rect).center();
-        p->drawLine(center + QPointF(-half, -half), center + QPointF(half, half));
-        p->drawLine(center + QPointF(half, -half), center + QPointF(-half, half));
+        ElaTabBarMetrics::drawClose(*p,opt->rect,ElaThemeColor(_themeMode, BasicText));
         p->restore();
         return;
     }
@@ -161,7 +160,29 @@ void ElaTabBarStyle::drawControl(ControlElement element, const QStyleOption* opt
     case QStyle::CE_TabBarTabLabel:
     {
         if (_nativeTabBehavior) {
-            QProxyStyle::drawControl(element, option, painter, widget);
+            const auto* tab=qstyleoption_cast<const QStyleOptionTab*>(option);
+            if (!tab) return;
+            QStyleOptionTab label=*tab;
+            label.icon=QIcon();
+            const QRect bounds=QProxyStyle::subElementRect(SE_TabBarTabText,&label,widget);
+            const int iconWidth=tab->icon.isNull() ? 0 : tab->iconSize.width()+6;
+            const auto* bar=qobject_cast<const QTabBar*>(widget);
+            const QString text=option->fontMetrics.elidedText(tab->text,bar ? bar->elideMode() : Qt::ElideRight,
+                qMax(0,bounds.width()-iconWidth));
+            const qreal width=iconWidth+option->fontMetrics.horizontalAdvance(text);
+            const qreal x=QRectF(bounds).center().x()-width/2;
+            const qreal centerY=QRectF(tab->rect).center().y();
+            painter->save();
+            painter->setPen(ElaThemeColor(_themeMode,BasicText));
+            if (!tab->icon.isNull()) {
+                const auto glyph=tab->icon.pixmap(tab->iconSize,painter->device()->devicePixelRatioF(),
+                    tab->state.testFlag(State_Enabled) ? QIcon::Normal : QIcon::Disabled,
+                    tab->state.testFlag(State_Selected) ? QIcon::On : QIcon::Off);
+                ElaTabBarMetrics::drawIcon(*painter,QRectF(x,centerY-tab->iconSize.height()/2.0,
+                    tab->iconSize.width(),tab->iconSize.height()),glyph);
+            }
+            ElaTabBarMetrics::drawText(*painter,x+iconWidth,centerY,text);
+            painter->restore();
             return;
         }
         //文字和图标绘制
@@ -232,8 +253,12 @@ QSize ElaTabBarStyle::sizeFromContents(ContentsType type, const QStyleOption* op
 
 QRect ElaTabBarStyle::subElementRect(SubElement element, const QStyleOption* option, const QWidget* widget) const
 {
-    if (_nativeTabBehavior)
-        return QProxyStyle::subElementRect(element, option, widget);
+    if (_nativeTabBehavior) {
+        QRect bounds=QProxyStyle::subElementRect(element,option,widget);
+        if (element==SE_TabBarTabLeftButton || element==SE_TabBarTabRightButton)
+            bounds.moveTop(option->rect.top()+(option->rect.height()-bounds.height())/2);
+        return bounds;
+    }
     switch (element)
     {
     case QStyle::SE_TabBarScrollLeftButton:

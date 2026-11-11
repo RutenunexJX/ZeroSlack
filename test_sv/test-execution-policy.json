@@ -4775,23 +4775,6 @@
       "target": "welcome_mainwindow_test"
     },
     {
-      "name": "welcome_resource_test",
-      "role": "compiled",
-      "managedSince": "2026-10-30",
-      "reviewBy": "2026-12-07",
-      "reviewOwner": "AppSuite部署统筹",
-      "source": "E:/ZeroSlack/ZeroSlack/build/coordination/20261029-stage-d-release-gates/TASK.md:20-25",
-      "when": {},
-      "execution": "run",
-      "reason": {
-        "category": "self_contained",
-        "detail": "Registered test retained in the default safe set; runtime failures are not exclusions."
-      },
-      "timeout": 90,
-      "timeoutBasis": "Existing explicit registered budget preserved.",
-      "target": "welcome_resource_test"
-    },
-    {
       "name": "workspace_document_contract_test",
       "role": "compiled",
       "managedSince": "2026-10-30",

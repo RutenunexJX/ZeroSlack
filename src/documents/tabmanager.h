@@ -75,7 +75,7 @@ public:
 
     // Tab operations
     void createNewTab();
-    WebDocumentPage* createWebDocument(WebDocumentPage::Kind kind, const QString& initialText = QString());
+    WebDocumentPage* createWebDocument(WebDocumentPage::Kind kind, const QString& initialText = QString(), const QString& region = {});
     WebDocumentPage* createWebDocumentFile(WebDocumentPage::Kind kind, const QString& path = {}, const QString& region = {}, QString* error = nullptr);
     bool openFileInRegion(const QString& path, const QString& region);
     WebDocumentPage* currentWebDocument() const;

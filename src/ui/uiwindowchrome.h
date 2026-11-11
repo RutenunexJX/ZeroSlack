@@ -15,6 +15,8 @@ struct UiWindowTitleBar {
 };
 
 namespace UiWindowChrome {
+// Paint-only frame; it never participates in hit testing or focus.
+ZEROSLACK_API void ensureWindowBoundary(QWidget* window);
 // The host retains frame geometry, native hit testing and document close policy.
 ZEROSLACK_API UiWindowTitleBar createTitleBar(QMainWindow* host, QWidget* workspacePicker = nullptr,
                                            QWidget* accessory = nullptr);

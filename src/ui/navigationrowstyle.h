@@ -19,6 +19,7 @@ public:
     static constexpr int UnresolvedRole = Qt::UserRole + 45;
     static constexpr int MissingNameRole = Qt::UserRole + 46;
     static constexpr int MissingTypeRole = Qt::UserRole + 47;
+    static constexpr int SimulationRole = Qt::UserRole + 48;
     std::function<void(const QString&)> activateProject;
 
     explicit NavigationRowStyle(QTreeWidget* view, bool design)
@@ -133,11 +134,12 @@ private:
         tree->style()->drawControl(QStyle::CE_ItemViewItem, &background, painter, tree);
         const bool project = !index.data(ProjectRole).toString().isEmpty();
         const bool unresolved = index.data(UnresolvedRole).toBool();
+        const bool simulation = index.data(SimulationRole).toBool();
         const bool expandable = tree->model()->hasChildren(index);
         int depth = 0;
         for (auto parent = index.parent(); parent.isValid(); parent = parent.parent()) ++depth;
         const auto metrics = row.fontMetrics;
-        const int reserved = (project ? 28 : 0) + (unresolved ? 22 : 0);
+        const int reserved = (project ? 28 : 0) + (unresolved ? 22 : 0) + (simulation ? 22 : 0);
         // Keep one elision glyph after the icon slot (18), gap (6) and margins (2 + 4).
         const int indent = qMin(depth * 14, qMax(0, row.rect.width() - reserved - 30 - metrics.horizontalAdvance(QStringLiteral("…"))));
         QRect content = row.rect.adjusted(2 + indent, 0, -reserved - 4, 0);
@@ -167,6 +169,9 @@ private:
                 '[' + metrics.elidedText(type, Qt::ElideRight, qMax(0,text.width()-brackets)) + ']');
         }
         painter->restore();
+        if (simulation) RoundedIcons::icon(RoundedIcons::Simulation).paint(painter,
+            QRect(row.rect.right() - (project ? 28 : 0) - (unresolved ? 22 : 0) - 20,
+                  row.rect.top() + (row.rect.height() - 18) / 2, 18, 18));
         if (unresolved) RoundedIcons::icon(RoundedIcons::Warning).paint(painter,
             QRect(row.rect.right() - (project ? 28 : 0) - 20, row.rect.center().y()-9, 18,18));
         if (project) {

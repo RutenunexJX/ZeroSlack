@@ -529,7 +529,6 @@ set(PHASE_L_REVIEWED_REGEX_USAGE
     # 2026-11-09 C/E shared-host placement; regex unchanged. Provenance: implementation/REGEX-REVIEW.json.
     "src/ui/linkedcontextcontroller.cpp|37e0c01114dfdb1d91a57785f9a699dc85ed5510795ad189e2b99902cb63e213|e8ac6793e38fb66815666471f5f305c66fa5f5ba3fe28b8a437e753966e0aa4c"
     "src/ui/templatemanagerdialog.cpp|9b6e26960cb1535017135d00fd49807feb213d838e3a24063380eeea7b09923c|5182b21c9fd822d3fc97df6befcdc87f9f1728f1b1b921ba18af2af20db3735a"
-    "src/ui/welcomeanimation.cpp|3bb1f59db5ab492fc78b96466e83f175e69fa44fda0c8d23fe21045d44dd9e5a|cff975616d667eadcf0dbbd07a1ef1a77400baf93cc226f0011b3bd66cf09f0d"
 )
 zeroslack_verify_reviewed_regex_contract("${ZEROSLACK_SOURCE_DIR}"
     "${PHASE_L_REVIEWED_REGEX_SOURCE_REVISION}"

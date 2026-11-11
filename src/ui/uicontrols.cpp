@@ -39,6 +39,7 @@
 #include <QTextBoundaryFinder>
 #include <QCursor>
 #include <QDynamicPropertyChangeEvent>
+#include "ElaTabBarMetrics.h"
 
 namespace {
 template<class Base> class WorkspaceTabBar final : public Base {
@@ -160,9 +161,15 @@ protected:
 private:
     static constexpr int textGap = 6;
     bool currentLabels() const { return this->property("currentLabelTabs").toBool(); }
-    int iconWidth() const { return this->iconSize().width() + 16; }
+    QSize navigationIconSize() const { return QSize(16, 16); }
+    int iconWidth() const { return navigationIconSize().width() + 20; }
     int tabHeight() const { return qMax(36, this->fontMetrics().height() + 14); }
-    QFont labelFont() const { QFont font = this->font(); font.setWeight(QFont::Medium); return font; }
+    QFont labelFont() const {
+        QFont font = this->font();
+        font.setPixelSize(qMax(14, font.pixelSize()));
+        font.setWeight(QFont::DemiBold);
+        return font;
+    }
     QFontMetrics labelMetrics() const { return QFontMetrics(labelFont()); }
     bool keyboardFocus() const { return this->hasFocus() && this->testAttribute(Qt::WA_KeyboardFocusChange); }
     bool showCurrentClose() const {
@@ -171,7 +178,7 @@ private:
     }
     int buttonExtent(int index, QTabBar::ButtonPosition side) const {
         const auto* button = this->tabButton(index, side);
-        return button ? qMin(18, button->sizeHint().width()) + 4 : 0;
+        return button ? qMin(ElaTabBarMetrics::CloseExtent, button->sizeHint().width()) + 4 : 0;
     }
     int buttonExtent(int index) const { return buttonExtent(index, QTabBar::LeftSide) + buttonExtent(index, QTabBar::RightSide); }
     void syncTabButtons() {
@@ -182,10 +189,10 @@ private:
                 if (!button) continue;
                 if (currentLabels()) {
                     const QRect tab = this->tabRect(index);
-                    const QSize size = button->sizeHint().boundedTo(QSize(18,18));
+                    const QSize size = button->sizeHint().boundedTo(QSize(ElaTabBarMetrics::CloseExtent,ElaTabBarMetrics::CloseExtent));
                     button->resize(size);
                     button->move(side == QTabBar::LeftSide ? tab.left()+8 : tab.right()-8-size.width()+1,
-                                 tab.center().y()-size.height()/2);
+                                 tab.top()+(tab.height()-size.height())/2);
                 }
                 bool exposed = (!currentLabels() || (index == this->currentIndex() && showCurrentClose()))
                     && this->isTabVisible(index) && this->rect().contains(button->geometry());
@@ -242,9 +249,9 @@ private:
                 painter.drawRoundedRect(pill, 8, 8);
             }
             const QString text = active ? displayText(i,rect.width()) : QString();
-            const QSize icon = this->iconSize();
-            const int x = active ? rect.left()+8+buttonExtent(i,QTabBar::LeftSide) : rect.center().x() - icon.width()/2;
-            const QRect iconRect(QPoint(x,rect.center().y()-icon.height()/2),icon);
+            const QSize icon = navigationIconSize();
+            const int x = active ? rect.left()+10+buttonExtent(i,QTabBar::LeftSide) : rect.left()+(rect.width()-icon.width())/2;
+            const QRect iconRect(QPoint(x,rect.top()+(rect.height()-icon.height())/2),icon);
             const auto tabIcon = this->tabIcon(i);
             auto glyph = (tabIcon.isNull() ? RoundedIcons::icon(RoundedIcons::File) : tabIcon).pixmap(
                 icon, this->devicePixelRatioF(), this->isTabEnabled(i)?QIcon::Normal:QIcon::Disabled);
@@ -255,10 +262,10 @@ private:
                     : active ? textColor : dark ? QColor(151,151,149) : QColor(160,159,157);
                 tint.fillRect(glyph.rect(),iconColor);
             }
-            painter.drawPixmap(iconRect,glyph);
+            ElaTabBarMetrics::drawIcon(painter,iconRect,glyph);
             if (!text.isEmpty()) {
                 painter.setPen(this->isTabEnabled(i)?textColor:this->palette().color(QPalette::Disabled,QPalette::Text));
-                painter.drawText(QRect(iconRect.right()+1+textGap,rect.top(),rect.right()-8-iconRect.right()-textGap-buttonExtent(i,QTabBar::RightSide),rect.height()),Qt::AlignVCenter|Qt::AlignLeft|Qt::TextSingleLine,text);
+                ElaTabBarMetrics::drawText(painter,iconRect.right()+1+textGap,QRectF(rect).center().y(),text);
             }
             if (active && keyboardFocus()) {
                 painter.setPen(QPen(focus,1)); painter.setBrush(Qt::NoBrush);

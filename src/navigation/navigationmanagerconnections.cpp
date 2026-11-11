@@ -11,6 +11,8 @@
 #include "../workspace/designprojectservice.h"
 #include <QMessageBox>
 #include "roundedicons.h"
+#include "editorfileidentity.h"
+#include "uidialogs.h"
 
 #include <QAction>
 #include <QMenu>
@@ -362,6 +364,13 @@ void NavigationManager::onDesignNodeContextMenuRequested(
     refresh->setObjectName(QStringLiteral("refreshDesignAction"));
     refresh->setEnabled(navigationService && !getSystemVerilogFiles().isEmpty());
     auto* add = menu.addAction(tr("Add design project…"));
+    auto* simulation = menu.addAction(RoundedIcons::icon(RoundedIcons::Simulation),tr("Set as simulation top"));
+    simulation->setObjectName(QStringLiteral("setSimulationTop"));
+    simulation->setCheckable(true);
+    const auto target=simulationTarget ? simulationTarget() : QPair<QString,QString>();
+    simulation->setChecked(target.second==node.moduleType && EditorFileIdentity::same(target.first,node.definitionFile));
+    simulation->setEnabled(bool(selectSimulationTop) && !node.unresolved
+        && !node.definitionFile.isEmpty() && !node.moduleType.isEmpty());
     QAction *activate = nullptr, *remove = nullptr;
     if (node.isTop && !node.projectId.isEmpty()) {
         activate = menu.addAction(tr("Activate project"));
@@ -373,6 +382,11 @@ void NavigationManager::onDesignNodeContextMenuRequested(
         return;
     if (selected == refresh) { refreshDesignHierarchy(true); return; }
     if (selected == add) { chooseDesignProject(); return; }
+    if (selected == simulation) {
+        const auto issue=selectSimulationTop(node.definitionFile,node.moduleType);
+        if (!issue.isEmpty()) UiDialogs::warning(navigationWidget,tr("Simulation top"),issue);
+        return;
+    }
     if (designProjects && (selected == activate || selected == remove)) {
         const auto issue = selected == activate ? designProjects->activateProject(node.projectId) : designProjects->removeDesignRoot(node.projectId);
         if (!issue.isEmpty()) QMessageBox::warning(navigationWidget, tr("Design project"), issue);

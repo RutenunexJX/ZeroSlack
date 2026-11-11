@@ -2,6 +2,7 @@
 #include "contextfloatingwindow.h"
 #include "applicationthememanager.h"
 #include "insightvisualstyle.h"
+#include "uiwindowchrome.h"
 #ifdef ZEROSLACK_ENABLE_ELA
 #include "ElaApplication.h"
 #endif
@@ -197,6 +198,7 @@ ContextFloatingWindow::ContextFloatingWindow(QWidget* mainWindow, QWidget* regio
     });
     for (QScreen* screen : QGuiApplication::screens()) watchScreen(screen);
     backdropReady = true;
+    UiWindowChrome::ensureWindowBoundary(this);
     layoutTitleBar();
     refreshBackdrop();
     hide();

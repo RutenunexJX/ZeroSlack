@@ -1,35 +1,22 @@
 #pragma once
 #include "applicationthememanager.h"
-#include "welcomeanimation.h"
+#include "roundedicons.h"
 #include <QApplication>
 #include <QEvent>
 #include <QGridLayout>
 #include <QPainter>
 #include <QPushButton>
-#include <QVariantAnimation>
 
 class WelcomeCard final : public QPushButton {
 public:
     enum Kind { Rtl, Waveform, Registers };
-    WelcomeCard(Kind kind, QWidget* parent = nullptr) : QPushButton(parent), kind(kind), scene(WelcomeAnimationLibrary::applicationLibrary().scene(resourceId(kind))), animation(this) {
+    WelcomeCard(Kind kind, QWidget* parent = nullptr) : QPushButton(parent), kind(kind) {
         setObjectName(QStringLiteral("welcomeCard%1").arg(int(kind)));
         setMinimumSize(250, 310); setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         setFixedHeight(310); setCursor(Qt::PointingHandCursor);
         setAccessibleName(title()); setToolTip(title());
-        animation.setObjectName(QStringLiteral("welcomeMotion"));
-        animation.setDuration(scene.durationMs()); animation.setStartValue(0.0); animation.setEndValue(1.0);
-        setProperty("welcomeResourceValid", scene.isValid());
-        setProperty("welcomeResourceId", resourceId(kind));
-        connect(&animation, &QVariantAnimation::valueChanged, this, [this](const QVariant& value) {
-            progress = value.toReal(); update();
-        });
-        connect(&ApplicationThemeManager::instance(), &ApplicationThemeManager::animationsEnabledChanged,
-                this, [this](bool enabled) { if (!enabled) stopMotion(); });
-        connect(&animation, &QVariantAnimation::finished, this, [this] { update(); });
         connect(&ApplicationThemeManager::instance(), &ApplicationThemeManager::themeChanged, this, [this] { update(); });
-        qApp->installEventFilter(this);
     }
-    ~WelcomeCard() override { animation.stop(); if (qApp) qApp->removeEventFilter(this); }
     QString title() const {
         switch (kind) {
         case Rtl: return tr("RTL Development");
@@ -38,28 +25,11 @@ public:
         }
         return {};
     }
-    bool motionRunning() const { return animation.state() == QAbstractAnimation::Running; }
 protected:
-    bool event(QEvent* event) override {
-        if (event->type() == QEvent::Enter && scene.hasMotion() && isVisible() && window()->isActiveWindow()
-            && !window()->isMinimized() && ApplicationThemeManager::instance().animationsEnabled()) {
-            animation.stop(); animation.start();
-        } else if (event->type() == QEvent::Leave || event->type() == QEvent::Hide) {
-            stopMotion();
-        }
-        return QPushButton::event(event);
-    }
-    bool eventFilter(QObject* object, QEvent* event) override {
-        if ((object == window() && (event->type() == QEvent::WindowDeactivate
-                || event->type() == QEvent::WindowStateChange || event->type() == QEvent::Hide || event->type() == QEvent::Close))
-            || (event->type() == QEvent::ApplicationStateChange && qApp->applicationState() != Qt::ApplicationActive))
-            stopMotion();
-        return false;
-    }
     void paintEvent(QPaintEvent*) override {
         QPainter painter(this); painter.setRenderHint(QPainter::Antialiasing);
         const bool dark = palette().color(QPalette::Window).lightness() < 128;
-        const QColor accent = scene.accent(palette());
+        const QColor accent = palette().color(QPalette::Highlight);
         const QColor ink = palette().color(QPalette::Text);
         QColor fill = palette().color(QPalette::Base);
         const qreal tint = dark ? .13 : .065;
@@ -73,17 +43,11 @@ protected:
             painter.setPen(palette().color(QPalette::PlaceholderText));
             painter.drawText(QRect(20,10,width()-40,20),Qt::AlignRight|Qt::AlignVCenter,tr("Unavailable"));
         }
-        painter.save();
         const QRectF artwork(18,24,width()-36,180);
-        const QSizeF canvas = scene.canvasSize();
-        const qreal scale = qMin(qreal(1.12),qMin(artwork.width()/canvas.width(), artwork.height()/canvas.height()));
-        painter.setClipRect(artwork);
-        painter.translate(artwork.center().x()-canvas.width()*scale/2,
-                          artwork.center().y()-canvas.height()*scale/2);
-        painter.scale(scale,scale);
-        painter.setClipRect(QRectF(QPointF(),canvas),Qt::IntersectClip);
-        scene.paint(painter,palette(),fill,motionRunning() ? progress : -1);
-        painter.restore();
+        const auto icon = RoundedIcons::icon(kind==Rtl ? RoundedIcons::ModuleGraph
+            : kind==Waveform ? RoundedIcons::Wave : RoundedIcons::IpCatalog);
+        icon.paint(&painter,QRect(artwork.center().toPoint()-QPoint(48,48),QSize(96,96)),
+                   Qt::AlignCenter,isEnabled() ? QIcon::Normal : QIcon::Disabled);
         QFont heading=font(); heading.setPointSizeF(17); heading.setWeight(QFont::DemiBold);
         painter.setFont(heading); painter.setPen(ink);
         painter.drawText(QRect(20,212,width()-40,31),Qt::AlignLeft|Qt::AlignVCenter,title());
@@ -94,16 +58,7 @@ protected:
         painter.drawText(QRect(20,249,width()-40,48),Qt::AlignLeft|Qt::TextWordWrap,detail);
     }
 private:
-    void stopMotion() { if (motionRunning()) { animation.stop(); update(); } }
-    static QString resourceId(Kind kind) {
-        switch (kind) { case Rtl: return QStringLiteral("rtl"); case Waveform: return QStringLiteral("waveform");
-        case Registers: return QStringLiteral("registers"); }
-        return {};
-    }
     Kind kind;
-    const WelcomeAnimation& scene;
-    QVariantAnimation animation;
-    qreal progress=1;
 };
 
 class WelcomeCardGrid final : public QWidget {

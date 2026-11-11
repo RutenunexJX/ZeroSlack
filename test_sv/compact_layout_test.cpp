@@ -535,8 +535,9 @@ private slots:
         QCOMPARE(weighted[0]+weighted[1]+splitter->handleWidth(),bottom?splitter->width():splitter->height());
         QVERIFY(host.setSectionCollapsed(keys[0],true,false));
         QTest::qWait(20);
-        if(bottom)QCOMPARE(splitter->sizes(),weighted);
-        else QCOMPARE(host.sectionWidget(keys[0])->height(),host.sectionHeader(keys[0])->height());
+        QCOMPARE(splitter->sizes(),weighted);
+        QVERIFY(!host.isSectionCollapsed(keys[0]));
+        QVERIFY(host.viewForResource(keys[0])->isVisible());
         QVERIFY(host.setSectionCollapsed(keys[0],false,false));
         QTest::qWait(20);
         for(int i=0;i<2;++i)QVERIFY(qAbs(splitter->sizes()[i]-weighted[i])<=1);
@@ -633,9 +634,8 @@ private slots:
                 } else {
                     auto* workbench = surface->workbenchForTest();
                     auto* panel = workbench ? workbench->rtlSurfaceForTest() : nullptr;
-                    // Module now opens Design; only the State surface owns a workbench.
                     ready = panel ? waitForLiveInsightReports(*panel)
-                                  : surface->findChild<QPushButton*>("openExistingDesign") != nullptr;
+                                  : surface->graphSession() && waitForLiveInsightReports(*surface->graphSession());
                 }
                 if (!QTest::qVerify(ready,
                     "current insight queries ready before geometry measurement", "", __FILE__, __LINE__)) return {};

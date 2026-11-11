@@ -21,6 +21,9 @@ public:
     simdock::Workbench* workbench() const { return panel; }
     QWidget* component() const;
     bool isReady() const { return property("nativeComponentReady").toBool(); }
+    void setCompactControls();
+signals:
+    void issueRaised(const QString& message);
 public slots:
     void retry();
     void resetSavedState();
@@ -33,6 +36,7 @@ private:
     QLabel* status = nullptr;
     QPushButton *retryButton = nullptr, *resetButton = nullptr;
     QString appliedWorkspace;
+    QString reportedIssue;
     QVariantMap legacyLayout;
     bool activated = false, contextApplied = false, statePending = false, invoking = false, retired = false;
 };

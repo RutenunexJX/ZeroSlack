@@ -1,4 +1,6 @@
-ZeroSlack v0.35.2 Windows package
+ZeroSlack v0.35.3 Windows package
+
+Release 0.35.3 aligns tab contents and smaller close marks, removes welcome animation resources, moves Run and simulation settings into the title row with the top selected in Design, creates untitled Markdown/block documents until first save, restores module block diagrams, removes redundant panel collapse controls, and gives floating windows visible borders. Scoped GUI and real Questa evidence is retained; the known baseline native drag-release failure remains recorded. Suite SDK/Runtime remains 1.0.2, native xIPs 2.16.2 and the independent asset adapter 2.14.2.
 
 Release 0.35.2 makes left-region tabs compact: only the selected tab shows its name; inactive tabs show icons, and the selected blue marker is removed. Closing, movement and restoration retain the accepted behavior. Scoped acceptance covers seven registered checks and native 100%, 150% and 200% interaction evidence; the known baseline synthetic drag-release failure remains recorded. Suite SDK/Runtime remains 1.0.2, native xIPs 2.16.2 and the independent asset adapter 2.14.2.
 

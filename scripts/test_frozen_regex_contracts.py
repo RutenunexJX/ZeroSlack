@@ -76,7 +76,9 @@ def verify_frozen_regex(config, root, env, check):
     normalizer = re.search(r'set\(PHASE_L_REVIEWED_SOURCE_NORMALIZATION "([^"]+)"\)', guard).group(1)
     phase_inventory = re.search(r'set\(PHASE_L_REVIEWED_REGEX_USAGE\s+(.*?)\n\)', guard, re.S).group(1)
     phase_entries = re.findall(r'"(src/[^"]+)"', phase_inventory)
-    check(len(phase_entries) == 11, 'reviewed Phase L inventory retains all eleven source files')
+    check(len(phase_entries) == 10 and
+          all(entry.split('|')[0] != 'src/ui/welcomeanimation.cpp' for entry in phase_entries),
+          'reviewed Phase L inventory retains ten source files after welcome animation retirement')
     phase_contents = {entry.split('|')[0]: (source_root/entry.split('|')[0]).read_bytes() for entry in phase_entries}
 
     def reviewed_probe(name, expected_message=None, **options):

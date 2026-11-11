@@ -30,23 +30,19 @@ bool TabManager::importMarkdownDocument(const QString& requested) {
     if (!page->importMarkdown(source, &error)) { delete page; UiDialogs::warning(group, QStringLiteral("Import Markdown"), error); return false; }
     registerWebDocument(page, group); return true;
 }
-WebDocumentPage* TabManager::createWebDocument(WebDocumentPage::Kind kind, const QString& text) {
-    auto* group = activeTabWidget(); if (!group) return nullptr;
+WebDocumentPage* TabManager::createWebDocument(WebDocumentPage::Kind kind, const QString& text, const QString& region) {
+    auto* group = region.isEmpty() ? activeTabWidget() : splitController->regionGroup(region);
+    if (!group) return nullptr;
     auto* page = new WebDocumentPage(kind, group); QString error;
     if (!page->setInitialContent(text, &error)) { delete page; UiDialogs::warning(group, QStringLiteral("Open Document"), error); return nullptr; }
     registerWebDocument(page, group); return page;
 }
 WebDocumentPage* TabManager::createWebDocumentFile(WebDocumentPage::Kind kind, const QString& requested, const QString& region, QString* error) {
+    if (requested.isEmpty()) return createWebDocument(kind, {}, region);
     auto* group = region.isEmpty() ? activeTabWidget() : splitController->regionGroup(region);
     if (!group) return nullptr;
     QString target = requested;
     const auto extension = kind == WebDocumentPage::Kind::Markdown ? QStringLiteral(".md") : QStringLiteral(".zblock");
-    if (target.isEmpty()) {
-        const auto title = kind == WebDocumentPage::Kind::Markdown ? QStringLiteral("New Markdown") : QStringLiteral("New Block Document");
-        const auto filter = kind == WebDocumentPage::Kind::Markdown ? QStringLiteral("Markdown (*.md)") : QStringLiteral("ZeroSlack Block Document (*.zblock)");
-        target = QFileDialog::getSaveFileName(group, title, activeWorkspaceRoot.isEmpty() ? QString() : QDir(activeWorkspaceRoot).filePath(QStringLiteral("Untitled") + extension), filter, nullptr, QFileDialog::DontConfirmOverwrite);
-        if (target.isEmpty()) return nullptr;
-    }
     if (QFileInfo(target).suffix().isEmpty()) target += extension;
     QString why;
     const auto fail = [&]() -> WebDocumentPage* { if (error) *error = why; else UiDialogs::warning(group, QStringLiteral("Create Document"), why); return nullptr; };
@@ -105,7 +101,7 @@ void TabManager::registerWebDocument(WebDocumentPage* page, QTabWidget* group) {
     }
     connect(page, &WebDocumentPage::statusChanged, this, [this, page] {
         if (auto* owner = splitController->groupForPage(page)) {
-            const int index = owner->indexOf(page); if (index >= 0) { owner->setTabText(index, page->title()); owner->setTabToolTip(index, page->fileName()); }
+            const int index = owner->indexOf(page); if (index >= 0) { owner->setTabText(index, page->title()); owner->setTabToolTip(index, page->fileName().isEmpty() ? page->title() : page->fileName()); }
         }
         if (currentWebDocument() == page) if (auto* host = qobject_cast<QWidget*>(parent())) host->setWindowTitle(page->title() + QStringLiteral(" - ZeroSlack"));
         emit workspaceSessionStateChanged();
@@ -118,6 +114,7 @@ void TabManager::registerWebDocument(WebDocumentPage* page, QTabWidget* group) {
         if (command == QStringLiteral("new")) createNewTab(); else if (command == QStringLiteral("open")) openFileInTab(QString());
     });
     group->addTab(page, RoundedIcons::icon(page->documentKind() == WebDocumentPage::Kind::Markdown ? RoundedIcons::File : RoundedIcons::Grid), page->title()); group->setCurrentWidget(page); splitController->setActiveGroup(group);
+    group->setTabToolTip(group->indexOf(page),page->fileName().isEmpty() ? page->title() : page->fileName());
     emit webDocumentOpened(page);
     applyWorkspaceScope(); emit workspaceSessionStateChanged();
 }

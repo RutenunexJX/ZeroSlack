@@ -847,6 +847,50 @@ private slots:
         QVERIFY(tabs->openFileInTab(renamed)); QVERIFY(tabs->closeAllTabs()); QTest::qWait(100); QVERIFY(tabs->pdfDocuments().isEmpty());
         phase("complete");
     }
+    void mainWindowUntitledActions_data() {
+        QTest::addColumn<bool>("blocks"); QTest::newRow("markdown") << false; QTest::newRow("blocks") << true;
+    }
+    void mainWindowUntitledActions() {
+        QFETCH(bool,blocks);
+        MainWindow window; window.resize(1200,800); window.show(); window.activateWindow();
+        auto* tabs=window.tabManager.get(); auto* splits=tabs->editorSplitController();
+        auto* action=window.findChild<QAction*>(blocks ? "leftDocument.blocks" : "leftDocument.markdown"); QVERIFY(action);
+        const auto before=QDir(root).entryList(QDir::Files);
+        action->trigger(); auto* first=tabs->currentWebDocument(); QVERIFY(first);
+        QVERIFY(first->fileName().isEmpty()); QVERIFY(!QApplication::activeModalWidget());
+        QCOMPARE(splits->groupForPage(first),splits->regionGroup("left"));
+        QTRY_VERIFY_WITH_TIMEOUT(first->ready(),30000);
+        action->trigger(); auto* second=tabs->currentWebDocument(); QVERIFY(second && second!=first);
+        QVERIFY(second->fileName().isEmpty()); QVERIFY(first->documentId()!=second->documentId());
+        QTRY_VERIFY_WITH_TIMEOUT(second->ready(),30000);
+        QCOMPARE(QDir(root).entryList(QDir::Files),before);
+        QVERIFY(splits->activatePage(first)); paste(*first,"Untitled content before first save",true);
+        QTRY_VERIFY_WITH_TIMEOUT(first->dirty(),5000);
+        QTimer picker; picker.setInterval(25); bool cancelled=false;
+        connect(&picker,&QTimer::timeout,&window,[&] {
+            if(auto* dialog=qobject_cast<QFileDialog*>(QApplication::activeModalWidget())) {
+                cancelled=true; picker.stop(); dialog->reject();
+            }
+        });
+        picker.start(); QVERIFY(!first->save()); QVERIFY(cancelled); QVERIFY(first->fileName().isEmpty()); QVERIFY(first->dirty());
+        { auto cancel=answer("Cancel"); QVERIFY(!first->confirmClose()); }
+        const auto path=file(blocks ? "untitled-first.zblock" : "untitled-first.md");
+        disconnect(&picker,nullptr,&window,nullptr); bool selected=false;
+        connect(&picker,&QTimer::timeout,&window,[&] {
+            if(auto* dialog=qobject_cast<QFileDialog*>(QApplication::activeModalWidget())) {
+                selected=true; picker.stop(); dialog->setDirectory(QFileInfo(path).absolutePath());
+                dialog->selectFile(QFileInfo(path).fileName());
+                QTimer::singleShot(100,dialog,[dialog,path]{
+                    if(auto* name=dialog->findChild<QLineEdit*>("fileNameEdit")) name->setText(QFileInfo(path).fileName());
+                    QMetaObject::invokeMethod(dialog,"accept");
+                });
+            }
+        });
+        picker.start(); QVERIFY2(first->save(),qPrintable(notice(*first))); QVERIFY(selected);
+        QCOMPARE(first->fileName(),QFileInfo(path).absoluteFilePath()); QVERIFY(QFileInfo::exists(path)); QVERIFY(!first->dirty());
+        QCOMPARE(splits->groupForPage(first)->tabToolTip(splits->groupForPage(first)->indexOf(first)),first->fileName());
+        QVERIFY(tabs->closeAllTabs()); tabs->clearCrashRecoveryAfterNormalClose();
+    }
     void mainWindowCreateDocumentsWithoutOverwrite() {
         MainWindow window; window.resize(1200, 800); window.show(); window.activateWindow();
         auto* tabs = window.tabManager.get(); auto* splits = tabs->editorSplitController(); QString issue;

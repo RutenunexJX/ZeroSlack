@@ -768,7 +768,8 @@ private slots:
         host.setFixedWidth(width);host.resize(width,640);host.show();{ WaitCost waitCost(50); QTest::qWait(50); }
         for(auto* panel:host.findChildren<SignalTracePanel*>())QVERIFY(SignalTraceTest::settled(*panel));
         for(auto* view:host.findChildren<LiveInsightsContextView*>())if(auto* surface=view->surfaceForTest())
-            if(auto* workbench=surface->workbenchForTest())if(auto* panel=workbench->rtlSurfaceForTest()){
+            if(auto* workbench=surface->workbenchForTest()){
+              if(auto* panel=workbench->rtlSurfaceForTest()){
                 QVERIFY(waitForLiveInsightReports(*panel));
                 if(populated){
                     const auto snapshot=panel->graphSession()->snapshot(LiveInsightKind::State);
@@ -776,13 +777,16 @@ private slots:
                     const auto* state=std::get_if<StateTransitionGraphReport>(&report->value);QVERIFY(state);
                     QVERIFY2(state->found,qPrintable(state->notFoundReasonDisplayName));QVERIFY(state->stateCount>=3);
                 }
+              } else if(auto* session=surface->graphSession()) {
+                  QVERIFY(waitForLiveInsightReports(*session));
+              }
             }
         QStringList failures;
         auto sample=measure(&host);failures+=sample.failures;QVERIFY(record(&host,"expanded",sample,{{"populated",populated}}));
         for(const auto& key:keys){
             const auto* view=host.viewForResource(key);QVERIFY(view);
             if(view->height()<4*view->fontMetrics().height())failures<<key+": section content below four text rows";
-            QVERIFY(host.setSectionCollapsed(key,true,false));QVERIFY(host.isSectionCollapsed(key));
+            QVERIFY(host.setSectionCollapsed(key,true,false));QVERIFY(!host.isSectionCollapsed(key));
             QVERIFY(host.setSectionCollapsed(key,false,false));QVERIFY(!host.isSectionCollapsed(key));
         }
         { WaitCost waitCost(20); QTest::qWait(20); }sample=measure(&host);failures+=sample.failures;QVERIFY(record(&host,"restored",sample,{{"populated",populated}}));
@@ -856,7 +860,7 @@ private:
             QVERIFY(view->isVisibleTo(&window));
             if(++step==3){
                 QVERIFY(host->setSectionCollapsed(resource.stableKey(),true,false));
-                QVERIFY(host->isSectionCollapsed(resource.stableKey()));
+                QVERIFY(!host->isSectionCollapsed(resource.stableKey()));
                 QVERIFY(host->setSectionCollapsed(resource.stableKey(),false,false));
                 QVERIFY(!host->isSectionCollapsed(resource.stableKey()));
                 QCoreApplication::processEvents();

@@ -79,7 +79,7 @@ int main(int argc, char** argv)
     if (scanned.isEmpty() && !scanned.wait(30000)) return 4;
     const double scanMs = timer.nsecsElapsed() / 1e6;
     if(!panel->selectTarget(workspace.filePath("source_0000.sv")).isEmpty())return 5;
-    auto* target=window.findChild<QToolButton*>("simulationTarget");
+    auto* target=window.findChild<QPushButton*>("startSimulation");
     auto* log=window.findChild<ElaPlainTextEdit*>("simulationLog");
     auto* session=panel->controller()->session();
     if(!target||!log||!session)return 6;

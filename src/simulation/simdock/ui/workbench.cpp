@@ -7,17 +7,11 @@
 #include "roundedicons.h"
 #include "uicontrols.h"
 #include <zeroslack/semantic/workspaceconfigurationservice.h>
-#include <ElaComboBox.h>
-#include <ElaDialog.h>
 #include <ElaPlainTextEdit.h>
 #include <ElaPushButton.h>
-#include <QAction>
 #include <QDir>
-#include <QFileDialog>
 #include <QFileInfo>
 #include <QHBoxLayout>
-#include <QLabel>
-#include <QMenu>
 #include <QMouseEvent>
 #include <QScrollBar>
 #include <QSettings>
@@ -43,7 +37,7 @@ Workbench::Workbench(QWidget* parent, bool standalone, WorkspaceSimulationContro
     connect(m_controller, &WorkspaceSimulationController::targetChanged, this, [this] { updateControls(); emit stateChanged(); });
     connect(m_controller, &WorkspaceSimulationController::planReady, this, [this] { updateControls(); });
     connect(m_controller, &WorkspaceSimulationController::stateChanged, this, [this] {
-        m_status->setText(m_controller->state()); m_status->setToolTip(m_controller->state()); updateControls();
+        updateControls();
     });
     connect(m_controller, &WorkspaceSimulationController::logAboutToAppend, this, [this] {
         if (!m_log) return;
@@ -68,69 +62,19 @@ Workbench::~Workbench()
     while (auto* child = findChild<QWidget*>(QString(), Qt::FindDirectChildrenOnly)) delete child;
 }
 QWidget* Workbench::eventsWidget() const { return m_events; }
-QSize Workbench::minimumSizeHint() const { return {280, 40}; }
+QSize Workbench::minimumSizeHint() const { return {112, 32}; }
 WaveTheme Workbench::waveTheme() const
 { return waveThemeFromId(preference(QStringLiteral("waveform/theme"), QStringLiteral("default")).toString()); }
 void Workbench::buildUi()
 {
     auto* row = new QHBoxLayout(this);
-    row->setContentsMargins(8, 4, 8, 4); row->setSpacing(6);
-    m_target = UiControls::toolButton(this);
-    m_target->setObjectName(QStringLiteral("simulationTarget"));
-    m_target->setIcon(RoundedIcons::icon(RoundedIcons::Simulation));
-    m_target->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-    m_target->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
-    m_target->setMinimumWidth(110);
-    m_target->setPopupMode(QToolButton::InstantPopup);
-    auto* targets = UiControls::menu(this);
-    auto* current = targets->addAction(QStringLiteral("Use current editor"));
-    current->setObjectName(QStringLiteral("useCurrentTb"));
-    connect(current, &QAction::triggered, this, [this] {
-        reportIssue(m_targetHandler ? m_targetHandler({}) : QStringLiteral("Choose a TB file first."));
-    });
-    auto* browse = targets->addAction(QStringLiteral("Choose TB…"));
-    browse->setObjectName(QStringLiteral("chooseTb"));
-    connect(browse, &QAction::triggered, this, &Workbench::chooseTb);
-    auto* open = targets->addAction(QStringLiteral("Open selected TB"));
-    open->setObjectName(QStringLiteral("openTb"));
-    connect(open, &QAction::triggered, this, [this] {
-        if (!m_controller->target().isEmpty()) emit openFileRequested(QDir(workspace()).filePath(m_controller->target().file));
-    });
-    auto* clearTarget = targets->addAction(QStringLiteral("Clear target"));
-    connect(clearTarget, &QAction::triggered, this, [this] { reportIssue(m_controller->clearTarget()); });
-    targets->addSeparator();
-    auto* inputs = targets->addAction(QStringLiteral("Last run inputs…"));
-    inputs->setObjectName(QStringLiteral("showSimulationInputs"));
-    connect(inputs, &QAction::triggered, this, [this] {
-        const auto plan = m_controller->lastPlan(); if (!plan) return;
-        QPointer<ElaDialog> dialog = new ElaDialog(this);
-        dialog->setWindowTitle(QStringLiteral("Last run inputs")); dialog->setObjectName(QStringLiteral("simulationInputsDialog"));
-        dialog->setIsDefaultClosed(true); dialog->setIsStayTop(false); dialog->setAppBarHeight(36); dialog->resize(640, 420);
-        auto* layout = new QVBoxLayout(dialog); layout->setContentsMargins(20, 20, 20, 20);
-        auto* listing = Ui::textView(dialog); listing->setObjectName(QStringLiteral("simulationInputsResult")); listing->setReadOnly(true);
-        QStringList lines{plan->target.top + QStringLiteral(" — ") + plan->target.file, QString(), QStringLiteral("Compilation order")};
-        const QDir directory(workspace());
-        for (int i = 0; i < plan->compilation.files.size(); ++i)
-            lines << QStringLiteral("%1. %2").arg(i + 1).arg(directory.relativeFilePath(plan->compilation.files[i]));
-        if (!plan->compilation.headers.isEmpty()) {
-            lines << QString() << QStringLiteral("Included headers");
-            for (const auto& file : plan->compilation.headers) lines << directory.relativeFilePath(file);
-        }
-        listing->setPlainText(lines.join('\n')); layout->addWidget(listing);
-        auto* close = Ui::button(QStringLiteral("Close"), dialog); layout->addWidget(close);
-        connect(close, &QPushButton::clicked, dialog, &QDialog::accept);
-        Ui::normalizeControls(dialog); Ui::constrainDialog(dialog);
-        dialog->exec(); if (dialog) delete dialog;
-    });
-    m_target->setMenu(targets); row->addWidget(m_target, 1);
-    m_status = UiControls::label(this); m_status->setObjectName(QStringLiteral("runStatus"));
-    m_status->setTextFormat(Qt::PlainText); m_status->setMaximumWidth(240);
-    m_status->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed); row->addWidget(m_status, 1);
-    m_run = Ui::button(QStringLiteral("Run"), this, true); m_run->setObjectName(QStringLiteral("startSimulation"));
-    m_stop = Ui::button(QStringLiteral("Stop"), this); m_stop->setObjectName(QStringLiteral("stopSimulation"));
-    row->addWidget(m_run); row->addWidget(m_stop);
+    row->setContentsMargins(0, 0, 0, 0); row->setSpacing(6);
+    setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
+    m_run = Ui::button(QStringLiteral("Run"), this, true);
+    m_run->setObjectName(QStringLiteral("startSimulation"));
+    m_run->setMinimumWidth(76);
+    row->addWidget(m_run);
     connect(m_run, &QPushButton::clicked, this, &Workbench::startSimulation);
-    connect(m_stop, &QPushButton::clicked, m_controller, &WorkspaceSimulationController::stop);
     m_settings = UiControls::toolButton(this); m_settings->setObjectName(QStringLiteral("openSettings"));
     m_settings->setIcon(RoundedIcons::icon(RoundedIcons::Settings));
     m_settings->setAccessibleName(QStringLiteral("Simulation settings")); m_settings->setToolTip(QStringLiteral("Simulation settings"));
@@ -184,21 +128,19 @@ bool Workbench::eventFilter(QObject* watched, QEvent* event)
 void Workbench::updateControls()
 {
     const auto target = m_controller->target();
-    const auto title = target.isEmpty() ? QStringLiteral("Current editor") : target.top + QStringLiteral(" · ") + QFileInfo(target.file).fileName();
-    m_target->setText(title); m_target->setAccessibleName(QStringLiteral("Simulation target: ") + title);
-    m_target->setToolTip(target.isEmpty() ? QStringLiteral("Run the current editor as the TB") : target.file + QStringLiteral(" — ") + target.top);
-    m_target->setEnabled(!workspace().isEmpty() && !m_controller->busy());
-    findChild<QAction*>(QStringLiteral("showSimulationInputs"))->setEnabled(bool(m_controller->lastPlan()));
-    m_run->setEnabled(!workspace().isEmpty() && !m_controller->busy());
-    m_stop->setEnabled(m_controller->busy() || m_controller->session()->alive());
-    m_stop->setVisible(m_controller->busy() || m_controller->session()->alive());
-    m_stop->setText(m_controller->preparing() ? QStringLiteral("Cancel") : QStringLiteral("Stop"));
-    m_status->setVisible(!m_status->text().isEmpty() && m_status->text() != QStringLiteral("Ready"));
+    const bool active = m_controller->busy();
+    m_run->setEnabled(active || !workspace().isEmpty());
+    m_run->setText(m_controller->preparing() ? QStringLiteral("Cancel") : active ? QStringLiteral("Stop") : QStringLiteral("Run"));
+    m_run->setToolTip(target.isEmpty() ? QStringLiteral("Choose a simulation top in Design")
+        : target.top + QStringLiteral(" — ") + target.file + '\n' + m_controller->state());
+    m_run->setAccessibleName(m_run->text());
 }
 void Workbench::reportIssue(const QString& issue)
 {
     if (issue.isEmpty()) return;
-    m_controller->appendLog(issue + '\n'); m_status->setText(issue); m_status->setToolTip(issue); updateControls();
+    m_controller->appendLog(issue + '\n');
+    emit issueRaised(issue);
+    updateControls();
 }
 void Workbench::initialize()
 {
@@ -209,13 +151,14 @@ void Workbench::initialize()
 }
 void Workbench::setSimulator(const QString& executable)
 {
-    if (m_controller->busy() || (m_controller->session()->alive() && m_simulator != executable)) return;
+    if (m_controller->busy()) return;
+    if (m_controller->session()->alive() && m_simulator != executable) m_controller->stop();
     m_simulator = executable; setPreference(QStringLiteral("simulator/path"), executable); updateControls();
 }
 void Workbench::openSettings()
 {
     QPointer<Workbench> owner(this);
-    QPointer<SettingsDialog> dialog = new SettingsDialog(m_simulator, this, m_controller->busy() || m_controller->session()->alive(),
+    QPointer<SettingsDialog> dialog = new SettingsDialog(m_simulator, this, m_controller->busy(),
         m_controller, m_configureWorkspace);
     const auto result = dialog->exec();
     if (!owner || !dialog) return;
@@ -262,44 +205,23 @@ QString Workbench::selectTarget(const QString& file, const QMap<QString, QByteAr
     const auto tops = declaredSimulationTops(workspace(), file, includes, config.configuration.defines, overrides, &error);
     if (!error.isEmpty()) return error;
     if (tops.isEmpty()) return QStringLiteral("The selected file declares no module or program top.");
-    QString top = tops.first();
-    if (tops.size() > 1) {
-        QPointer<ElaDialog> dialog = new ElaDialog(this);
-        dialog->setWindowTitle(QStringLiteral("Choose TB top")); dialog->setObjectName(QStringLiteral("simulationTopDialog"));
-        dialog->setIsDefaultClosed(true); dialog->setIsStayTop(false); dialog->setAppBarHeight(36);
-        dialog->resize(420, 200);
-        auto* layout = new QVBoxLayout(dialog); layout->setContentsMargins(24, 44, 24, 20);
-        auto* choices = new ElaComboBox(dialog); choices->setObjectName(QStringLiteral("simulationTopChoices")); choices->addItems(tops);
-        layout->addWidget(choices);
-        auto* select = Ui::button(QStringLiteral("Select"), dialog, true); layout->addWidget(select);
-        connect(select, &QPushButton::clicked, dialog, &QDialog::accept);
-        Ui::normalizeControls(dialog);
-        Ui::constrainDialog(dialog);
-        const auto result = dialog->exec();
-        if (!dialog) return QStringLiteral("TB selection cancelled.");
-        top = result == QDialog::Accepted ? choices->currentText() : QString(); delete dialog;
-        if (top.isEmpty()) return QStringLiteral("TB selection cancelled.");
-    }
-    return m_controller->selectTarget({file, top}, {}, overrides);
-}
-void Workbench::chooseTb()
-{
-    QPointer<Workbench> owner(this);
-    QPointer<QFileDialog> dialog = new QFileDialog(this, QStringLiteral("Choose TB"), workspace(), QStringLiteral("HDL files (*.sv *.v)"));
-    dialog->setFileMode(QFileDialog::ExistingFile); dialog->setOption(QFileDialog::DontUseNativeDialog);
-    const auto result = dialog->exec(); if (!owner || !dialog) return;
-    const auto paths = dialog->selectedFiles(); delete dialog;
-    if (result == QDialog::Accepted && !paths.isEmpty()) reportIssue(m_targetHandler ? m_targetHandler(paths.first()) : selectTarget(paths.first()));
+    if (tops.size() != 1) return QStringLiteral("Select the exact module or program as simulation top in Design.");
+    return m_controller->selectTarget({file, tops.first()}, {}, overrides);
 }
 void Workbench::startSimulation()
 {
-    if (m_controller->busy() || workspace().isEmpty()) return;
+    if (m_controller->busy()) {
+        m_controller->stop();
+        updateControls();
+        return;
+    }
+    if (workspace().isEmpty()) { reportIssue(QStringLiteral("Open a workspace before running simulation.")); return; }
+    if (m_controller->target().isEmpty()) { reportIssue(QStringLiteral("Choose a simulation top in Design before running.")); return; }
     QPointer<Workbench> owner(this);
     if (!simulatorError(m_simulator).isEmpty()) openSettings();
     if (!owner) return;
     const auto issue = simulatorError(m_simulator); if (!issue.isEmpty()) { reportIssue(issue); return; }
     if (m_runHandler) { reportIssue(m_runHandler()); return; }
-    if (m_controller->target().isEmpty()) { reportIssue(QStringLiteral("Choose a TB file first.")); return; }
     Project project; project.tbFile = m_controller->target().file; project.tbName = m_controller->target().top;
     project.includeDirectories = m_controller->includeDirectories();
     m_controller->prepare(m_simulator, project, waveTheme());

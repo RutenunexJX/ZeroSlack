@@ -219,6 +219,13 @@ void NavigationManager::connectToDesignProjects(DesignProjectService* service)
     connect(service, &QObject::destroyed, this, [this] { designProjects = nullptr; });
     synchronizeDesignProjects();
 }
+void NavigationManager::setSimulationHandlers(std::function<QPair<QString,QString>()> target,
+                                              std::function<QString(const QString&,const QString&)> select)
+{
+    simulationTarget=std::move(target);
+    selectSimulationTop=std::move(select);
+    if (navigationWidget) navigationWidget->setSimulationTargetProvider(simulationTarget);
+}
 void NavigationManager::synchronizeDesignProjects()
 {
     if (!designProjects || !EditorFileIdentity::same(designProjects->workspace(), context.currentWorkspacePath)) return;

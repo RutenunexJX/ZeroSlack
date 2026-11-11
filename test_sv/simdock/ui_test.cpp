@@ -80,18 +80,8 @@ static bool waitForCompilation(MainWindow& window,const QString& root,const QDea
 
 static bool chooseExistingTb(MainWindow& window, const QString& file)
 {
-    auto* button = window.findChild<QAction*>("chooseTb");
-    if (!button || !button->isEnabled()) return false;
-    bool accepted = false;
-    QTimer::singleShot(0, &window, [&] {
-        auto* dialog = window.findChild<QFileDialog*>();
-        if (!dialog) return;
-        QTimer::singleShot(5000, dialog, &QDialog::reject);
-        dialog->selectFile(file);
-        accepted = QMetaObject::invokeMethod(dialog, "accept");
-    });
-    button->trigger();
-    return accepted;
+    auto* panel=window.findChild<Workbench*>();
+    return panel && panel->selectTarget(file).isEmpty();
 }
 
 class UiTest : public QObject {
@@ -399,10 +389,9 @@ private slots:
         auto* view=w.findChild<Workbench*>(); QVERIFY(view);
         QVERIFY(view->controller()->target().isEmpty());
         QVERIFY(!w.findChild<QWidget*>("sourceList")); QVERIFY(!w.findChild<QWidget*>("projectList"));
-        auto* choose=w.findChild<QAction*>("chooseTb"); QVERIFY(choose);
-        bool cancelled=false;
-        QTimer::singleShot(0,&w,[&] { auto* dialog=w.findChild<QFileDialog*>(); cancelled=dialog; if(dialog)dialog->reject(); });
-        choose->trigger(); QVERIFY(cancelled); QVERIFY(view->controller()->target().isEmpty());
+        QVERIFY(!w.findChild<QAction*>("chooseTb"));
+        QVERIFY(!QApplication::activeModalWidget());
+        QVERIFY(view->controller()->target().isEmpty());
         QVERIFY(loadProjects(workspace.path(),nullptr,false).isEmpty());
         QVERIFY(chooseExistingTb(w,file.fileName()));
         QCOMPARE(view->controller()->target().file,QString("counter.sv")); QCOMPARE(view->controller()->target().top,QString("counter"));
@@ -535,9 +524,8 @@ private slots:
         QVERIFY(writeSource());MainWindow w;w.show();w.openWorkspace(workspace.path());
         QVERIFY(chooseExistingTb(w,path)); auto* view=w.findChild<Workbench*>();
         QCOMPARE(view->controller()->target().top,QString("actual_top"));
-        QSignalSpy opened(view,&Workbench::openFileRequested);
-        auto* open=view->findChild<QAction*>("openTb");QVERIFY(open);open->trigger();
-        QCOMPARE(opened.size(),1);QCOMPARE(QFileInfo(opened.first()[0].toString()).canonicalFilePath(),QFileInfo(path).canonicalFilePath());
+        QVERIFY(!view->findChild<QAction*>("openTb"));
+        QCOMPARE(QFileInfo(QDir(workspace.path()).filePath(view->controller()->target().file)).canonicalFilePath(),QFileInfo(path).canonicalFilePath());
         QVERIFY(QFile::remove(path));auto missing=planFor(w,workspace.path());QVERIFY(!missing->valid());
         QCOMPARE(view->controller()->target().top,QString("actual_top")); // missing target cannot silently select another module
         QVERIFY(writeSource());QVERIFY(planFor(w,workspace.path())->valid());
@@ -550,11 +538,12 @@ private slots:
         QTemporaryDir workspace;MainWindow w;w.show();w.openWorkspace(workspace.path());
         for(const auto* name:{"waveOptionsToggle","workbenchSection","openWorkspace","waveScope","duration","projectList","sourceList"})
             QVERIFY2(!w.findChild<QWidget*>(name),name);
-        auto* field=w.findChild<QToolButton*>("simulationTarget");QVERIFY(field);QPointer<QToolButton> identity(field);
+        auto* field=w.findChild<QPushButton*>("startSimulation");QVERIFY(field);QPointer<QPushButton> identity(field);
         auto* workbench=w.findChild<Workbench*>();auto state=workbench->saveState();
         state.insert("layout/waveOptionsExpanded",true);QVERIFY(workbench->restoreState(state).isEmpty());
         ApplicationThemeManager::instance().setMode(ThemeMode::Dark);QCOMPARE(identity.data(),field);
-        QCOMPARE(field->text(),QString("Current editor"));w.close();
+        QCOMPARE(field->text(),QString("Run"));
+        QVERIFY(!w.findChild<QWidget*>("simulationTarget"));w.close();
     }
     void comboAndMenuInterruptions()
     {

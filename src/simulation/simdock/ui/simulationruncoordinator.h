@@ -11,7 +11,7 @@ class ZEROSLACK_API SimulationRunCoordinator final : public QObject {
     Q_OBJECT
 public:
     SimulationRunCoordinator(TabManager* tabs, WorkspaceManager* workspaces, Workbench* view, QObject* parent);
-    QString selectTarget(const QString& file = {});
+    QString selectTarget(const QString& file = {}, const QString& module = {});
     QString run();
     SimulationBuildRequest capture(const SimulationTarget& target, QString* error, bool allowPending = false) const;
     WorkspaceSimulationController::SaveInputs saveInputs();

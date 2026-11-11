@@ -81,115 +81,6 @@ void hoverTab(QTabBar* bar, int index) {
     }
     QVERIFY(counter.count>0);
 }
-class WelcomeMotionTrace final : public QObject {
-public:
-    WelcomeMotionTrace(WelcomeCard* card, QWidget* window, QVariantAnimation* motion)
-        : card(card), host(window), motion(motion), states(motion, &QVariantAnimation::stateChanged),
-          finishes(motion, &QVariantAnimation::finished) {
-        clock.start();
-        connect(motion, &QVariantAnimation::stateChanged, this,
-                [this](QAbstractAnimation::State next, QAbstractAnimation::State previous) {
-            record("stateChanged", {{"previous", int(previous)}, {"next", int(next)}});
-        });
-        connect(motion, &QVariantAnimation::finished, this, [this] { record("finished"); });
-        qApp->installEventFilter(this);
-        record("begin");
-    }
-    ~WelcomeMotionTrace() override {
-        qApp->removeEventFilter(this);
-        record("scope-exit", {{"testFailed", QTest::currentTestFailed()}});
-        const auto& library = WelcomeAnimationLibrary::applicationLibrary();
-        QJsonObject resources;
-        QFile manifest(QDir(library.directory()).filePath("manifest.json"));
-        if (manifest.open(QIODevice::ReadOnly)) {
-            const auto bytes = manifest.readAll();
-            resources["manifestSha256"] = QString::fromLatin1(QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex());
-            const auto sceneFile = QJsonDocument::fromJson(bytes).object().value("cards").toObject()
-                .value("rtl").toObject().value("scene").toString();
-            QFile scene(QDir(library.directory()).filePath(sceneFile));
-            resources["scenePath"] = scene.fileName();
-            if (scene.open(QIODevice::ReadOnly))
-                resources["sceneSha256"] = QString::fromLatin1(QCryptographicHash::hash(scene.readAll(), QCryptographicHash::Sha256).toHex());
-        }
-        const QJsonObject report{{"platform", QGuiApplication::platformName()}, {"resourceDirectory", library.directory()},
-            {"resources", resources}, {"stateSignalCount", states.size()}, {"finishedSignalCount", finishes.size()}, {"events", events}};
-        const auto bytes = QJsonDocument(report).toJson(QJsonDocument::Compact);
-        qInfo().noquote() << "WELCOME_MOTION_TRACE" << bytes;
-        const auto directory = qEnvironmentVariable("ZEROSLACK_TEST_ARTIFACT_DIR");
-        if (!directory.isEmpty()) {
-            QFile output(QDir(directory).filePath("welcome-motion.json"));
-            if (output.open(QIODevice::WriteOnly)) output.write(QJsonDocument(report).toJson());
-            else qWarning() << "Welcome motion trace could not be written:" << output.errorString();
-        }
-    }
-    QString diagnostic(const char* reason) const {
-        const auto& scene = WelcomeAnimationLibrary::applicationLibrary().scene("rtl");
-        QStringList missing;
-        if (!card->isVisible()) missing << "card visible";
-        if (!host->isActiveWindow()) missing << "window active";
-        if (host->isMinimized()) missing << "window not minimized";
-        if (!scene.hasMotion()) missing << "scene has motion";
-        if (!ApplicationThemeManager::instance().animationsEnabled()) missing << "animations enabled";
-        return QString("%1 active=%2 minimized=%3 visible=%4 animationsEnabled=%5 animationState=%6 missing=%7")
-            .arg(QString::fromLatin1(reason)).arg(host->isActiveWindow()).arg(host->isMinimized())
-            .arg(card->isVisible()).arg(ApplicationThemeManager::instance().animationsEnabled())
-            .arg(int(motion->state())).arg(missing.isEmpty() ? "none" : missing.join("|"));
-    }
-    void markRestoredEnter(bool sending) { manualRestoredEnter = sending; }
-    void record(const char* label, QJsonObject details = {}) {
-        const auto& scene = WelcomeAnimationLibrary::applicationLibrary().scene("rtl");
-        details["label"] = QString::fromLatin1(label); details["microseconds"] = clock.nsecsElapsed()/1000;
-        details["epochMs"] = QDateTime::currentMSecsSinceEpoch();
-        details["manualRestoredEnter"] = manualRestoredEnter;
-        details["cardVisible"] = card->isVisible(); details["windowVisible"] = host->isVisible();
-        details["active"] = host->isActiveWindow(); details["minimized"] = host->isMinimized();
-        details["windowState"] = int(host->windowState()); details["applicationState"] = int(qApp->applicationState());
-        details["animationsEnabled"] = ApplicationThemeManager::instance().animationsEnabled();
-        details["welcomeResourceValid"] = card->property("welcomeResourceValid").toBool();
-        details["sceneHasMotion"] = scene.hasMotion(); details["sceneDurationMs"] = scene.durationMs();
-        details["animationState"] = int(motion->state()); details["animationCurrentTime"] = motion->currentTime();
-        details["animationDuration"] = motion->duration();
-        QJsonArray missing;
-        if (!card->isVisible()) missing.append("card visible");
-        if (!host->isActiveWindow()) missing.append("window active");
-        if (host->isMinimized()) missing.append("window not minimized");
-        if (!scene.hasMotion()) missing.append("scene has motion");
-        if (!ApplicationThemeManager::instance().animationsEnabled()) missing.append("animations enabled");
-        details["unsatisfiedStartConditions"] = missing;
-        events.append(details);
-    }
-protected:
-    bool eventFilter(QObject* object, QEvent* event) override {
-        if (object != card && object != host && object != qApp) return false;
-        const char* name = nullptr;
-        switch (event->type()) {
-        case QEvent::Enter: name="Enter"; break;
-        case QEvent::Leave: name="Leave"; break;
-        case QEvent::WindowActivate: name="WindowActivate"; break;
-        case QEvent::WindowDeactivate: name="WindowDeactivate"; break;
-        case QEvent::WindowStateChange: name="WindowStateChange"; break;
-        case QEvent::Show: name="Show"; break;
-        case QEvent::Hide: name="Hide"; break;
-        case QEvent::Close: name="Close"; break;
-        case QEvent::ApplicationStateChange: name="ApplicationStateChange"; break;
-        default: return false;
-        }
-        QJsonObject details{{"object", object==card ? "card" : object==host ? "window" : "application"},
-                            {"spontaneous", event->spontaneous()}};
-        if (event->type()==QEvent::WindowStateChange)
-            details["oldWindowState"] = int(static_cast<QWindowStateChangeEvent*>(event)->oldState());
-        record(name, details);
-        return false;
-    }
-private:
-    WelcomeCard* card;
-    QWidget* host;
-    QVariantAnimation* motion;
-    QSignalSpy states, finishes;
-    QElapsedTimer clock;
-    QJsonArray events;
-    bool manualRestoredEnter=false;
-};
 struct Host {
     QTemporaryDir root;
     std::unique_ptr<MainWindow> window;
@@ -219,7 +110,7 @@ class SidebarMainWindowTest : public QObject {
         const auto output=qEnvironmentVariable("ZEROSLACK_SIDEBAR_EVIDENCE"); if(output.isEmpty())return;
         QDir().mkpath(output); QTest::qWait(60);
         QVERIFY(host.window->grab().save(QDir(output).filePath(name+".png")));
-        if (name=="left-tabs-files" || name=="left-tabs-design") {
+        if (name=="left-tabs-files" || name=="left-tabs-design" || name.endsWith("-hover")) {
             auto* bar=host.window->tabManager->editorSplitController()->regionGroup("left")->tabBar();
             QVERIFY(bar->grab().save(QDir(output).filePath(name+"-strip.png")));
         }
@@ -227,7 +118,7 @@ class SidebarMainWindowTest : public QObject {
     void captureIconSurfaces(Host& h) {
         if (!qEnvironmentVariableIsSet("ZEROSLACK_ICONS_EVIDENCE")) return;
         auto* controller=h.window->findChild<ContextWorkspaceController*>(); QVERIFY(controller);
-        auto* target=h.window->findChild<QToolButton*>("simulationTarget");QVERIFY(target);
+        auto* target=h.window->findChild<QPushButton*>("startSimulation");QVERIFY(target);
         const auto selected=h.workbench()->controller()->target();
         // Real host view and actions; only the external Pinloom data boundary is a fixture.
         QVERIFY(controller->unregisterProvider("pinloom"));
@@ -286,6 +177,7 @@ private slots:
     void leftTabLabelsAcrossDocumentKindsAndRestore() {
         if (QGuiApplication::platformName()!=QStringLiteral("windows"))
             QSKIP("Markdown/Block/PDF workers require native Windows hosts; run this case in the native DPR matrix");
+        ApplicationThemeManager::instance().setMode(ThemeMode::Light);
         Host h;
         const QSize available = h.window->screen()->availableGeometry().size();
         h.window->resize(qMin(1400, available.width()-40), qMin(900, available.height()-80));
@@ -356,6 +248,7 @@ private slots:
                 if (!close) close = bar->tabButton(i,QTabBar::LeftSide);
                 if (close) QTRY_COMPARE(close->isVisible(), i==current);
             }
+            capture(h,"left-tabs-page-"+QString::number(current)+"-hover");
             QTest::mouseMove(h.window.get(),QPoint(h.window->width()-80,80));
             capture(h, "left-tabs-page-"+QString::number(current));
         }
@@ -463,60 +356,7 @@ private slots:
         auto* wave=dynamic_cast<WelcomeCard*>(h.window->findChild<QPushButton*>("welcomeCard1"));
         auto* registers=dynamic_cast<WelcomeCard*>(h.window->findChild<QPushButton*>("welcomeCard2"));
         QVERIFY(rtl && wave && registers); QVERIFY(rtl->isEnabled()); QVERIFY(!wave->isEnabled() && !registers->isEnabled());
-        QVERIFY(!rtl->motionRunning()); capture(h,"welcome-light");
-        if (QGuiApplication::platformName()=="windows") {
-            auto* motion=rtl->findChild<QVariantAnimation*>("welcomeMotion"); QVERIFY(motion);
-            WelcomeMotionTrace trace(rtl,h.window.get(),motion);
-            QTRY_VERIFY(h.window->isActiveWindow());
-            QEnterEvent enter({},{},{}); QCoreApplication::sendEvent(rtl,&enter);
-            QTRY_VERIFY(rtl->motionRunning());
-            QEvent leave(QEvent::Leave); QCoreApplication::sendEvent(rtl,&leave); QVERIFY(!rtl->motionRunning());
-            for (auto* card : {rtl,wave,registers}) {
-                QCoreApplication::sendEvent(card,&enter); QVERIFY(card->motionRunning());
-                QCoreApplication::sendEvent(card,&leave); QVERIFY(!card->motionRunning());
-                QCoreApplication::sendEvent(card,&enter); QVERIFY(card->motionRunning());
-                QEvent deactivate(QEvent::WindowDeactivate); QCoreApplication::sendEvent(h.window.get(),&deactivate);
-                QVERIFY(!card->motionRunning());
-            }
-            QCoreApplication::sendEvent(rtl,&enter); QVERIFY(rtl->motionRunning());
-            trace.record("before-minimize");
-            h.window->showMinimized(); QTRY_VERIFY(!rtl->motionRunning());
-            trace.record("before-restore");
-            h.window->showNormal();
-            QElapsedTimer activationTime; activationTime.start();
-            int activationAttempts=0;
-            const auto establishActivation = [&] {
-                if (!h.window->isVisible() || h.window->isMinimized()) return false;
-                const auto active = [&] { return h.window->isActiveWindow()
-                    && qApp->applicationState()==Qt::ApplicationActive
-                    && QGuiApplication::focusWindow()==h.window->windowHandle(); };
-                if (active()) return true;
-                ++activationAttempts;
-                trace.record("restore-activation-request", {{"attempt",activationAttempts}});
-                h.window->raise(); h.window->activateWindow();
-                return active();
-            };
-            QTRY_VERIFY2(establishActivation(), qPrintable(trace.diagnostic("restored window activation prerequisite failed")));
-            trace.record("restore-activation-complete", {{"attempts",activationAttempts},{"elapsedMs",activationTime.elapsed()}});
-            QVERIFY(!rtl->motionRunning());
-            trace.record("before-restored-leave");
-            QCoreApplication::sendEvent(rtl,&leave);
-            trace.record("before-restored-enter");
-            QVERIFY2(!h.window->isMinimized(), qPrintable(trace.diagnostic("window minimized again before restored hover")));
-            QVERIFY2(h.window->isActiveWindow(), qPrintable(trace.diagnostic("window lost activation before restored hover")));
-            trace.markRestoredEnter(true);
-            QCoreApplication::sendEvent(rtl,&enter);
-            trace.markRestoredEnter(false);
-            trace.record("after-restored-enter");
-            QTRY_VERIFY2(rtl->motionRunning(), qPrintable(trace.diagnostic("restored hover did not start after one Enter")));
-            trace.record("restored-running-observed");
-            QTRY_VERIFY_WITH_TIMEOUT(!rtl->motionRunning(),3500);
-            trace.record("restored-stopped-observed");
-            QCoreApplication::sendEvent(rtl,&leave);
-            ApplicationThemeManager::instance().setAnimationsEnabled(false);
-            QCoreApplication::sendEvent(rtl,&enter); QVERIFY(!rtl->motionRunning());
-            ApplicationThemeManager::instance().setAnimationsEnabled(true);
-        }
+        QVERIFY(rtl->findChildren<QVariantAnimation*>().isEmpty()); capture(h,"welcome-light");
         h.window->resize(700,900); QTest::qWait(100);
         QCOMPARE(welcome->horizontalScrollBar()->maximum(),0); capture(h,"welcome-narrow");
         ApplicationThemeManager::instance().setMode(ThemeMode::Dark);
@@ -526,7 +366,7 @@ private slots:
         QTimer::singleShot(100,[&]{ for(auto* widget:QApplication::topLevelWidgets())if(auto* dialog=qobject_cast<QFileDialog*>(widget)){picker=true; dialog->reject();}});
         rtl->click(); QVERIFY(picker); QVERIFY(!h.window->workspaceManager->isWorkspaceOpen());
         QVERIFY(h.sessions()->openWorkspace(h.workspace));
-        QTRY_VERIFY(!welcome->isVisible()); QVERIFY(!rtl->motionRunning());
+        QTRY_VERIFY(!welcome->isVisible()); QVERIFY(rtl->findChildren<QVariantAnimation*>().isEmpty());
         auto* workbench=h.workbench(); QVERIFY(workbench);
         QTRY_VERIFY_WITH_TIMEOUT(workbench->workspace()==h.workspace,10000);
         QVERIFY(workbench->designService()->activeProjectId().isEmpty());

@@ -34,7 +34,7 @@ RtlInsightWorkbench::RtlInsightWorkbench(QWidget* parent, bool specialized)
         registerPlugin(std::move(plugin));
     }
     buildUi();
-    if (!specializedViews) {
+    {
         reportSession = new LiveInsightSession(this);
         configureLiveInsightGraphReports(*reportSession);
         connect(reportSession, &LiveInsightSession::snapshotChanged, this,
@@ -95,8 +95,8 @@ bool RtlInsightWorkbench::setViewKind(InsightWorkbenchViewKind kind)
     }
     if (canvasValue && currentKind != kind)
         saveCurrentViewState();
-    const bool nativeSurface=specializedViews || (kind!=InsightWorkbenchViewKind::StateTransition
-        && !buildOverrides.contains(static_cast<int>(kind)));
+    const bool nativeSurface=kind!=InsightWorkbenchViewKind::Block && (specializedViews
+        || (kind!=InsightWorkbenchViewKind::StateTransition && !buildOverrides.contains(static_cast<int>(kind))));
     if (nativeSurface && (!surface || currentKind != kind)) {
         surface.reset();
         surface = std::make_unique<InsightViewSurface>(kind, this);
@@ -107,6 +107,7 @@ bool RtlInsightWorkbench::setViewKind(InsightWorkbenchViewKind kind)
     }
     if(!nativeSurface)surface.reset();
     if(canvasValue)canvasValue->setVisible(!nativeSurface);
+    if(statusLabel)statusLabel->setVisible(!nativeSurface);
     for(auto* control:{static_cast<QWidget*>(searchEdit),static_cast<QWidget*>(panButton),static_cast<QWidget*>(minimapButton)})
         if(control)control->setVisible(!nativeSurface);
     for(auto* control:findChildren<QPushButton*>(QString(),Qt::FindDirectChildrenOnly))
@@ -186,14 +187,20 @@ bool RtlInsightWorkbench::refresh()
         LiveInsightGraphInput input;
         input.mode = currentKind == InsightWorkbenchViewKind::Block ? LiveInsightGraphMode::Module
             : currentContext.signalName.isEmpty() ? LiveInsightGraphMode::Fsm : LiveInsightGraphMode::StateTransition;
-        input.semantic = SemanticIndex::getInstance()->snapshotToken();
+        input.semantic = currentContext.semantic.isValid() ? currentContext.semantic : SemanticIndex::getInstance()->snapshotToken();
         input.fileName = currentContext.fileName;
         input.moduleName = currentContext.moduleName;
         input.signalName = currentContext.signalName;
         if (input.mode == LiveInsightGraphMode::Module) input.maxDepth = 2;
         const auto key = liveInsightGraphRequestKey(input, currentContext.workspaceId,
             currentContext.documentId, currentContext.documentRevision);
-        if (reportKey != key) appliedReportGeneration = 0;
+        if (reportKey != key) {
+            appliedReportGeneration = 0;
+            currentUpdate = core.update(currentPluginId(), {});
+            canvasValue->applyUpdate(currentUpdate);
+            statusLabel->setText(QStringLiteral("Analyzing module…"));
+            statusLabel->show();
+        }
         reportKey = key;
         reportSession->setConsumerVisible(this, key.kind, isVisible());
         reportSession->requestUpdate(key, {{QStringLiteral("graphInput"), QVariant::fromValue(input)}});
@@ -350,14 +357,6 @@ void RtlInsightWorkbench::buildUi()
     toolbar->addWidget(exportButton);
     toolbar->addWidget(detachButton);
     root->addLayout(toolbar);
-    if (specializedViews) {
-        for (int i = 0; i < toolbar->count(); ++i) {
-            QWidget* control = toolbar->itemAt(i)->widget();
-            if (control && control != titleLabel && control != detachButton) control->hide();
-        }
-        CompactFlowLayout::replaceRows(root);
-        return;
-    }
 
 
     statusLabel = UiControls::label(this);
@@ -484,9 +483,11 @@ void RtlInsightWorkbench::hideEvent(QHideEvent* event)
 void RtlInsightWorkbench::applyGraphSnapshot(const LiveInsightSnapshot& snapshot)
 {
     if (!reportKey.isValid() || snapshot.requestedKey != reportKey || !canvasValue) return;
-    canvasValue->setEnabled(!snapshot.stale);
+    canvasValue->setEnabled(snapshot.phase == LiveInsightPhase::Ready && !snapshot.stale);
     if (snapshot.phase == LiveInsightPhase::Error) {
-        if (statusLabel) statusLabel->setText(snapshot.errorText);
+        currentUpdate = core.update(currentPluginId(), {});
+        canvasValue->applyUpdate(currentUpdate);
+        if (statusLabel) { statusLabel->setText(snapshot.errorText); statusLabel->show(); }
         return;
     }
     if (snapshot.phase != LiveInsightPhase::Ready || snapshot.stale
@@ -501,6 +502,7 @@ void RtlInsightWorkbench::applyGraphSnapshot(const LiveInsightSnapshot& snapshot
     canvasValue->applyUpdate(currentUpdate);
     restoreCurrentViewState();
     updatePresentation(result);
+    fitNewSurface();
     setProperty("liveInsightReportBuildNs", report->computationNs);
     setProperty("liveInsightApplyNs", timer.nsecsElapsed());
 }
@@ -510,10 +512,13 @@ void RtlInsightWorkbench::fitNewSurface()
     // Kernel owns first-visible fitting and cancels it on user interaction.
     // A host timer must not overwrite the panel's restored or newly panned view.
     if (surface && surface->trace()) return;
-    if (!surface || !surfaceNeedsFit || !isVisible()) return;
+    if (!surfaceNeedsFit || !isVisible()) return;
     QTimer::singleShot(0, this, [this] {
         if (surface && !surface->trace() && surfaceNeedsFit && isVisible()) {
             surface->fit();
+            surfaceNeedsFit = false;
+        } else if (!surface && canvasValue && appliedReportGeneration && surfaceNeedsFit && isVisible()) {
+            canvasValue->fit();
             surfaceNeedsFit = false;
         }
     });

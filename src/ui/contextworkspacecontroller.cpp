@@ -1450,10 +1450,7 @@ ContextWorkspaceRestoreResult ContextWorkspaceController::restoreState(
         dockHostValue->moveResourceToArea(key, section.bottom ? Qt::BottomDockWidgetArea
             : section.left ? Qt::LeftDockWidgetArea : Qt::RightDockWidgetArea);
         if (section.width > 0) dockHostValue->setSectionWidth(key, section.width);
-        QWidget* view = dockHostValue->viewForResource(key);
-        const QVariant toggleVisible = view ? view->property("contextSectionToggleVisible") : QVariant();
-        dockHostValue->setSectionCollapsed(key, section.collapsed
-            && (!toggleVisible.isValid() || toggleVisible.toBool()), false);
+        // Legacy collapsed sections reopen with visible contents; the tab owns visibility.
     }
     // Moving a page selects its destination; restore focus after all moves.
     if (dockHostValue && !state.activePinnedResourceKey.isEmpty()) {

@@ -310,21 +310,20 @@ int main(int argc, char** argv) {
         if (maximized || (!sidebarFps && nativeRun && size == sizes.last())) host.showMaximized();
         else host.resize(size);
         QTest::qWait(100);
-        for (const auto& scene : {QString("left"), QString("right"), QString("bottom"), QString("section")}) {
+        for (const auto& scene : {QString("left"), QString("right"), QString("bottom")}) {
         if (sidebarFps && (qEnvironmentVariableIsSet("ZEROSLACK_BOTTOM_FPS_BENCHMARK")
                 ? scene != "bottom" : scene != "left" && scene != "right")) continue;
         for (auto* item : host.findChildren<ElaDrawerArea*>()) item->finishDrawerAnimation();
         navigationPane->setExpanded(true, false);
         drawer->setBottomCollapsed(true);
-        context->setDockVisible(scene == "section");
+        context->setDockVisible(false);
         for (auto* item : host.findChildren<ElaDrawerArea*>()) item->finishDrawerAnimation();
-        context->dockHost()->setSectionCollapsed(resource.stableKey(), false, false);
         QTest::qWait(100);
         app.costs.clear(); app.intervals.clear(); editor->resetHotPathMetricsForTest();
         app.nativeNavigation = scene == "left";
         app.drawer = scene == "right" ? host.findChild<ElaDrawerArea*>("contextSidebarDrawer")
             : scene == "bottom" ? host.findChild<ElaDrawerArea*>("bottomPanelDrawer")
-            : scene == "section" ? context->dockHost()->sectionWidget(resource.stableKey())->findChild<ElaDrawerArea*>("contextSectionDrawer") : nullptr;
+            : nullptr;
         QJsonArray durations;
         QJsonArray dispatchTimes;
         QJsonArray renderers;
@@ -348,7 +347,6 @@ int main(int argc, char** argv) {
             if (scene == "left") navigationPane->setExpanded(i % 2 != 0);
             else if (scene == "right") context->setDockVisible(i % 2 == 0);
             else if (scene == "bottom") drawer->setBottomCollapsed(i % 2 != 0);
-            else context->dockHost()->setSectionCollapsed(resource.stableKey(), i % 2 == 0);
             dispatchTimes.append(duration.nsecsElapsed() / 1e6);
             renderers.append(bar->isDisplayModeAnimating() ? "ElaNavigationBar"
                 : app.drawer && app.drawer->isDrawerAnimating() ? "ElaDrawerArea"

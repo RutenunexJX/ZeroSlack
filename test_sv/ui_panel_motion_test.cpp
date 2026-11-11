@@ -708,86 +708,29 @@ private slots:
 
     void sectionsRetainContentAndSettleBeforeStructuralChanges() {
         Harness h;
-#ifdef ZEROSLACK_ENABLE_ELA
-        {
         h.context->setDockVisible(true);
-        h.window.findChild<ElaDrawerArea*>("contextSidebarDrawer")->finishDrawerAnimation();
-        QTest::qWait(40);
         auto* dock = h.context->dockHost();
         auto* view = dock->viewForResource(h.keys[0]);
-        auto* motion = dock->sectionWidget(h.keys[0])->findChild<ElaDrawerArea*>("contextSectionDrawer");
-        QVERIFY(motion);
         const auto size = dock->sectionWidget(h.keys[0])->size();
-        QVERIFY(dock->setSectionCollapsed(h.keys[0], true));
-        QVERIFY(motion->isDrawerAnimating());
-        QVERIFY(dock->isSectionCollapsed(h.keys[0]));
-        const auto after = dock->sectionWidget(h.keys[1])->geometry();
-        QTest::qWait(55);
-        QCOMPARE(dock->sectionWidget(h.keys[1])->geometry(), after);
-        const auto progress = motion->drawerProgress();
-        QVERIFY(dock->setSectionCollapsed(h.keys[0], false));
-        QVERIFY(motion->isDrawerAnimating());
-        QVERIFY(qAbs(motion->drawerProgress() - progress) < .08);
-        QTRY_VERIFY(!motion->isDrawerAnimating());
-        QCOMPARE(dock->viewForResource(h.keys[0]), view);
-        QCOMPARE(dock->sectionWidget(h.keys[0])->size(), size);
-        QVERIFY(view->isVisible());
-        dock->setSectionCollapsed(h.keys[0], true);
-        dock->setSectionHeight(h.keys[1], 200);
-        QVERIFY(!motion->isDrawerAnimating());
-        dock->setSectionCollapsed(h.keys[0], false);
-        dock->moveResource(h.keys[1], 0);
-        QVERIFY(!motion->isDrawerAnimating());
-        dock->setSectionCollapsed(h.keys[0], true);
-        QPointer<ElaDrawerArea> retained = motion;
-        dock->removeResource(h.keys[0]);
-        QVERIFY(!retained || !retained->isDrawerAnimating());
-        return;
-        }
-#endif
-        h.context->setDockVisible(true);
-        auto* dock = h.context->dockHost();
-        auto* view = dock->viewForResource(h.keys[0]);
+        QVERIFY(!dock->sectionWidget(h.keys[0])->findChild<QWidget*>("contextSectionDrawer"));
+        QVERIFY(!dock->sectionWidget(h.keys[0])->findChild<QWidget*>("contextSectionToggle"));
         for (bool collapsed : {true, false, true, false}) {
             QVERIFY(dock->setSectionCollapsed(h.keys[0], collapsed));
-            QCOMPARE(dock->isSectionCollapsed(h.keys[0]), collapsed);
+            QVERIFY(!dock->isSectionCollapsed(h.keys[0]));
+            QCOMPARE(dock->viewForResource(h.keys[0]), view);
+            QVERIFY(view->isVisibleTo(dock));
+            QCOMPARE(dock->sectionWidget(h.keys[0])->size(), size);
         }
-        QCOMPARE(dock->viewForResource(h.keys[0]), view);
-        QVERIFY(view->isVisible());
         dock->setSectionHeight(h.keys[1], 200);
         dock->moveResource(h.keys[1], 0);
+        QCOMPARE(dock->viewForResource(h.keys[0]), view);
+        QVERIFY(view->isVisibleTo(dock));
         dock->removeResource(h.keys[0]);
         QVERIFY(!dock->containsResource(h.keys[0]));
     }
 
     void viewportBackgroundIsCapturedInsteadOfGuessed() {
         Harness h;
-#ifdef ZEROSLACK_ENABLE_ELA
-        {
-        auto* dock = h.context->dockHost();
-        dock->removeResource(h.keys[1]);
-        h.context->setDockVisible(true);
-        h.window.findChild<ElaDrawerArea*>("contextSidebarDrawer")->finishDrawerAnimation();
-        QTest::qWait(40);
-        auto* motion = dock->sectionWidget(h.keys[0])->findChild<ElaDrawerArea*>("contextSectionDrawer");
-        QVERIFY(motion);
-        auto* viewport = dock->findChild<QScrollArea*>()->viewport();
-        auto palette = viewport->palette();
-        palette.setColor(QPalette::Base, QColor(73, 137, 192));
-        viewport->setPalette(palette);
-        viewport->setBackgroundRole(QPalette::Base);
-        viewport->setAutoFillBackground(true);
-        dock->setSectionCollapsed(h.keys[0], true);
-        QTest::qWait(40);
-        QVERIFY(motion->isDrawerAnimating());
-        QCOMPARE(viewport->palette().color(QPalette::Base), QColor(73, 137, 192));
-        QVERIFY(motion->drawerSnapshotBytes() <= qint64(motion->width() * motion->devicePixelRatioF())
-            * qCeil(motion->height() * motion->devicePixelRatioF()) * 4);
-        motion->finishDrawerAnimation();
-        QVERIFY(!dock->viewForResource(h.keys[0])->isVisible());
-        return;
-        }
-#endif
         auto* dock = h.context->dockHost();
         h.context->setDockVisible(true);
         auto* viewport = dock->findChild<QScrollArea*>()->viewport();
@@ -798,7 +741,7 @@ private slots:
         viewport->setAutoFillBackground(true);
         dock->setSectionCollapsed(h.keys[0], true);
         QCOMPARE(viewport->palette().color(QPalette::Base), QColor(73,137,192));
-        QVERIFY(!dock->viewForResource(h.keys[0])->isVisible());
+        QVERIFY(dock->viewForResource(h.keys[0])->isVisibleTo(dock));
     }
 
     void nativeNavigationAndOtherPanelsCoexistSafely() {
@@ -816,10 +759,10 @@ private slots:
         side->finishDrawerAnimation();
         h.context->dockHost()->setSectionCollapsed(h.keys[0], true);
         auto* section = h.context->dockHost()->sectionWidget(h.keys[0])->findChild<ElaDrawerArea*>("contextSectionDrawer");
-        QVERIFY(section->isDrawerAnimating());
+        QVERIFY(!section);
         h.window.resize(1250, 810);
         QTRY_VERIFY(!h.navigation->isAnimating());
-        QTRY_VERIFY(!bottom->isDrawerAnimating() && !section->isDrawerAnimating());
+        QTRY_VERIFY(!bottom->isDrawerAnimating());
         QVERIFY(h.drawer->isPanelOpen("problems"));
         QVERIFY(h.context->dockVisible());
         QVERIFY(!h.editor->document()->isModified());
@@ -858,17 +801,17 @@ private slots:
         sections->setSectionCollapsed(h.keys[0], true);
         UiControls::selectPage(stack, 1, true);
         QVERIFY(h.navigation->isAnimating()); QVERIFY(bottom->isDrawerAnimating());
-        QVERIFY(section->isDrawerAnimating()); QVERIFY(pages->isStackSwitching());
+        QVERIFY(!section); QVERIFY(pages->isStackSwitching());
         policy.setAnimationsEnabled(false);
         QVERIFY(!h.navigation->isAnimating()); QVERIFY(!bottom->isDrawerAnimating());
-        QVERIFY(!section->isDrawerAnimating()); QVERIFY(!pages->isStackSwitching());
+        QVERIFY(!section); QVERIFY(!pages->isStackSwitching());
         QCOMPARE(stack->currentIndex(),1); QVERIFY(stack->currentWidget()->isVisible());
         QVERIFY(h.navigation->dock()->isHidden()); QVERIFY(h.drawer->isPanelOpen("problems"));
-        QVERIFY(sections->isSectionCollapsed(h.keys[0]));
+        QVERIFY(!sections->isSectionCollapsed(h.keys[0]));
         h.context->setDockVisible(false); h.context->setDockVisible(true);
         QVERIFY(!side->isDrawerAnimating());
         sections->setSectionCollapsed(h.keys[0], false);
-        QVERIFY(!section->isDrawerAnimating()); QVERIFY(sections->viewForResource(h.keys[0])->isVisible());
+        QVERIFY(!section); QVERIFY(sections->viewForResource(h.keys[0])->isVisible());
         UiControls::selectPage(stack,0,true); QVERIFY(!pages->isStackSwitching());
         policy.setAnimationsEnabled(true);
         h.context->setDockVisible(false); QVERIFY(side->isDrawerAnimating());
@@ -876,7 +819,7 @@ private slots:
         QVERIFY(!h.context->dockVisible());
         policy.setAnimationsEnabled(true);
         sections->setSectionCollapsed(h.keys[0],true,false);
-        QVERIFY(!section->isDrawerAnimating());
+        QVERIFY(!section);
         UiControls::selectPage(stack,1,true); QVERIFY(pages->isStackSwitching());
         UiControls::selectPage(stack,1,false); QVERIFY(!pages->isStackSwitching());
         const auto limits = qMakePair(h.context->dockWidget()->minimumWidth(), h.context->dockWidget()->maximumWidth());
@@ -902,7 +845,7 @@ private slots:
 #ifdef ZEROSLACK_ENABLE_ELA
             bool active = false;
             for (auto* motion : transient->window.findChildren<ElaDrawerArea*>()) active |= motion->isDrawerAnimating();
-            QVERIFY(active);
+            QCOMPARE(active, scene != 2);
 #endif
             delete transient;
         }

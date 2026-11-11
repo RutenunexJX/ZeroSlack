@@ -546,7 +546,7 @@ def verify_package_sources(path,receipt):
     policy=load_policy(Path(receipt['sourceRoot'])/'test_sv/test-execution-policy.json')
     plan=read_json(external_tool_path(path,policy))
     require(plan.get('schema')=='zeroslack.package-sources/v1','Invalid first-package source plan')
-    require(set(plan.get('sources',{}))=={'native','nativeLicenses','adapter','welcome','documents'},
+    require(set(plan.get('sources',{}))=={'native','nativeLicenses','adapter','documents'},
             'First packaging needs explicit component, adapter, resource and component-license sources')
     for name,entry in plan['sources'].items():
         root=external_tool_path(entry['root'],policy)
@@ -586,7 +586,7 @@ def verify_assembled_payload(package,receipt):
     if not report.get('packageSources'):return
     plan=verify_package_sources(report['packageSources']['path'],receipt)
     destinations={'native':'components/xips','nativeLicenses':'licenses/components/xips',
-                  'adapter':'components/xips-asset-adapter','welcome':'resources/welcome','documents':'resources/document-editors'}
+                  'adapter':'components/xips-asset-adapter','documents':'resources/document-editors'}
     policy=load_policy(Path(receipt['sourceRoot'])/'test_sv/test-execution-policy.json')
     for role,prefix in destinations.items():
         expected=plan['sources'][role]['files']

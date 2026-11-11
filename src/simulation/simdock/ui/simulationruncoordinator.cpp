@@ -16,7 +16,6 @@ SimulationRunCoordinator::SimulationRunCoordinator(TabManager* tabs, WorkspaceMa
     setObjectName(QStringLiteral("simulationRunCoordinator"));
     const QPointer<SimulationRunCoordinator> owner(this);
     view->setRunHandler([owner] { return owner ? owner->run() : QStringLiteral("The workspace has closed."); });
-    view->setTargetHandler([owner](const QString& file) { return owner ? owner->selectTarget(file) : QStringLiteral("The workspace has closed."); });
 }
 SimulationBuildRequest SimulationRunCoordinator::capture(const SimulationTarget& target, QString* error, bool allowPending) const
 {
@@ -45,7 +44,7 @@ SimulationBuildRequest SimulationRunCoordinator::capture(const SimulationTarget&
     }
     return request;
 }
-QString SimulationRunCoordinator::selectTarget(const QString& selected)
+QString SimulationRunCoordinator::selectTarget(const QString& selected, const QString& module)
 {
     if (!m_tabs || !m_view || !m_controller || m_controller->busy()) return tr("The simulation workspace is unavailable or busy.");
     QString file = selected;
@@ -64,7 +63,8 @@ QString SimulationRunCoordinator::selectTarget(const QString& selected)
     if (!error.isEmpty()) return error;
     QMap<QString, QByteArray> overrides;
     for (auto it = inputs.overrides.cbegin(); it != inputs.overrides.cend(); ++it) overrides.insert(it.key(), it.value().toUtf8());
-    return m_view->selectTarget(file, overrides);
+    return module.isEmpty() ? m_view->selectTarget(file, overrides)
+        : m_controller->selectTarget({file,module},{},overrides);
 }
 QString SimulationRunCoordinator::check(const SimulationBuildRequest& request, bool checkCatalog) const
 {
@@ -159,7 +159,7 @@ WorkspaceSimulationController::AwaitInputs SimulationRunCoordinator::awaitInputs
 QString SimulationRunCoordinator::run()
 {
     if (!m_controller || !m_view || m_controller->busy()) return tr("The simulation workspace is unavailable or busy.");
-    if (m_controller->target().isEmpty()) { const auto issue = selectTarget(); if (!issue.isEmpty()) return issue; }
+    if (m_controller->target().isEmpty()) return tr("Choose a simulation top in Design before running.");
     QString error;
     auto request = capture(m_controller->target(), &error, true);
     if (!error.isEmpty()) return error;

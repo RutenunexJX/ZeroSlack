@@ -123,6 +123,7 @@
 #include <QMenuBar>
 #include <QProcess>
 #include <QPointer>
+#include "navigationwidget.h"
 #include <QPushButton>
 #include <QMessageBox>
 #include <QSettings>
@@ -311,6 +312,7 @@ MainWindow::MainWindow(QWidget *parent)
     inputFeedback->setMaximumWidth(340);
     inputFeedback->hide();
     titleStatusLayout->addWidget(inputFeedback);
+    titleStatusLayout->addWidget(simulationWorkspace.get());
     titleStatusLayout->addWidget(new EditingTimeWidget(editingTimeService.get(), titleStatus));
     editorCoordinator->setTemplateInputFeedbackHandler([inputFeedback](const QString& feedback) {
         inputFeedback->setText(inputFeedback->fontMetrics().elidedText(feedback.simplified(), Qt::ElideRight, 340));
@@ -1896,16 +1898,38 @@ void MainWindow::setupPanelLayoutController()
     designProjectService = std::make_unique<DesignProjectService>(this);
     workspaceSimulation = std::make_unique<simdock::WorkspaceSimulationController>(this);
     simulationWorkspace = std::make_unique<SimDockContextView>(this, workspaceSimulation.get(), designProjectService.get());
-    simulationWorkspace->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    qobject_cast<QVBoxLayout*>(editorCentralPage->layout())->insertWidget(0, simulationWorkspace.get());
+    simulationWorkspace->setCompactControls();
     auto* simulation = simulationWorkspace->workbench();
     simulation->setWorkspaceConfigurationHandler([this] { showWorkspaceConfigurationDialog(); });
     simulationRunner = std::make_unique<simdock::SimulationRunCoordinator>(tabManager.get(), workspaceManager.get(), simulation, this);
     navigationManager->connectToDesignProjects(designProjectService.get());
+    const QPointer<simdock::WorkspaceSimulationController> simulationController(workspaceSimulation.get());
+    const QPointer<simdock::SimulationRunCoordinator> simulationCoordinator(simulationRunner.get());
+    navigationManager->setSimulationHandlers([simulationController] {
+        if (!simulationController || simulationController->target().isEmpty()) return QPair<QString,QString>();
+        const auto target = simulationController->target();
+        return qMakePair(QDir(simulationController->workspace()).absoluteFilePath(target.file), target.top);
+    }, [simulationCoordinator](const QString& file, const QString& module) {
+        return simulationCoordinator ? simulationCoordinator->selectTarget(file, module)
+            : QStringLiteral("The simulation workspace is unavailable.");
+    });
+    if (auto* navigation = findChild<NavigationWidget*>())
+        connect(workspaceSimulation.get(), &simdock::WorkspaceSimulationController::targetChanged,
+                navigation, &NavigationWidget::refreshSimulationTop);
     auto* runLogDock = new QDockWidget(tr("Run log"), this);
     runLogDock->setObjectName(QStringLiteral("simulationRunLogDock"));
     runLogDock->setWidget(simulation->runLogWidget());
     registerPanel(QStringLiteral("simulationLog"), runLogDock);
+    const auto showSimulationIssue = [this](const QString& message) {
+        statusBar()->showMessage(message);
+        panelLayoutController->restorePanel(QStringLiteral("simulationLog"));
+    };
+    connect(simulation, &simdock::Workbench::issueRaised, this, showSimulationIssue);
+    connect(simulationWorkspace.get(), &SimDockContextView::issueRaised, this, showSimulationIssue);
+    connect(workspaceSimulation.get(), &simdock::WorkspaceSimulationController::finished, this,
+        [showSimulationIssue](bool completed, const QString& message) {
+            if (!completed) showSimulationIssue(message);
+        });
     auto* eventsDock = new QDockWidget(tr("Simulation events"), this);
     eventsDock->setObjectName(QStringLiteral("simulationEventsDock"));
     eventsDock->setWidget(simulation->eventsWidget());

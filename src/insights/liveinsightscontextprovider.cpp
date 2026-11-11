@@ -104,7 +104,7 @@ ContextResource LiveInsightsContextProvider::resourceForKind(
         resource.title = QStringLiteral("Signal Trace");
         break;
     case LiveInsightKind::Module:
-        resource.title = QStringLiteral("Design");
+        resource.title = liveInsightKindDisplayName(LiveInsightKind::Module);
         break;
     case LiveInsightKind::Hotspot:
         resource.title = QStringLiteral("Signal Heatmap");

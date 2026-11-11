@@ -42,7 +42,7 @@ inline QString liveInsightKindDisplayName(LiveInsightKind kind)
     case LiveInsightKind::Kernel:
         return QStringLiteral("Signal Trace");
     case LiveInsightKind::Module:
-        return QStringLiteral("Design");
+        return QStringLiteral("Block diagram");
     case LiveInsightKind::State:
         return QStringLiteral("State");
     case LiveInsightKind::Hotspot:

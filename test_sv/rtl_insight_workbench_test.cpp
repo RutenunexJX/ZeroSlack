@@ -5,6 +5,7 @@
 #include "live_insight_test_utils.h"
 #include "contextrail.h"
 #include "insightcanvas.h"
+#include "insightgraphview.h"
 #include "insightgraphcore.h"
 #include "rtlinsightsgraphconstants.h"
 #include "actionregistry.h"
@@ -107,11 +108,12 @@ private slots:
     void workbenchRoutesFourPluginsIndependently();
     void workbenchPreservesPerViewState();
     void toolPagesRouteAllFourWorkbenchViews();
+    void moduleCanvasRendersSwitchesAndExports();
     void specializedModesSurviveRouting();
     void sidebarSectionTeardownReleasesFocusedControls();
     void moduleDiagramAdaptsAndNavigatesInstances();
     void moduleDiagramIncludesDeepDescendantsAndTerminatesCycles();
-    void ordinaryAndSpecializedModuleDepthsDiffer();
+    void ordinaryAndSpecializedModuleCanvases();
     void stateTargetPickerUsesRenderSession();
     void catppuccinPalettes();
     void windowChromeSupportsNativeSnap();
@@ -309,10 +311,37 @@ void RtlInsightWorkbenchTest::toolPagesRouteAllFourWorkbenchViews()
     for(auto kind:{LiveInsightKind::Kernel,LiveInsightKind::Hotspot,LiveInsightKind::Module,LiveInsightKind::State}){
         LiveInsightToolPage page(kind);
         if(kind==LiveInsightKind::Kernel || kind==LiveInsightKind::Hotspot){QVERIFY(page.traceSurface());QVERIFY(!page.workbenchForTest());}
-        else if(kind==LiveInsightKind::Module){QVERIFY(!page.workbenchForTest());QVERIFY(page.findChild<QPushButton*>("openExistingDesign"));}
+        else if(kind==LiveInsightKind::Module){QVERIFY(page.workbenchForTest());QVERIFY(page.workbenchForTest()->canvas());QVERIFY(!page.findChild<QPushButton*>("openExistingDesign"));}
         else{QVERIFY(page.workbenchForTest());QVERIFY(page.workbenchForTest()->rtlSurfaceForTest());QCOMPARE(page.workbenchForTest()->viewKind(),InsightWorkbenchViewKind::StateTransition);}
     }
 
+}
+
+void RtlInsightWorkbenchTest::moduleCanvasRendersSwitchesAndExports()
+{
+    SignalTraceTestFixture fixture;
+    QVERIFY(fixture.build("module leaf(input wire a,output wire y);assign y=a;endmodule\nmodule top(input wire a,output wire y);leaf u(a,y);endmodule\n"));
+    auto* index=SemanticIndex::getInstance(); const auto previous=index->snapshot();
+    const auto restore=qScopeGuard([&]{index->setSnapshot(previous);});
+    index->setSnapshot(fixture.context.token.snapshot);
+    LiveInsightToolPage page(LiveInsightKind::Module); page.resize(1000,700); page.show();
+    LiveInsightToolContext context; context.workspaceId=fixture.directory.path(); context.fileName=context.documentId=fixture.file;
+    context.projectId="main"; context.moduleName="top"; context.documentText=fixture.source;
+    page.setContext(context);
+    auto* workbench=page.workbenchForTest(); QVERIFY(workbench); auto* canvas=workbench->canvas(); QVERIFY(canvas);
+    QTRY_COMPARE_WITH_TIMEOUT(canvas->nodeItemCountForTest(),2,10000);
+    QCOMPARE(canvas->edgeItemCountForTest(),1);
+    page.fitGraph(); const auto zoom=canvas->zoomFactor(); canvas->zoomIn(); QVERIFY(canvas->zoomFactor()>zoom);
+    const auto nodes=canvas->snapshot().nodes; QVERIFY(!nodes.isEmpty());
+    canvas->selectNodeIds({nodes.cbegin().key()}); QCOMPARE(canvas->selectedNodeIds().size(),1);
+    QVERIFY(workbench->exportCurrentGraph(fixture.directory.filePath("module.svg")).success);
+    context.moduleName="missing"; page.setContext(context);
+    QCOMPARE(canvas->nodeItemCountForTest(),0);
+    QTRY_COMPARE_WITH_TIMEOUT(page.graphSession()->snapshot(LiveInsightKind::Module).phase,LiveInsightPhase::Ready,10000);
+    QVERIFY(!workbench->statusText().isEmpty()); QCOMPARE(canvas->nodeItemCountForTest(),0);
+    context.moduleName="leaf"; page.setContext(context);
+    QTRY_COMPARE_WITH_TIMEOUT(canvas->nodeItemCountForTest(),1,10000);
+    QCOMPARE(canvas->edgeItemCountForTest(),0);
 }
 
 void RtlInsightWorkbenchTest::specializedModesSurviveRouting()
@@ -481,6 +510,15 @@ void RtlInsightWorkbenchTest::realWindowChromeButtons()
     window.resize(1120, 760);
     window.show();
     QVERIFY(QTest::qWaitForWindowExposed(&window));
+    QFile source(settings.filePath("chrome.sv"));
+    QVERIFY(source.open(QIODevice::WriteOnly));
+    source.write("module chrome; endmodule\n");
+    source.close();
+    auto* tabs = window.findChild<TabManager*>();
+    QVERIFY(tabs && tabs->openFileInTab(source.fileName()));
+    auto* project = window.findChild<QToolButton*>(QStringLiteral("projectRailButton"));
+    QVERIFY(project);
+    QTRY_VERIFY(project->isVisible());
     auto* title = window.findChild<QWidget*>(QStringLiteral("workspaceTitleBar"));
     QVERIFY(title);
     const QList<QAbstractButton*> buttons {
@@ -698,19 +736,29 @@ void RtlInsightWorkbenchTest::legacyBottomDockDoesNotCarryStateWhenDisabled()
     QCOMPARE(panel.graphModeForTest(), mode);
 }
 
-void RtlInsightWorkbenchTest::ordinaryAndSpecializedModuleDepthsDiffer()
+void RtlInsightWorkbenchTest::ordinaryAndSpecializedModuleCanvases()
 {
-
-    InsightViewContext context;context.workspaceId="workspace";context.projectId="project";context.fileName="top.sv";context.moduleName="top";
-    for(bool specialized:{false,true}){
-        RtlInsightWorkbench workbench(nullptr,specialized);QVERIFY(workbench.setViewKind(InsightWorkbenchViewKind::Block));
-        int opened=0;workbench.setDesignHandler([&](const QString& file,const QString& module){if(file==context.fileName && module==context.moduleName)++opened;});
-        workbench.setContext(context);auto* button=workbench.findChild<QPushButton*>();
-        QPushButton* design=nullptr;for(auto* candidate:workbench.findChildren<QPushButton*>())if(candidate->text()=="Open module in Design")design=candidate;
-        QVERIFY(design && design->isEnabled());design->click();QCOMPARE(opened,1);QVERIFY(!workbench.exportCurrentGraph("unused.svg").success);
+    SignalTraceTestFixture fixture;
+    QVERIFY(fixture.build("module leaf; endmodule\nmodule top; leaf u(); endmodule\n"));
+    InsightViewContext context;
+    context.workspaceId=fixture.directory.path(); context.projectId="project";
+    context.documentId=context.fileName=fixture.file; context.moduleName="top";
+    context.semantic=fixture.context.token;
+    for (bool specialized : {false,true}) {
+        RtlInsightWorkbench workbench(nullptr,specialized);
+        workbench.resize(900,600);
+        workbench.show();
+        QVERIFY(workbench.setViewKind(InsightWorkbenchViewKind::Block));
+        workbench.setContext(context);
+        QVERIFY(workbench.canvas());
+        QTRY_COMPARE(workbench.canvas()->nodeItemCountForTest(),2);
+        QCOMPARE(workbench.canvas()->edgeItemCountForTest(),1);
+        QVERIFY(workbench.exportCurrentGraph(fixture.directory.filePath(specialized ? "specialized.svg" : "ordinary.svg")).success);
     }
-    const auto legacy=ModuleBlockInsightViewPlugin().build(context);QVERIFY(!legacy.available);QVERIFY(legacy.errorText.contains("Design"));
-
+    const auto result=ModuleBlockInsightViewPlugin().build(context);
+    QVERIFY2(result.available,qPrintable(result.errorText));
+    QCOMPARE(result.draft.nodes.size(),2);
+    QCOMPARE(result.draft.edges.size(),1);
 }
 
 void RtlInsightWorkbenchTest::stateTargetPickerUsesRenderSession()

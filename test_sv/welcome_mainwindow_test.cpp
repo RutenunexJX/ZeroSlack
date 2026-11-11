@@ -41,37 +41,13 @@ private slots:
         QList<WelcomeCard*> cards;
         for (int i=0;i<3;++i) {
             auto* card=dynamic_cast<WelcomeCard*>(window->findChild<QPushButton*>(QString("welcomeCard%1").arg(i)));
-            QVERIFY(card);QVERIFY(card->property("welcomeResourceValid").toBool());cards.append(card);
+            QVERIFY(card);QVERIFY(!card->findChild<QVariantAnimation*>());cards.append(card);
         }
         QVERIFY(cards[0]->isEnabled());QVERIFY(!cards[1]->isEnabled() && !cards[2]->isEnabled());
         QCOMPARE(cards[0]->title(),QString("RTL Development"));QCOMPARE(cards[1]->title(),QString("Waveform Design"));QCOMPARE(cards[2]->title(),QString("Register Design"));
         QTest::qWait(100);capture(*window,"welcome-light");
-        if (QGuiApplication::platformName()=="windows") {
-            QTRY_VERIFY(window->isActiveWindow());
-            for (auto* card : cards) {
-                auto* animation=card->findChild<QVariantAnimation*>("welcomeMotion");QVERIFY(animation);
-                QSignalSpy frames(animation,&QVariantAnimation::valueChanged);
-                QEnterEvent enter({},{},{});QEvent leave(QEvent::Leave);
-                QCoreApplication::sendEvent(card,&enter);QVERIFY(card->motionRunning());QTest::qWait(120);QVERIFY(!frames.isEmpty());
-                QCoreApplication::sendEvent(card,&leave);QVERIFY(!card->motionRunning());frames.clear();QTest::qWait(100);QCOMPARE(frames.size(),0);
-                QCoreApplication::sendEvent(card,&enter);QVERIFY(card->motionRunning());
-                QEvent deactivate(QEvent::WindowDeactivate);QCoreApplication::sendEvent(window.get(),&deactivate);
-                QVERIFY(!card->motionRunning());frames.clear();QTest::qWait(100);QCOMPARE(frames.size(),0);
-                QCoreApplication::sendEvent(card,&enter);QVERIFY(card->motionRunning());
-                welcome->hide();QVERIFY(!card->motionRunning());frames.clear();QTest::qWait(100);QCOMPARE(frames.size(),0);
-                welcome->show();QVERIFY(!card->motionRunning());
-                QCoreApplication::sendEvent(card,&enter);QVERIFY(card->motionRunning());
-                theme.setAnimationsEnabled(false);QVERIFY(!card->motionRunning());
-                QCoreApplication::sendEvent(card,&enter);QVERIFY(!card->motionRunning());
-                theme.setAnimationsEnabled(true);QVERIFY(!card->motionRunning());
-            }
-            QEnterEvent enter({},{},{});QCoreApplication::sendEvent(cards[0],&enter);QVERIFY(cards[0]->motionRunning());
-            window->showMinimized();QTRY_VERIFY(!cards[0]->motionRunning());
-            window->showNormal();window->activateWindow();QTRY_VERIFY(window->isActiveWindow());
-            QCoreApplication::sendEvent(cards[0],&enter);QTRY_VERIFY_WITH_TIMEOUT(!cards[0]->motionRunning(),3500);
-        }
         theme.setMode(ThemeMode::Dark);QTest::qWait(100);capture(*window,"welcome-dark");
-        qInfo() << "All three cards: lifecycle, animation switch, completion and dark theme checked";
+        qInfo() << "All three static cards: lifecycle and dark theme checked";
         theme.setMode(ThemeMode::Light);window->resize(700,900);QTest::qWait(100);
         QCOMPARE(welcome->horizontalScrollBar()->maximum(),0);capture(*window,"welcome-narrow");
         window->resize(1400,900);QTest::qWait(100);
@@ -86,7 +62,7 @@ private slots:
                 }
             });
             button->click();QVERIFY(picker);QTRY_VERIFY(window->workspaceManager->isWorkspaceOpen());
-            QTRY_VERIFY(!welcome->isVisible());for(auto* card:cards)QVERIFY(!card->motionRunning());
+            QTRY_VERIFY(!welcome->isVisible());for(auto* card:cards)QVERIFY(!card->findChild<QVariantAnimation*>());
             window->workspaceManager->closeWorkspace();QTRY_VERIFY(welcome->isVisible());
         };
         openUsing(cards[0]);
@@ -95,9 +71,7 @@ private slots:
         recent->click();QTRY_VERIFY(window->workspaceManager->isWorkspaceOpen());QTRY_VERIFY(!welcome->isVisible());
         qInfo() << "RTL, Open workspace and Recent workspaces completed";
         window->workspaceManager->closeWorkspace();QTRY_VERIFY(welcome->isVisible());
-        QPointer<QVariantAnimation> animation=cards[0]->findChild<QVariantAnimation*>("welcomeMotion");
-        if (QGuiApplication::platformName()=="windows") {window->activateWindow();QTRY_VERIFY(window->isActiveWindow());QEnterEvent enter({},{},{});QCoreApplication::sendEvent(cards[0],&enter);}
-        window.reset();QVERIFY(animation.isNull());QTest::qWait(100);
+        window.reset();QTest::qWait(100);
     }
 };
 QTEST_MAIN(WelcomeMainWindowTest)
