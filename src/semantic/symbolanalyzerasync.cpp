@@ -56,6 +56,14 @@ SymbolAnalyzer::SymbolAnalyzer(QObject *parent)
             this, &SymbolAnalyzer::launchPendingFileAnalysis, Qt::QueuedConnection);
     connect(this, &SymbolAnalyzer::semanticAnalysisFailed,
             this, &SymbolAnalyzer::launchPendingFileAnalysis, Qt::QueuedConnection);
+    connect(this, &SymbolAnalyzer::workspaceAnalysisExpired,
+            this, &SymbolAnalyzer::launchPendingSemanticInputCheck, Qt::QueuedConnection);
+    connect(this, &SymbolAnalyzer::batchAnalysisCompleted,
+            this, &SymbolAnalyzer::launchPendingSemanticInputCheck, Qt::QueuedConnection);
+    connect(this, &SymbolAnalyzer::semanticAnalysisDropped,
+            this, &SymbolAnalyzer::launchPendingSemanticInputCheck, Qt::QueuedConnection);
+    connect(this, &SymbolAnalyzer::semanticAnalysisFailed,
+            this, &SymbolAnalyzer::launchPendingSemanticInputCheck, Qt::QueuedConnection);
     auto completeFiles = [this](const SemanticAnalysisRequest& request, const QString& error) {
         for (const auto& file : request.compatibilityCompletionFiles) {
             fileAnalysisCancelFlags.remove(normalizedAsyncAnalysisFileName(file));
@@ -125,8 +133,15 @@ void SymbolAnalyzer::startAnalyzeProjectAsync(
 
 void SymbolAnalyzer::cancelWorkspaceAnalysisAndWait()
 {
+    cancelSemanticInputCheck();
     if (workspaceAnalysisCancelFlag)
         workspaceAnalysisCancelFlag->store(true, std::memory_order_relaxed);
+    if (auto* watcher = std::exchange(semanticInputCheckWatcher, nullptr)) {
+        disconnect(watcher, nullptr, this, nullptr);
+        watcher->future().waitForFinished();
+        delete watcher;
+        semanticInputCheckCancelFlag.reset();
+    }
     if (!workspaceAnalysisWatcher) {
         workspaceAnalysisCancelFlag.reset();
         return;
@@ -177,6 +192,7 @@ void SymbolAnalyzer::cancelWorkspaceAnalysisAndInvalidate()
 
 void SymbolAnalyzer::requestCancelAllAnalyses()
 {
+    cancelSemanticInputCheck();
     const auto pendingRequest = pendingCompatibilityRequest;
     ++workspaceAnalysisGeneration;
     ++workspaceEpoch;

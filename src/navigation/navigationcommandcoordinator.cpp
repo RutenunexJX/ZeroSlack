@@ -2,6 +2,7 @@
 
 #include "mycodeeditor.h"
 #include "editorfileidentity.h"
+#include "editorsplitcontroller.h"
 #include "navigationmanager.h"
 #include "sourcenavigationservice.h"
 #include "tabmanager.h"
@@ -75,8 +76,22 @@ bool NavigationCommandCoordinator::NavigationTargets::activateOrOpenFile(
     if (!tabManager || filePath.isEmpty())
         return false;
 
-    return tabManager->activateOpenFile(filePath)
-        || tabManager->openFileInTab(filePath);
+    if (tabManager->activateOpenFile(filePath))
+        return true;
+
+    auto* split = tabManager->editorSplitController();
+    QPointer<QTabWidget> previousGroup = split ? split->activeGroup() : nullptr;
+    if (split) {
+        auto* destination = split->groupForPage(tabManager->contextEditor());
+        if (!destination)
+            destination = split->regionActiveGroup(QStringLiteral("main"));
+        split->setActiveGroup(destination);
+    }
+    if (tabManager->openFileInTab(filePath))
+        return true;
+    if (split && previousGroup)
+        split->setActiveGroup(previousGroup);
+    return false;
 }
 
 MyCodeEditor* NavigationCommandCoordinator::NavigationTargets::currentEditor() const

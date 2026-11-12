@@ -457,6 +457,7 @@ private:
     friend class EditorFoldingController;
     friend class EditorBlockProjection;
     friend class EditorBlockHost;
+    friend class AssociatedBlockDragController;
     friend class EditorSourceNavigationUi;
     friend struct MyCodeEditorState;
 
@@ -481,6 +482,7 @@ private:
 
 signals:
     void editorBlockInsertRequested(const QVariantMap& preset, const QTextCursor& sourceCursor);
+    void editorBlockPageRequested(const QString& blockId);
     void userEditStarted(int key, bool repeat);
     void userEditFinished(bool textChanged);
     void editingInteractionEnded();

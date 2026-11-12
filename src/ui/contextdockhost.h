@@ -61,12 +61,8 @@ public:
     bool setSectionHeight(const QString& key, int height);
     bool moveResource(const QString& key, int index);
     QWidget* sectionWidget(const QString& key) const;
-    QWidget* sectionHeader(const QString& key) const;
-    QLabel* sectionStatus(const QString& key) const;
-    QAbstractButton* sectionScope(const QString& key) const;
     int insertionIndex(const QPoint& globalPosition) const;
     bool setSectionDetachable(const QString& key, bool detachable);
-    QWidget* sectionDragHandle(const QString& key) const;
     QRect viewportGlobalRect(bool bottom) const;
     QRect viewportGlobalRect(Qt::DockWidgetArea area) const;
     QRect projectedSectionRect(bool bottom, int index, const QRect& viewport, QWidget* incoming) const;

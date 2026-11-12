@@ -5,6 +5,7 @@
 #include <QTextBlock>
 #include <QUuid>
 #include <QSet>
+#include <QColor>
 #include <algorithm>
 
 namespace {
@@ -54,7 +55,8 @@ void DocumentBlockModel::mutate(const QList<EditorAssociatedBlock>& next) {
     captureAnchors(); publish(wasDirty);
 }
 QString DocumentBlockModel::insert(const QString& type, const QTextCursor& source, const QString& text) {
-    EditorAssociatedBlock block; block.type = type; block.text = text; return insert(block, source);
+    EditorAssociatedBlock block; block.type = type; block.text = text; block.autoHeight = type == "text";
+    return insert(block, source);
 }
 QString DocumentBlockModel::insert(EditorAssociatedBlock block, const QTextCursor& source) {
     if (source.document() != document || !QStringList{"text", "image", "reference"}.contains(block.type)) return {};
@@ -91,6 +93,22 @@ bool DocumentBlockModel::reorder(const QString& id, int direction) {
 bool DocumentBlockModel::reattach(const QString& id, const QTextCursor& source) {
     const auto* current = find(id); if (!current || source.document() != document) return false;
     auto value = *current; anchor(value, source); return update(value);
+}
+bool DocumentBlockModel::move(const QString& id, const QTextCursor& source, const QString& beforeId) {
+    if (!find(id) || source.document() != document || beforeId == id) return false;
+    auto next = blocks;
+    auto it = std::find_if(next.begin(), next.end(), [&](const auto& b) { return b.id == id; });
+    auto moving = *it; next.erase(it); anchor(moving, source);
+    moving.detached = false; ++moving.revision;
+    const auto lineFor=[this](const auto& block) {
+        return block.missing ? document->blockCount()-1 : document->findBlock(qMax(block.start,block.end-1)).blockNumber();
+    };
+    std::stable_sort(next.begin(), next.end(), [&](const auto& a, const auto& b) { return lineFor(a)!=lineFor(b) ? lineFor(a)<lineFor(b) : a.order<b.order; });
+    auto target = std::find_if(next.begin(), next.end(), [&](const auto& b) { return b.id == beforeId && lineFor(b)==lineFor(moving) && !b.detached; });
+    if (target == next.end()) target = std::find_if(next.begin(), next.end(), [&](const auto& b) { return lineFor(b)>lineFor(moving); });
+    next.insert(target, moving);
+    for (int i = 0; i < next.size(); ++i) next[i].order = i;
+    endTextSession(); mutate(next); return true;
 }
 bool DocumentBlockModel::undoAssociation(bool redo) {
     endTextSession();
@@ -193,7 +211,8 @@ QJsonObject DocumentBlockModel::serialize() const {
     QJsonArray array;
     for (const auto& b : blocks) array.append(QJsonObject{{"id", b.id}, {"type", b.type}, {"text", b.text}, {"uri", b.uri}, {"asset", b.asset}, {"caption", b.caption},
         {"start", b.start}, {"end", b.end}, {"returnPosition", b.returnPosition}, {"returnAnchor", b.returnAnchor}, {"order", b.order},
-        {"width", b.width}, {"height", b.height}, {"missing", b.missing}, {"collapsed", b.collapsed}});
+        {"width", b.width}, {"height", b.height}, {"missing", b.missing}, {"collapsed", b.collapsed},
+        {"heightMode", b.autoHeight ? "Auto" : "Fixed"}, {"detached", b.detached}, {"appearance", QJsonObject::fromVariantMap(b.appearance)}});
     return {{"version", 1}, {"documentId", identity}, {"blocks", array}};
 }
 bool DocumentBlockModel::restore(const QJsonObject& value, QString* error) {
@@ -215,6 +234,17 @@ bool DocumentBlockModel::restore(const QJsonObject& value, QString* error) {
         if (b.start < 0 || b.end < b.start) return fail("Invalid block anchor.");
         b.returnPosition = o.value("returnPosition").toInt(b.start); b.returnAnchor = o.value("returnAnchor").toInt(b.start);
         b.order = o.value("order").toInt(); b.width = qBound(120, o.value("width").toInt(480), 1600); b.height = qBound(60, o.value("height").toInt(160), 600);
+        if (o.contains("heightMode") && o.value("heightMode") != "Auto" && o.value("heightMode") != "Fixed") return fail("Invalid block height mode.");
+        if (o.contains("detached") && !o.value("detached").isBool()) return fail("Invalid detached block state.");
+        if (o.contains("appearance") && !o.value("appearance").isObject()) return fail("Invalid block appearance.");
+        b.autoHeight = o.value("heightMode") == "Auto";
+        b.detached = o.value("detached").toBool();
+        b.appearance = o.value("appearance").toObject().toVariantMap();
+        for (auto it = b.appearance.cbegin(); it != b.appearance.cend(); ++it) {
+            if (it.value().metaType().id() != QMetaType::QString) return fail("Invalid block appearance value.");
+            if (it.key() == "style") { if (!QStringList{"Plain", "Outlined", "Soft"}.contains(it.value().toString())) return fail("Invalid block style."); }
+            else if (!QStringList{"background", "textColor", "borderColor"}.contains(it.key()) || !QColor(it.value().toString()).isValid()) return fail("Invalid block color.");
+        }
         b.missing = o.value("missing").toBool() || b.end >= document->characterCount(); b.collapsed = o.value("collapsed").toBool(); next.append(b);
     }
     const bool wasDirty = dirty(); blocks = next; identity = value.value("documentId").toString(); stamp = ++nextStamp;

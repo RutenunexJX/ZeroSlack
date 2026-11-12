@@ -6,13 +6,15 @@
 
 class MyCodeEditor;
 class QFrame;
-class QPlainTextEdit;
+class QTextEdit;
 class QLabel;
 class QPushButton;
+class QToolButton;
 class QKeyEvent;
 class PinloomHostClient;
 class PinloomPreviewImageLabel;
 class EditorBlockPreview;
+class EditorBlockContent;
 
 // Native children of the editor viewport. The projection alone owns their
 // display coordinates; offscreen controls are released, the model is retained.
@@ -22,6 +24,7 @@ public:
     ~EditorBlockHost() override;
     void rebind();
     void updateVisible();
+    void schedule();
     void insert(const QVariantMap& preset, const QTextCursor& cursor);
     bool navigateFromCode(QKeyEvent* event);
     void finishEditing();
@@ -34,13 +37,13 @@ protected:
 private:
     struct View {
         QFrame* frame = nullptr;
-        QLabel *title = nullptr, *preview = nullptr;
-        QPlainTextEdit* text = nullptr;
-        QPushButton* collapse = nullptr;
-        PinloomPreviewImageLabel* image = nullptr;
-        EditorBlockPreview* resource = nullptr;
-        QString resourceKey;
+        EditorBlockContent* content = nullptr;
+        QLabel* title = nullptr;
+        QTextEdit* text = nullptr;
+        QToolButton* collapse = nullptr;
+        QWidget* tools = nullptr;
         quint64 revision = 0;
+        quint64 styleRevision = 0;
     };
     MyCodeEditor* editor;
     QPointer<DocumentBlockModel> model;
@@ -49,7 +52,6 @@ private:
     QHash<QString,View> views;
     QString selectedId;
     bool scheduled = false, updating = false;
-    void schedule();
     View createView(const EditorAssociatedBlock& block);
     void returnToCode(const EditorAssociatedBlock& block);
     void leaveBlock(const QString& id, bool forward);

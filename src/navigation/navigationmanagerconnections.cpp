@@ -129,7 +129,8 @@ void NavigationManager::connectToWorkspaceManager(WorkspaceManager* workspaceMan
         connect(connectedWorkspaceManager, &WorkspaceManager::filesScanned,
                 this, [this](const QStringList&) {
                     caches.clearFileList();
-                    invalidateCurrentDesignHierarchyCache();
+                    // Design validates its published semantic revision and source
+                    // scope. View-state files only change the file browser input.
                     if (currentView == FileHierarchyView)
                         refreshFileHierarchy();
                     else if (currentView == DesignHierarchyView)
@@ -145,7 +146,6 @@ void NavigationManager::connectToWorkspaceManager(WorkspaceManager* workspaceMan
         connect(connectedWorkspaceManager, &WorkspaceManager::fileChanged,
                 this, [this](const QString&) {
                     if (currentView == DesignHierarchyView) {
-                        invalidateCurrentDesignHierarchyCache();
                         refreshDesignHierarchy();
                     }
                 });
@@ -363,7 +363,6 @@ void NavigationManager::onDesignNodeContextMenuRequested(
     auto* refresh = menu.addAction(RoundedIcons::icon(RoundedIcons::Refresh), tr("Refresh"));
     refresh->setObjectName(QStringLiteral("refreshDesignAction"));
     refresh->setEnabled(navigationService && !getSystemVerilogFiles().isEmpty());
-    auto* add = menu.addAction(tr("Add design project…"));
     auto* simulation = menu.addAction(RoundedIcons::icon(RoundedIcons::Simulation),tr("Set as simulation top"));
     simulation->setObjectName(QStringLiteral("setSimulationTop"));
     simulation->setCheckable(true);
@@ -371,27 +370,19 @@ void NavigationManager::onDesignNodeContextMenuRequested(
     simulation->setChecked(target.second==node.moduleType && EditorFileIdentity::same(target.first,node.definitionFile));
     simulation->setEnabled(bool(selectSimulationTop) && !node.unresolved
         && !node.definitionFile.isEmpty() && !node.moduleType.isEmpty());
-    QAction *activate = nullptr, *remove = nullptr;
-    if (node.isTop && !node.projectId.isEmpty()) {
-        activate = menu.addAction(tr("Activate project"));
-        activate->setEnabled(!node.unresolved && !node.inSelectedTop);
-        remove = menu.addAction(tr("Remove from Design (keep project files)"));
-    }
+
+
     QAction* selected = menu.exec(globalPos);
     if (!selected)
         return;
     if (selected == refresh) { refreshDesignHierarchy(true); return; }
-    if (selected == add) { chooseDesignProject(); return; }
     if (selected == simulation) {
         const auto issue=selectSimulationTop(node.definitionFile,node.moduleType);
         if (!issue.isEmpty()) UiDialogs::warning(navigationWidget,tr("Simulation top"),issue);
         return;
     }
-    if (designProjects && (selected == activate || selected == remove)) {
-        const auto issue = selected == activate ? designProjects->activateProject(node.projectId) : designProjects->removeDesignRoot(node.projectId);
-        if (!issue.isEmpty()) QMessageBox::warning(navigationWidget, tr("Design project"), issue);
-        return;
-    }
+
+
     const QString actionId =
         selected->property("actionId").toString();
     if (!actionId.isEmpty())
@@ -412,51 +403,46 @@ void NavigationManager::onDesignNodeDoubleClicked(const DesignHierarchyNode& nod
                                  node);
 }
 
-void NavigationManager::navigateToDesignNodeFile(
-    const QString& filePath,
-    int lineNumber,
-    const DesignHierarchyNode& node)
+void NavigationManager::navigateToDesignNodeFile(const QString& filePath, int lineNumber, const DesignHierarchyNode& input)
 {
-    if (filePath.isEmpty())
-        return;
-
-    if (designProjects && node.projectId != designProjects->activeProjectId()) {
-        emit navigationRequested(filePath, lineNumber);
-        return;
+    if (filePath.isEmpty() || !navigationService) return;
+    if (!input.id.isEmpty() && (!caches.designHierarchyValid
+        || caches.designSnapshotGeneration != navigationService->semanticSnapshotRevision())) {
+        pendingNavigationNode = input.id;
+        pendingNavigationInstantiation = filePath == input.instanceFile && lineNumber == input.instanceLine;
+        refreshDesignHierarchy(); return;
     }
-
+    auto node = input;
+    const bool instantiation = filePath == input.instanceFile && lineNumber == input.instanceLine;
+    if (!node.id.isEmpty()) {
+        const int position = caches.designHierarchy.nodeById.value(node.id, -1);
+        if (position < 0) return;
+        node = caches.designHierarchy.nodes[position];
+    }
+    if (connectedWorkspaceManager && !node.rootId.isEmpty()) {
+        const int root = caches.designHierarchy.nodeById.value(node.rootId, -1);
+        const auto file = root < 0 ? node.definitionFile : caches.designHierarchy.nodes[root].definitionFile;
+        caches.activeProjectId = node.rootId;
+        connectedWorkspaceManager->getProjectModel()->setActiveDesignProject(node.rootId, node.rootModule, file);
+    }
     HierarchyInstanceContext instanceContext;
     instanceContext.workspacePath = context.currentWorkspacePath;
-    instanceContext.activeTopModule = node.rootModule;
-    instanceContext.instancePath = node.instancePath;
-    emit instanceNavigationRequested(filePath,
-                                     lineNumber,
-                                     instanceContext);
+    instanceContext.activeTopModule = node.rootModule; instanceContext.instancePath = node.instancePath;
+    instanceContext.rootIdentity = node.rootId; instanceContext.definitionIdentity = node.definitionId;
+    instanceContext.configurationIdentity = node.configurationId;
+    emit instanceNavigationRequested(node.id.isEmpty() ? filePath : instantiation ? node.instanceFile : node.definitionFile,
+        node.id.isEmpty() ? lineNumber : instantiation ? node.instanceLine : node.definitionLine, instanceContext);
 }
 
 void NavigationManager::setupConnections()
 {
     if (!navigationWidget) return;
 
-    connect(navigationWidget, &NavigationWidget::addDesignProjectRequested, this, &NavigationManager::chooseDesignProject);
-    connect(navigationWidget, &NavigationWidget::designModuleChosen, this,
-            [this](const QString& file, const QString& module) {
-        const auto issue = setDesignTop(module, file);
-        if (!issue.isEmpty()) navigationWidget->finishDesignProjectSelection(issue, file, module);
-    });
-    connect(navigationWidget, &NavigationWidget::designExpansionChanged, this, [this](const QString& id, bool expanded) {
-        if (designProjects) designProjects->setDesignExpanded(id, expanded);
-        for (auto& root : caches.designRoots) if (root.projectId == id) root.expanded = expanded;
-        for (auto& node : caches.designHierarchy.nodes) if (node.isTop && node.projectId == id) node.expanded = expanded;
-    });
-    connect(navigationWidget, &NavigationWidget::designProjectActivated, this, [this](const QString& id) {
-        if (!designProjects) return;
-        for (const auto& node : caches.designHierarchy.nodes) if (node.isTop && node.projectId == id && node.unresolved) {
-            QMessageBox::information(navigationWidget, tr("Design project"), node.unresolvedReason); return;
-        }
-        const auto issue = designProjects->activateProject(id);
-        if (!issue.isEmpty()) QMessageBox::warning(navigationWidget, tr("Design project"), issue);
-    });
+    connect(navigationWidget, &NavigationWidget::designViewStateChanged, this,
+        [this](const QString& workspace, const QJsonObject& state) {
+            if (designProjects) designProjects->saveViewState(workspace, state);
+        });
+
     // Wire NavigationWidget signals.
     connect(navigationWidget, SIGNAL(fileDoubleClicked(QString)),
             this, SLOT(onFileTreeDoubleClicked(QString)));

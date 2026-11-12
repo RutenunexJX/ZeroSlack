@@ -19,6 +19,7 @@ using UiMessageDialogBase = QDialog;
 
 class QLabel;
 class QPlainTextEdit;
+class QVBoxLayout;
 
 class ZEROSLACK_API UiDialog : public UiDialogBase {
     Q_OBJECT
@@ -33,6 +34,7 @@ public:
     void setText(const QString& text);
     QString text() const;
     void setDetailedText(const QString& text);
+    void setContentWidget(QWidget* widget);
     void setIcon(QMessageBox::Icon icon);
     QPushButton* addButton(const QString& text, QMessageBox::ButtonRole role);
     QList<QAbstractButton*> buttons() const;
@@ -53,6 +55,8 @@ private:
     QPlainTextEdit* details;
     QPushButton* detailsToggle;
     QDialogButtonBox* actions;
+    QVBoxLayout* bodyLayout;
+    QPointer<QWidget> contentWidget;
     QPointer<QPushButton> defaultAction;
     QPointer<QPushButton> escapeAction;
     QPointer<QAbstractButton> chosen;

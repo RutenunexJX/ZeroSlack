@@ -35,9 +35,10 @@ protected:
     void paintEvent(QPaintEvent*) override {
         QPainter painter(this);
         const bool dark=isDarkTheme(ApplicationThemeManager::instance().mode());
-        painter.setPen(QPen(dark ? QColor(112,118,130) : QColor(137,143,154),1));
+        const qreal width=parentWidget()->property("settingsWindowChrome").toBool() ? 2 : 1;
+        painter.setPen(QPen(dark ? QColor(112,118,130) : QColor(137,143,154),width));
         painter.setBrush(Qt::NoBrush);
-        painter.drawRect(QRectF(rect()).adjusted(.5,.5,-.5,-.5));
+        painter.drawRect(QRectF(rect()).adjusted(width/2,width/2,-width/2,-width/2));
     }
 private:
     void refresh() {
@@ -174,7 +175,7 @@ UiWindowTitleBar UiWindowChrome::createTitleBar(QMainWindow* host, QWidget* work
     }
     result.sidebar->setObjectName(QStringLiteral("expandProjectSidebarButton"));
     result.sidebar->setIcon(RoundedIcons::icon(RoundedIcons::Sidebar));
-    result.sidebar->setIconSize(QSize(20, 20));
+    result.sidebar->setIconSize(QSize(RoundedIcons::SidebarSize, RoundedIcons::SidebarSize));
     result.sidebar->setToolTip(QObject::tr("Expand sidebar (Ctrl+1)"));
     result.sidebar->setAccessibleName(QObject::tr("Expand sidebar"));
     minimize->setObjectName(QStringLiteral("windowMinimizeButton"));

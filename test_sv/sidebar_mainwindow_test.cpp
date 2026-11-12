@@ -1,10 +1,10 @@
 #include "../src/simulation/simdock/core/simulationbuildplanner.h"
 #include "mainwindow.h"
 #include "applicationthememanager.h"
-#include "welcomecard.h"
 #include "navigationmanager.h"
 #include "navigationwidget.h"
 #include "navigationrowstyle.h"
+#include "designhierarchymodel.h"
 #include "navigationpanecoordinator.h"
 #include "workspacemanager.h"
 #include "workspacesessioncoordinator.h"
@@ -36,6 +36,7 @@
 #include <QJsonArray>
 #include <QPlainTextEdit>
 #include <QClipboard>
+#include <QCursor>
 #include <QMimeData>
 #include <QToolButton>
 #include <QElapsedTimer>
@@ -62,14 +63,21 @@ void hoverTab(QTabBar* bar, int index) {
         }
     } counter;
     bar->installEventFilter(&counter);
-    QPoint position = bar->tabRect(index).center();
+    const auto visibleTab = [&] { return bar->tabRect(index).intersected(bar->rect()); };
+    QVERIFY(!visibleTab().isEmpty());
+    QPoint position = visibleTab().center();
+    // The presentation reads QCursor::pos(), not only the event's local position.
+    QCursor::setPos(bar->mapToGlobal(position));
     QTest::mouseMove(bar,position);
     QApplication::processEvents();
-    if (position != bar->tabRect(index).center()) {
-        position = bar->tabRect(index).center();
+    if (position != visibleTab().center()) {
+        QVERIFY(!visibleTab().isEmpty());
+        position = visibleTab().center();
+        QCursor::setPos(bar->mapToGlobal(position));
         QTest::mouseMove(bar,position);
         QApplication::processEvents();
     }
+    QTRY_COMPARE(bar->mapFromGlobal(QCursor::pos()),position);
     qInfo() << "LEFT_TAB_MOUSE_MOVE" << bar->tabText(index) << "nativeMoveEvents" << counter.count
             << "rect" << bar->tabRect(index) << "pointer" << bar->mapFromGlobal(QCursor::pos());
     if (!counter.count) {
@@ -233,6 +241,8 @@ private slots:
         QVERIFY(tabs->openFileInRegion(pdfPath, "left"));
         auto* pdf = tabs->currentPdfDocument();
         QVERIFY(pdf); QTRY_VERIFY(pdf->ready());
+        h.window->raise(); h.window->activateWindow();
+        QVERIFY(QTest::qWaitForWindowActive(h.window.get()));
         const QList<QWidget*> pages{files, design, code, markdown, blocks, pdf};
         for (auto* page : pages) {
             QVERIFY(split->activatePage(page));
@@ -290,6 +300,20 @@ private slots:
         qInfo() << "LEFT_TAB_NARROW_CLOSE" << bar->size() << bar->tabRect(left->indexOf(code))
                 << (close?close->geometry():QRect()) << bar->mapFromGlobal(QCursor::pos())
                 << "selected" << bar->currentIndex() << "code" << left->indexOf(code);
+        bool coveredByScroll=false;
+        for(auto* button:bar->findChildren<QToolButton*>(QString(),Qt::FindDirectChildrenOnly)) {
+            qInfo()<<"LEFT_TAB_SCROLL_BUTTON"<<button->objectName()<<button->geometry()<<button->isVisible();
+            coveredByScroll |= close && button->isVisible() && button->geometry().intersects(close->geometry());
+        }
+        capture(h,"left-tabs-narrow-before-close");
+        QVERIFY(close);
+        auto* forward=bar->findChild<QToolButton*>("ScrollRightButton");
+        if(coveredByScroll) {
+            QVERIFY(!close->isVisible()); QVERIFY(forward && forward->isVisible() && forward->isEnabled());
+            QTest::mouseClick(forward,Qt::LeftButton);
+            hoverTab(bar,left->indexOf(code));
+            QCOMPARE(left->currentWidget(),code);
+        }
         QTRY_VERIFY(close && close->isVisible());
         QVERIFY(bar->rect().contains(close->geometry()));
         const int narrowCurrent = bar->tabRect(left->indexOf(code)).width();
@@ -328,78 +352,115 @@ private slots:
         WorkspaceConfigurationService service;
         auto config=service.defaultConfiguration(h.workspace); config.topModule=module;
         QVERIFY(service.save(config));
+        if(module=="gone_module")
+            put(h.workspace+"/rtl/design.sv","module sidebar_parent; sidebar_leaf u_leaf(); gone_module u_missing(); endmodule\nmodule sidebar_leaf; endmodule\n");
         h.navigation()->setActiveTab(NavigationWidget::DesignTab);
         QVERIFY(h.sessions()->openWorkspace(h.workspace));
-        QTRY_COMPARE_WITH_TIMEOUT(h.workbench()->designRoots().size(),1,15000);
-        const auto root=h.workbench()->designRoots().first();
-        QCOMPARE(root.module,module); QCOMPARE(h.workbench()->designService()->activeProjectId(),root.projectId);
-        QCOMPARE(root.file.isEmpty(),module=="gone_module");
-        auto* tree=h.window->findChild<QTreeWidget*>("navigationDesignTree");
-        QTRY_COMPARE_WITH_TIMEOUT(tree->topLevelItemCount(),1,15000);
-        QTRY_COMPARE_WITH_TIMEOUT(tree->topLevelItem(0)->data(0, NavigationRowStyle::UnresolvedRole).toBool(),
-                                  module=="gone_module",15000);
-        const auto* row = tree->topLevelItem(0);
-        QVERIFY(!row->text(0).contains("(unresolved)"));
-        QCOMPARE(row->toolTip(0).contains("Unresolved:", Qt::CaseInsensitive), module=="gone_module");
-        QCOMPARE(row->data(0, Qt::AccessibleDescriptionRole).toString().contains("Unresolved:", Qt::CaseInsensitive),
-                 module=="gone_module");
+        auto* tree=h.window->findChild<QTreeView*>("navigationDesignTree"); QVERIFY(tree);
+        auto* model=qobject_cast<DesignHierarchyModel*>(tree->model()); QVERIFY(model);
+        QTRY_COMPARE_WITH_TIMEOUT(model->rowCount(),2,15000);
+        QVERIFY(model->report()->rootModules.contains("sidebar_parent"));
+        QVERIFY(model->report()->rootModules.contains("uses_pkg"));
+        QVERIFY(!model->report()->rootModules.contains(module));
+        QVERIFY(h.workbench()->designRoots().isEmpty());
+        QVERIFY(h.workbench()->designService()->activeProjectId().isEmpty());
+        QCOMPARE(service.load(h.workspace).topModule,module);
+        const auto path=module=="gone_module" ? "sidebar_parent.u_missing" : "sidebar_parent.u_leaf";
+        QVERIFY(h.navigation()->selectDesignInstance(path,true));
+        const auto row=tree->currentIndex(); const auto node=model->node(row);
+        QCOMPARE(node.moduleType,module); QCOMPARE(node.definitionFile.isEmpty(),module=="gone_module");
+        QCOMPARE(row.data(NavigationRowStyle::UnresolvedRole).toBool(),module=="gone_module");
+        QVERIFY(!row.data().toString().contains("(unresolved)"));
+        if(module=="gone_module") {
+            QVERIFY(!node.unresolvedReason.isEmpty());
+            QVERIFY(row.data(Qt::ToolTipRole).toString().contains(node.unresolvedReason));
+            QVERIFY(row.data(Qt::AccessibleDescriptionRole).toString().contains(node.unresolvedReason));
+        }
         QVERIFY(h.sessions()->openWorkspace(h.other));
+        QTRY_COMPARE_WITH_TIMEOUT(model->rowCount(),0,15000);
         QVERIFY(h.sessions()->openWorkspace(h.workspace));
-        QCOMPARE(h.workbench()->designRoots().size(),1);
-        QCOMPARE(h.workbench()->designService()->activeProjectId(),root.projectId);
+        QTRY_COMPARE_WITH_TIMEOUT(model->rowCount(),2,15000);
+        QTRY_VERIFY_WITH_TIMEOUT(h.navigation()->selectDesignInstance(path,true),15000);
+        QCOMPARE(tree->currentIndex().data(Qt::UserRole).toString(),node.id);
+        QCOMPARE(tree->currentIndex().data(NavigationRowStyle::UnresolvedRole).toBool(),module=="gone_module");
+        QCOMPARE(service.load(h.workspace).topModule,module);
+        QVERIFY(h.workbench()->designRoots().isEmpty());
+        QVERIFY(h.workbench()->designService()->activeProjectId().isEmpty());
     }
     void welcomeAndProjectWorkflow() {
         Host h;
         auto* welcome=h.window->findChild<QScrollArea*>("welcomePage"); QVERIFY(welcome);
         QTRY_VERIFY(welcome->isVisible());
-        auto* rtl=dynamic_cast<WelcomeCard*>(h.window->findChild<QPushButton*>("welcomeCard0"));
-        auto* wave=dynamic_cast<WelcomeCard*>(h.window->findChild<QPushButton*>("welcomeCard1"));
-        auto* registers=dynamic_cast<WelcomeCard*>(h.window->findChild<QPushButton*>("welcomeCard2"));
-        QVERIFY(rtl && wave && registers); QVERIFY(rtl->isEnabled()); QVERIFY(!wave->isEnabled() && !registers->isEnabled());
-        QVERIFY(rtl->findChildren<QVariantAnimation*>().isEmpty()); capture(h,"welcome-light");
+        for(const auto* name:{"welcomeCard0","welcomeCard1","welcomeCard2","welcomeOpenProjectButton"})
+            QVERIFY(!welcome->findChild<QWidget*>(name));
+        auto* title=welcome->findChild<QLabel*>("welcomeRecentTitle"); QVERIFY(title && title->isVisible());
+        auto* empty=welcome->findChild<QLabel*>("welcomeRecentEmpty"); QVERIFY(empty && empty->isVisible());
+        QVERIFY(welcome->findChildren<QToolButton*>("welcomeRecentProject").isEmpty()); capture(h,"welcome-light");
         h.window->resize(700,900); QTest::qWait(100);
         QCOMPARE(welcome->horizontalScrollBar()->maximum(),0); capture(h,"welcome-narrow");
         ApplicationThemeManager::instance().setMode(ThemeMode::Dark);
         h.window->resize(1400,900); QTest::qWait(100); capture(h,"welcome-dark");
         ApplicationThemeManager::instance().setMode(ThemeMode::Light);
+        QAction* openWorkspace=nullptr;
+        for(auto* action:h.window->findChildren<QAction*>())
+            if(action->property("executionRoute").toString()=="ui.workspace.open") {openWorkspace=action;break;}
+        QVERIFY(openWorkspace);
         bool picker=false;
         QTimer::singleShot(100,[&]{ for(auto* widget:QApplication::topLevelWidgets())if(auto* dialog=qobject_cast<QFileDialog*>(widget)){picker=true; dialog->reject();}});
-        rtl->click(); QVERIFY(picker); QVERIFY(!h.window->workspaceManager->isWorkspaceOpen());
+        openWorkspace->trigger(); QVERIFY(picker); QVERIFY(!h.window->workspaceManager->isWorkspaceOpen());
         QVERIFY(h.sessions()->openWorkspace(h.workspace));
-        QTRY_VERIFY(!welcome->isVisible()); QVERIFY(rtl->findChildren<QVariantAnimation*>().isEmpty());
+        QTRY_VERIFY(!welcome->isVisible());
+        QVERIFY(h.sessions()->closeWorkspace(h.window->workspaceManager->activeWorkspaceIndex()));
+        QTRY_VERIFY(welcome->isVisible());
+        QVERIFY(!welcome->findChild<QLabel*>("welcomeRecentEmpty"));
+        const auto recent=welcome->findChildren<QToolButton*>("welcomeRecentProject"); QCOMPARE(recent.size(),1);
+        QCOMPARE(recent.first()->toolTip(),QDir::toNativeSeparators(h.workspace));
+        capture(h,"welcome-recent");
+        recent.first()->click();
+        QTRY_COMPARE(h.window->workspaceManager->getWorkspacePath(),h.workspace);
+        QTRY_VERIFY(!welcome->isVisible());
         auto* workbench=h.workbench(); QVERIFY(workbench);
         QTRY_VERIFY_WITH_TIMEOUT(workbench->workspace()==h.workspace,10000);
         QVERIFY(workbench->designService()->activeProjectId().isEmpty());
         QVERIFY(h.manager());
+        auto* tree=h.window->findChild<QTreeView*>("navigationDesignTree"); QVERIFY(tree);
+        auto* model=qobject_cast<DesignHierarchyModel*>(tree->model()); QVERIFY(model);
+        QTRY_COMPARE_WITH_TIMEOUT(model->rowCount(),2,15000);
+        QVERIFY(model->report()->rootModules.contains("sidebar_parent"));
+        QVERIFY(model->report()->rootModules.contains("uses_pkg"));
+        QVERIFY(!model->report()->rootModules.contains("sidebar_leaf"));
         QTRY_VERIFY_WITH_TIMEOUT(h.manager()->setDesignTop("sidebar_parent",h.workspace+"/rtl/design.sv").isEmpty(),15000);
-        const auto parent=workbench->designService()->activeProjectId();
+        QTRY_COMPARE(model->node(tree->currentIndex()).moduleType,QString("sidebar_parent"));
+        const auto parent=model->node(tree->currentIndex()).id;
         QVERIFY(h.manager()->setDesignTop("sidebar_leaf",h.workspace+"/rtl/design.sv").isEmpty());
-        const auto leaf=workbench->designService()->activeProjectId(); QVERIFY(parent!=leaf);
-        QCOMPARE(workbench->designRoots().size(),2);
-        auto* tree=h.window->findChild<QTreeWidget*>("navigationDesignTree"); QVERIFY(tree);
-        QTRY_COMPARE_WITH_TIMEOUT(tree->topLevelItemCount(),2,15000);
-        QCOMPARE(tree->columnCount(),1); QVERIFY(tree->isHeaderHidden());
-        QTRY_VERIFY_WITH_TIMEOUT(tree->topLevelItem(0)->childCount()==1,15000);
-        auto* parentRow=tree->topLevelItem(0); auto* leafRow=tree->topLevelItem(1);
-        QCOMPARE(parentRow->child(0)->text(0),QString("u_leaf [sidebar_leaf]"));
-        const auto parentRect=tree->visualItemRect(parentRow);
-        QTest::mouseClick(tree->viewport(),Qt::LeftButton,{},parentRect.center());
-        QVERIFY(!parentRow->isExpanded()); QCOMPARE(workbench->designService()->activeProjectId(),leaf);
-        QTest::mouseClick(tree->viewport(),Qt::LeftButton,{},QPoint(parentRect.right()-12,parentRect.center().y()));
-        QTRY_COMPARE(workbench->designService()->activeProjectId(),parent);
+        QTRY_COMPARE(model->node(tree->currentIndex()).moduleType,QString("sidebar_leaf"));
+        QCOMPARE(model->node(tree->currentIndex()).rootId,parent);
+        QCOMPARE(model->rowCount(),2); QVERIFY(workbench->designRoots().isEmpty());
+        QCOMPARE(model->columnCount(),1); QVERIFY(tree->isHeaderHidden());
+        const QPersistentModelIndex parentRow=model->indexForId(parent);
+        QTRY_COMPARE_WITH_TIMEOUT(model->rowCount(parentRow),1,15000);
+        QCOMPARE(model->index(0,0,parentRow).data().toString(),QString("u_leaf [sidebar_leaf]"));
+        QVERIFY(tree->isExpanded(parentRow));
+        const auto parentRect=tree->visualRect(parentRow);
+        QSignalSpy navigation(h.navigation(),&NavigationWidget::designNodeDoubleClicked);
+        QTest::mouseClick(tree->viewport(),Qt::LeftButton,{},QPoint(parentRect.left()+10,parentRect.center().y()));
+        QVERIFY(!tree->isExpanded(parentRow)); QCOMPARE(navigation.size(),0);
+        QTest::mouseClick(tree->viewport(),Qt::LeftButton,{},QPoint(parentRect.left()+65,parentRect.center().y()));
+        QTRY_COMPARE(navigation.size(),1);
+        QTRY_COMPARE(h.window->tabManager->getCurrentDocument().fileName,h.workspace+"/rtl/design.sv");
         QCOMPARE(h.window->workspaceManager->getProjectModel()->snapshot().activeDesignProjectId,parent);
-        QTRY_VERIFY(tree->topLevelItemCount()==2
-                    && tree->topLevelItem(0)->data(0, NavigationRowStyle::ActiveRole).toBool());
-        QVERIFY(tree->topLevelItem(0)->toolTip(0).contains("Active project"));
-        QVERIFY(tree->topLevelItem(0)->data(0, Qt::AccessibleDescriptionRole).toString().contains("Active project"));
-        QVERIFY(!tree->topLevelItem(0)->isExpanded()); capture(h,"design-projects");
+        QCOMPARE(tree->currentIndex().data(Qt::UserRole).toString(),parent);
+        QVERIFY(parentRow.data(Qt::ToolTipRole).toString().contains("sidebar_parent"));
+        QVERIFY(parentRow.data(Qt::AccessibleDescriptionRole).toString().contains("sidebar_parent"));
+        QVERIFY(workbench->designService()->activeProjectId().isEmpty());
+        QVERIFY(!tree->isExpanded(parentRow)); capture(h,"design-projects");
         h.navigation()->setActiveTab(NavigationWidget::FileTab);
         auto* files=h.window->findChild<QTreeWidget*>("navigationFileTree"); QVERIFY(files);
         QTRY_VERIFY(files->topLevelItemCount()>0);
         for(QTreeWidgetItemIterator it(files);*it;++it) { QVERIFY(!(*it)->text(0).contains("[TOP]")); QVERIFY(!(*it)->font(0).bold()); }
         capture(h,"files-tree");
         QVERIFY(workbench->selectTarget(h.workspace+"/a_use.sv").isEmpty());
-        QCOMPARE(workbench->designService()->activeProjectId(),parent);
+        QCOMPARE(h.window->workspaceManager->getProjectModel()->snapshot().activeDesignProjectId,parent);
         const auto plan=[&] {
             QString error;auto request=simdock::SimulationBuildPlanner::workspaceRequest(h.workspace,workbench->controller()->target(),&error);
             return simdock::SimulationBuildPlanner::plan(request);
@@ -411,17 +472,18 @@ private slots:
         put(h.workspace+"/z_pkg.sv","package changed_pkg; endpackage\n");
         QVERIFY(plan()->error().contains("build_pkg"));
         put(h.workspace+"/z_pkg.sv","package build_pkg; typedef logic [3:0] word_t; endpackage\n");
-        QVERIFY(plan()->valid());QCOMPARE(workbench->designService()->activeProjectId(),parent);
+        QVERIFY(plan()->valid());QCOMPARE(h.window->workspaceManager->getProjectModel()->snapshot().activeDesignProjectId,parent);
         capture(h,"compact-simulation");
         captureIconSurfaces(h);
         QVERIFY(!QTest::currentTestFailed());
         QVERIFY(h.sessions()->openWorkspace(h.other));
         QCOMPARE(workbench->designService()->activeProjectId(),QString());
-        QVERIFY(h.sessions()->openWorkspace(h.workspace)); QCOMPARE(workbench->designService()->activeProjectId(),parent);
+        QVERIFY(h.sessions()->openWorkspace(h.workspace)); QVERIFY(workbench->designService()->activeProjectId().isEmpty());
         h.navigation()->setActiveTab(NavigationWidget::DesignTab);
-        QTRY_COMPARE_WITH_TIMEOUT(tree->topLevelItemCount(),2,15000);
-        for(int i=0;i<tree->topLevelItemCount();++i)
-            if(tree->topLevelItem(i)->text(0).contains("sidebar_parent")) QVERIFY(!tree->topLevelItem(i)->isExpanded());
+        QTRY_COMPARE_WITH_TIMEOUT(model->rowCount(),2,15000);
+        QTRY_COMPARE(tree->currentIndex().data(Qt::UserRole).toString(),parent);
+        QVERIFY(!tree->isExpanded(model->indexForId(parent)));
+        QVERIFY(workbench->designRoots().isEmpty());
         QVERIFY(h.sessions()->saveSession(false));
     }
 };

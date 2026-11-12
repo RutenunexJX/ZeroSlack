@@ -54,7 +54,7 @@ public:
         auto* project = UiControls::railButton(header);
         project->setObjectName(QStringLiteral("projectRailButton"));
         project->setIcon(RoundedIcons::icon(RoundedIcons::Folder));
-        project->setIconSize(QSize(20, 20));
+        project->setIconSize(QSize(RoundedIcons::SidebarSize, RoundedIcons::SidebarSize));
         project->setToolButtonStyle(Qt::ToolButtonIconOnly);
         UiTypography::apply(project, UiTypography::Role::Body);
         project->setToolTip(tr("Project commands"));
@@ -69,7 +69,7 @@ public:
         settingsButton = setting;
         setting->setObjectName(QStringLiteral("settingsRailButton"));
         settingsButton->setIcon(RoundedIcons::icon(RoundedIcons::Settings));
-        setting->setIconSize(QSize(20, 20));
+        setting->setIconSize(QSize(RoundedIcons::SidebarSize, RoundedIcons::SidebarSize));
         setting->setToolTip(tr("Settings"));
         setting->setAccessibleName(tr("Settings"));
         connect(setting, &QToolButton::clicked, host, std::move(settings));
@@ -78,7 +78,7 @@ public:
         auto* collapse = UiControls::railButton(header);
         collapse->setObjectName(QStringLiteral("collapseProjectSidebarButton"));
         collapse->setIcon(RoundedIcons::icon(RoundedIcons::Sidebar));
-        collapse->setIconSize(QSize(20, 20));
+        collapse->setIconSize(QSize(RoundedIcons::SidebarSize, RoundedIcons::SidebarSize));
         collapse->setToolTip(tr("Collapse sidebar (Ctrl+1)"));
         collapse->setAccessibleName(tr("Collapse sidebar"));
         controls->addWidget(collapse);

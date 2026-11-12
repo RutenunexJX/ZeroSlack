@@ -14,10 +14,17 @@
 #include <QInputMethodEvent>
 #include <QScreen>
 #include <QTimer>
+#include <QSignalBlocker>
 #include <QVBoxLayout>
 
 EditorSlashController::EditorSlashController(MyCodeEditor* e, EditorModeController* m)
     : QObject(e), editor(e), modes(m) {
+    pendingRefresh = new QTimer(this); pendingRefresh->setInterval(80);
+    connect(pendingRefresh, &QTimer::timeout, this, [this] {
+        if (!searching) { pendingRefresh->stop(); return; }
+        if (!current() || UserTemplateService::getInstance()->catalogRevision() != catalogRevision) { cancel(true); return; }
+        filter();
+    });
     connect(editor, &MyCodeEditor::fileNameChanged, this, [this] { cancel(); });
     connect(editor, &MyCodeEditor::documentChangeApplied, this, [this] { cancel(); });
     connect(editor, &QPlainTextEdit::cursorPositionChanged, this, [this] { if (searching && !current()) cancel(); });
@@ -43,6 +50,8 @@ void EditorSlashController::ensurePopup() {
     feedback->setWordWrap(true);
     layout->addWidget(query); layout->addWidget(list); layout->addWidget(feedback);
     connect(query, &QLineEdit::textChanged, this, [this] { if (searching) filter(); });
+    connect(list, &QListWidget::currentRowChanged, this, [this] { if (searching) showEligibility(); });
+    connect(list, &QListWidget::itemActivated, this, [this] { confirm(); });
 }
 
 EditorSlashController::~EditorSlashController() { qApp->removeEventFilter(this); delete popup; }
@@ -83,6 +92,7 @@ bool EditorSlashController::trigger(QKeyEvent* event) {
 void EditorSlashController::cancel(bool restoreFocus) {
     if (!searching) return;
     searching = false;
+    pendingRefresh->stop();
     popup->hide(); modes->exit(EditorModeId::SlashSearch, EditorModeExitReason::Canceled);
     source.clear(); snapshot.clear(); matches.clear();
     if (restoreFocus && editor->isVisible()) {
@@ -92,7 +102,10 @@ void EditorSlashController::cancel(bool restoreFocus) {
 }
 
 void EditorSlashController::filter() {
+    const int selected = list->currentRow() >= 0 && list->currentRow() < matches.size() ? matches[list->currentRow()] : -1;
+    const QSignalBlocker guard(list);
     list->clear(); matches.clear();
+    bool pending = false;
     const auto words = query->text().simplified().split(' ', Qt::SkipEmptyParts);
     for (int i = 0; i < snapshot.size(); ++i) {
         const auto& record = snapshot[i];
@@ -105,10 +118,45 @@ void EditorSlashController::filter() {
         auto* row = new QListWidgetItem(record.label, list);
         const bool block = record.command.value("kind").toString() == "block";
         row->setData(Qt::UserRole + 1, block ? "Block" : "Template");
-        row->setToolTip(record.description);
+        const auto result = eligibility(record);
+        pending |= result.state == Eligibility::Pending;
+        row->setData(Qt::UserRole + 20, result.state == Eligibility::Available ? "Available"
+            : result.state == Eligibility::Pending ? "Waiting" : "Unavailable");
+        row->setData(Qt::UserRole + 21, result.reason);
+        row->setToolTip(record.description + '\n' + result.reason);
     }
-    if (list->count()) list->setCurrentRow(0);
-    feedback->setText(matches.isEmpty() ? "No matching resource. Edit the search or press Esc." : "Enter inserts · Esc cancels");
+    if (list->count()) list->setCurrentRow(qMax(0, matches.indexOf(selected)));
+    showEligibility();
+    if (pending) pendingRefresh->start(); else pendingRefresh->stop();
+}
+
+EditorSlashController::Eligibility EditorSlashController::eligibility(const UserTemplateRecord& record) const {
+    if (!current()) return {Eligibility::Unavailable, "The document or insertion position changed."};
+    if (editor->documentReadOnly()) return {Eligibility::Unavailable, "This document is read-only."};
+    if (record.command.value("kind").toString() == "block")
+        return {Eligibility::Available, "Enter to choose or insert the block · Esc cancels"};
+    const auto location = record.command.value("context", "any").toString();
+    if (location != "any") {
+        const auto* syntax = editor->syntaxDocument(); const int position = original.selectionStart();
+        if (!syntax) return {Eligibility::Unavailable, "No HDL syntax context is available."};
+        if (syntax->hasPendingEdits()) return {Eligibility::Pending, "Waiting for syntax analysis. This list updates automatically."};
+        if (syntax->isCommentAt(position) || syntax->isStringAt(position))
+            return {Eligibility::Unavailable, "Requires code outside comments and strings."};
+        if (location == "codeLine" || location == "module") {
+            QTextCursor cursor(original); cursor.setPosition(position);
+            if (original.hasSelection() || !cursor.block().text().trimmed().isEmpty())
+                return {Eligibility::Unavailable, "Requires an empty code line. Search is available at any position."};
+        }
+        if (location == "module" && (!syntax->moduleScopeTarget(position).ok() || syntax->alwaysScopeTarget(position).ok()))
+            return {Eligibility::Unavailable, "Requires a known module body outside a procedural block."};
+    }
+    const auto plan = OrdinaryTemplatePlanner::prepare(record, snapshot, original.selectedText().replace(QChar::ParagraphSeparator, '\n'));
+    if (!plan.error.isEmpty()) return {Eligibility::Unavailable, plan.error};
+    return {Eligibility::Available, "Enter inserts · Esc cancels"};
+}
+void EditorSlashController::showEligibility() {
+    const auto* row = list->currentItem();
+    feedback->setText(row ? row->data(Qt::UserRole + 21).toString() : "No matching resource. Edit the search or press Esc.");
 }
 
 void EditorSlashController::confirm() {
@@ -119,23 +167,12 @@ void EditorSlashController::confirm() {
     const int row = list->currentRow();
     if (row < 0 || row >= matches.size()) { feedback->setText("No matching resource. Nothing was inserted."); return; }
     const auto record = snapshot[matches[row]];
+    const auto allowed = eligibility(record);
+    if (allowed.state != Eligibility::Available) { filter(); feedback->setText(allowed.reason); return; }
     if (record.command.value("kind").toString() == "block") {
         const auto cursor = original; cancel(true);
         emit editor->editorBlockInsertRequested(record.command, cursor);
         return;
-    }
-    const auto location = record.command.value("context", "any").toString();
-    if (location != "any") {
-        const auto* syntax = editor->syntaxDocument(); const int position = original.selectionStart();
-        if (!syntax || syntax->hasPendingEdits()) { feedback->setText("Syntax analysis is still running. Retry Enter when it finishes."); return; }
-        if (syntax->isCommentAt(position) || syntax->isStringAt(position)) { feedback->setText("This template applies to code, outside comments and strings."); return; }
-        if (location == "codeLine" || location == "module") {
-            QTextCursor cursor(original); cursor.setPosition(position);
-            if (original.hasSelection() || !cursor.block().text().trimmed().isEmpty()) { feedback->setText("This template requires an empty code line. Search is available at any position."); return; }
-        }
-        if (location == "module" && (!syntax->moduleScopeTarget(position).ok() || syntax->alwaysScopeTarget(position).ok())) {
-            feedback->setText("This template requires a known module body, outside a procedural block."); return;
-        }
     }
     auto plan = OrdinaryTemplatePlanner::prepare(record, snapshot, original.selectedText().replace(QChar::ParagraphSeparator, '\n'));
     if (!plan.error.isEmpty()) { feedback->setText(plan.error); return; }

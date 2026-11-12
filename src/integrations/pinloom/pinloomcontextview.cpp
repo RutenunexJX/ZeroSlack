@@ -271,7 +271,7 @@ void PinloomContextView::restoreState(const QVariantMap& state)
         selectEntry(cached, false);
     else if (identity.isValid())
         resolveEntry(identity, false);
-    startSearch();
+    startSearch(identity.isValid() || cached.isValid());
 }
 
 PinloomHostEntry PinloomContextView::currentEntry() const
@@ -555,7 +555,7 @@ void PinloomContextView::buildUi()
             this, &PinloomContextView::createSourceAnchor);
 }
 
-void PinloomContextView::startSearch()
+void PinloomContextView::startSearch(bool preserveSelection)
 {
     if (boundMode)
         return;
@@ -570,6 +570,11 @@ void PinloomContextView::startSearch()
         preferredIdentity.isValid()
         ? preferredIdentity
         : selectedEntry.identity;
+    if (!preserveSelection) {
+        ++resolveGeneration; imageLoader->cancel(); selectedEntry = {};
+        openTargetButton->setEnabled(false); copyUriButton->setEnabled(false);
+        setPreviewState(QStringLiteral("pending"), QStringLiteral("Searching Pinloom…"));
+    }
     const QPointer<PinloomContextView> self(this);
     clientValue->search(
         searchEdit->text(),
@@ -655,6 +660,7 @@ void PinloomContextView::applySearchResults(
     }
     if (!error.isEmpty()) {
         setStatus(error);
+        setPreviewState(QStringLiteral("unavailable"), error);
         return;
     }
     setStatus(entries.isEmpty()
@@ -664,6 +670,8 @@ void PinloomContextView::applySearchResults(
         results->setCurrentRow(preferredRow);
     else if (!preferred.isValid() && !entries.isEmpty())
         results->setCurrentRow(0);
+    else if (preferredRow < 0 && !selectedEntry.isValid())
+        setPreviewState(QStringLiteral("unavailable"), QStringLiteral("Choose a result."));
 }
 
 void PinloomContextView::selectEntry(const PinloomHostEntry& entry,
@@ -672,6 +680,7 @@ void PinloomContextView::selectEntry(const PinloomHostEntry& entry,
     if (!entry.isValid())
         return;
     selectedEntry = entry;
+    setPreviewState(QStringLiteral("pending"), QStringLiteral("Checking preview…"));
     if (attachEntryButton)
         attachEntryButton->setEnabled(
             linkModeActive() && selectedEntry.isValid());
@@ -703,6 +712,7 @@ void PinloomContextView::resolveEntry(
 {
     imageLoader->cancel();
     const quint64 generation = ++resolveGeneration;
+    setPreviewState(QStringLiteral("pending"), QStringLiteral("Checking preview…"));
     if (!clientValue) {
         showDocument({}, QStringLiteral("Pinloom client is unavailable."),
                      generation, announceChange);
@@ -729,6 +739,7 @@ void PinloomContextView::showDocument(
     if (generation != resolveGeneration)
         return;
     if (!error.isEmpty() || !document.isValid()) {
+        setPreviewState(QStringLiteral("unavailable"), error.isEmpty() ? QStringLiteral("The referenced object is missing.") : error);
         showTextPreview(error.isEmpty()
             ? QStringLiteral("Pinloom entry is unavailable.")
             : error);
@@ -738,6 +749,10 @@ void PinloomContextView::showDocument(
         return;
     }
     selectedEntry = document.entry;
+    if (selectedEntry.deleted) {
+        setPreviewState(QStringLiteral("missing"), QStringLiteral("The referenced object was deleted."));
+        showTextPreview(selectedPreviewReason); return;
+    }
     preferredIdentity = document.entry.identity;
     titleLabel->setText(document.entry.title);
     detailsLabel->setText(summaryDetailsText(document));
@@ -759,6 +774,7 @@ void PinloomContextView::showDocument(
                 self->imagePreview->setSourcePixmap(QPixmap::fromImage(loaded.image), altText);
                 self->previewStack->setCurrentWidget(self->imagePreview);
                 self->setStatus({});
+                self->setPreviewState(QStringLiteral("preview"), QStringLiteral("Image preview available"));
             }
         });
     } else {
@@ -773,6 +789,8 @@ void PinloomContextView::showDocument(
                     "This Pinloom entry has no embedded text content. "
                     "Use Open to jump to its authoritative target.")
                 : document.content);
+        setPreviewState(document.content.trimmed().isEmpty() ? QStringLiteral("link-only") : QStringLiteral("preview"),
+            document.content.trimmed().isEmpty() ? QStringLiteral("Link only · Open the original in Pinloom") : QStringLiteral("Text preview available"));
     }
     openTargetButton->setEnabled(true);
     copyUriButton->setEnabled(document.entry.uri.isValid());
@@ -799,6 +817,12 @@ void PinloomContextView::showImageFailure(const QString& reason)
     openTargetButton->setToolTip(
         QStringLiteral("Open the original location through Pinloom"));
     setStatus(failure);
+    setPreviewState(QStringLiteral("link-only"), QStringLiteral("Link only · %1").arg(failure));
+}
+
+void PinloomContextView::setPreviewState(const QString& state, const QString& reason)
+{
+    selectedPreviewState = state; selectedPreviewReason = reason; emit previewStateChanged();
 }
 
 void PinloomContextView::openImagePreview()

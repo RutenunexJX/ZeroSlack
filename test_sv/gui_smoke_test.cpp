@@ -153,6 +153,8 @@
 #include "workspaceanalysisrequestqueue.h"
 #include "workspacemanager.h"
 #undef private
+#include "designhierarchymodel.h"
+#include "panel_tab_test_utils.h"
 #include "signal_trace_test_fixture.h"
 #include "applicationthememanager.h"
 #include "contextdockhost.h"
@@ -5947,8 +5949,9 @@ static void runActivityInboxRegression()
     controller->setBottomCollapsed(true);
     QCoreApplication::processEvents();
     service->clear();
-    auto* button = controller->buttonForPanel(QStringLiteral("activity"));
-    expectBool("Activity inbox button exists", button != nullptr, true);
+    expectBool("Activity inbox is registered and initially parked",
+        PanelTabTest::page(controller, QStringLiteral("activity"))
+            && !PanelTabTest::group(controller, QStringLiteral("activity")), true);
     const QString active = controller->activeBottomPanelId();
     service->append(QStringLiteral("Test"), ActivityLogLevel::Warning, QStringLiteral("first important result"));
     service->append(QStringLiteral("Test"), ActivityLogLevel::Error, QStringLiteral("second important result"));
@@ -5956,8 +5959,8 @@ static void runActivityInboxRegression()
     expectBool("Activity displays unread number without opening or switching",
         controller->panelBadgeText(QStringLiteral("activity")) == QStringLiteral("2")
         && controller->isBottomCollapsed() && controller->activeBottomPanelId() == active, true);
-    if (button)
-        button->click();
+    expectBool("Open panels action restores the Activity tab",
+        PanelTabTest::reopen(controller, QStringLiteral("activity")), true);
     for (int i = 0; i < 4; ++i)
         QCoreApplication::processEvents();
     auto* output = window.findChild<QPlainTextEdit*>(QStringLiteral("activityOutputText"));
@@ -7918,50 +7921,39 @@ static void runNavigationHierarchyModelRegression(bool tabsOnly = false)
     expectBool("navigation only exposes files and design tabs",
                widget.tabWidget && widget.tabWidget->count() == 2
                    && widget.tabWidget->tabText(0) == QStringLiteral("Files")
-                   && widget.tabWidget->tabText(1).isEmpty()
+                    && widget.tabWidget->tabText(1) == QStringLiteral("Design")
                    && widget.tabWidget->tabToolTip(1) == QStringLiteral("Design"),
                true);
-    widget.setSearchFilter(NavigationWidget::FileTab,
-                           QStringLiteral("rtl/top"));
-    widget.setSearchFilter(NavigationWidget::DesignTab,
-                           QStringLiteral("u_stage"));
     QTemporaryDir firstWorkspace;
     QTemporaryDir secondWorkspace;
     expectBool("navigation query fixtures are isolated",
                firstWorkspace.isValid() && secondWorkspace.isValid(), true);
     widget.setWorkspaceRoot(firstWorkspace.path());
-    const QString candidateFile = firstWorkspace.filePath(QStringLiteral("alu.sv"));
-    widget.setDesignCandidateContext({candidateFile}, false, false);
-    widget.updateDesignCandidates(firstWorkspace.path(),
-                                  {{candidateFile, {{"alu", false, false}}, true, false}}, {});
+    widget.setSearchFilter(NavigationWidget::FileTab, QStringLiteral("rtl/top"));
+    widget.setSearchFilter(NavigationWidget::DesignTab, QStringLiteral("u_stage"));
     widget.setActiveTab(NavigationWidget::FileTab);
     expectBool("Files search keeps its independent query",
-               widget.searchLineEdit
-                   && widget.searchLineEdit->text()
-                          == QStringLiteral("rtl/top"),
-               true);
-    widget.setActiveTab(NavigationWidget::DesignTab);
-    expectBool("empty Design opens candidate search without consuming hierarchy query",
-               widget.searchLineEdit
-                   && widget.searchLineEdit->text().isEmpty()
-                   && widget.searchLineEdit->placeholderText().contains(
-                          QStringLiteral("files"))
-                   && widget.searchFilter(NavigationWidget::DesignTab)
-                          == QStringLiteral("u_stage"),
-               true);
-    QSignalSpy queryChanges(&widget, &NavigationWidget::searchFilterChanged);
-    widget.searchLineEdit->setText(QStringLiteral("alu"));
-    expectBool("candidate query does not overwrite Files or hierarchy filters",
-               queryChanges.isEmpty()
-                   && widget.searchFilter(NavigationWidget::FileTab) == QStringLiteral("rtl/top")
-                   && widget.searchFilter(NavigationWidget::DesignTab) == QStringLiteral("u_stage"),
-               true);
-    widget.setActiveTab(NavigationWidget::FileTab);
-    expectBool("Files query survives candidate search",
                widget.searchLineEdit->text() == QStringLiteral("rtl/top"), true);
     widget.setActiveTab(NavigationWidget::DesignTab);
-    expectBool("candidate query survives tab round trip",
-               widget.searchLineEdit->text() == QStringLiteral("alu"), true);
+    auto* designSearch=widget.findChild<QLineEdit*>(QStringLiteral("navigationDesignSearchLineEdit"));
+    expectBool("automatic Design has its own hierarchy search",
+               designSearch && designSearch != widget.searchLineEdit
+                   && designSearch->text() == QStringLiteral("u_stage")
+                   && designSearch->placeholderText().contains(QStringLiteral("instances")), true);
+    if (!designSearch) return;
+    QSignalSpy queryChanges(&widget, &NavigationWidget::searchFilterChanged);
+    designSearch->setText(QStringLiteral("alu"));
+    expectBool("Design query updates only its own filter",
+               queryChanges.size() == 1
+                   && queryChanges.first().at(0).toInt() == NavigationWidget::DesignTab
+                   && widget.searchFilter(NavigationWidget::FileTab) == QStringLiteral("rtl/top")
+                   && widget.searchFilter(NavigationWidget::DesignTab) == QStringLiteral("alu"), true);
+    widget.setActiveTab(NavigationWidget::FileTab);
+    expectBool("Files query survives Design search",
+               widget.searchLineEdit->text() == QStringLiteral("rtl/top"), true);
+    widget.setActiveTab(NavigationWidget::DesignTab);
+    expectBool("Design query survives tab round trip",
+               designSearch->text() == QStringLiteral("alu"), true);
 
     DesignHierarchyReport existingDesign;
     DesignHierarchyNode root;
@@ -7970,6 +7962,7 @@ static void runNavigationHierarchyModelRegression(bool tabsOnly = false)
     root.projectId = QStringLiteral("query-project");
     root.moduleType = QStringLiteral("top");
     root.instanceName = QStringLiteral("top");
+    root.instancePath = QStringLiteral("top");
     root.isTop = true;
     root.expanded = true;
     DesignHierarchyNode stage;
@@ -7978,53 +7971,53 @@ static void runNavigationHierarchyModelRegression(bool tabsOnly = false)
     stage.rootId = root.id;
     stage.moduleType = QStringLiteral("alu");
     stage.instanceName = QStringLiteral("u_stage");
+    stage.instancePath = QStringLiteral("top.u_stage");
     existingDesign.nodes = {root, stage};
     widget.updateDesignHierarchy(existingDesign);
-    expectBool("existing Design restores hierarchy search and matching ancestors",
-               widget.searchLineEdit->text() == QStringLiteral("u_stage")
-                   && widget.searchLineEdit->placeholderText().contains(QStringLiteral("instances"))
-                   && widget.designTreeWidget->topLevelItemCount() == 1
-                   && widget.designTreeWidget->topLevelItem(0)->childCount() == 1, true);
-    widget.setActiveTab(NavigationWidget::FileTab);
-    widget.setActiveTab(NavigationWidget::DesignTab);
-    expectBool("hierarchy query survives tab round trip",
-               widget.searchLineEdit->text() == QStringLiteral("u_stage"), true);
+    expectBool("automatic Design search materializes the matching instance",
+               waitUntil([&] {
+                   auto* model=qobject_cast<DesignHierarchyModel*>(widget.designTreeWidget->model());
+                   return !widget.designTreeWidget->property("designSearchPending").toBool()
+                       && model && model->rowCount() == 1
+                       && model->node(model->index(0,0)).id == stage.id;
+               },2000),true);
+    expectBool("search result preserves the complete instance path",
+               widget.designTreeWidget->model()->index(0,0).data().toString()
+                   == QStringLiteral("top.u_stage [alu]"),true);
     widget.beginDesignProjectSelection();
-    expectBool("entering Add restores its separate candidate query",
-               widget.searchLineEdit->text() == QStringLiteral("alu"), true);
-    widget.searchLineEdit->setText(QStringLiteral("alu-new"));
-    auto* back = widget.findChild<QAbstractButton*>(QStringLiteral("cancelDesignSelection"));
-    expectBool("candidate cancellation control exists", back != nullptr, true);
-    if (back) back->click();
-    expectBool("cancel Add restores hierarchy without clearing the candidate draft",
-               widget.searchLineEdit->text() == QStringLiteral("u_stage")
-                   && widget.searchFilter(NavigationWidget::FileTab) == QStringLiteral("rtl/top"),
-               true);
-    widget.beginDesignProjectSelection();
-    expectBool("re-entering Add restores edited candidate query",
-               widget.searchLineEdit->text() == QStringLiteral("alu-new"), true);
+    expectBool("compatibility selection focuses automatic Design without a manual picker",
+               widget.activeTab() == NavigationWidget::DesignTab
+                   && designSearch->text() == QStringLiteral("alu")
+                   && !widget.findChild<QAbstractButton*>(QStringLiteral("cancelDesignSelection")),true);
+    designSearch->clear();
+    auto* hierarchy=qobject_cast<DesignHierarchyModel*>(widget.designTreeWidget->model());
+    expectBool("clearing Design search restores the parent and child hierarchy",
+               hierarchy && waitUntil([&] {
+                   const auto parent=hierarchy->indexForId(root.id);
+                   const auto child=hierarchy->indexForId(stage.id);
+                   return hierarchy->rowCount() == 1 && parent.isValid() && child.isValid()
+                       && child.parent() == parent && hierarchy->rowCount(parent) == 1;
+               },2000),true);
+    designSearch->setText(QStringLiteral("u_stage"));
     widget.setWorkspaceRoot(firstWorkspace.path());
-    expectBool("refreshing the same workspace preserves candidate query",
-               widget.searchLineEdit->text() == QStringLiteral("alu-new"), true);
+    expectBool("refreshing the same workspace preserves Design query",
+               designSearch->text() == QStringLiteral("u_stage"),true);
     widget.setWorkspaceRoot(secondWorkspace.path());
-    expectBool("workspace switch clears only transient candidate search",
-               widget.searchLineEdit->text().isEmpty()
-                   && widget.searchFilter(NavigationWidget::FileTab) == QStringLiteral("rtl/top")
-                   && widget.searchFilter(NavigationWidget::DesignTab) == QStringLiteral("u_stage"),
-               true);
+    expectBool("workspace switch clears transient Design search and retains Files query",
+               designSearch->text().isEmpty()
+                   && widget.searchFilter(NavigationWidget::DesignTab).isEmpty()
+                   && widget.searchFilter(NavigationWidget::FileTab) == QStringLiteral("rtl/top"),true);
     widget.setActiveTab(NavigationWidget::FileTab);
     expectBool("Files query remains available after workspace switch",
-               widget.searchLineEdit->text() == QStringLiteral("rtl/top"), true);
+               widget.searchLineEdit->text() == QStringLiteral("rtl/top"),true);
     widget.updateDesignHierarchy(existingDesign);
     widget.setActiveTab(NavigationWidget::DesignTab);
-    expectBool("restored hierarchy keeps its filter after workspace switch",
-               widget.searchLineEdit->text() == QStringLiteral("u_stage"), true);
-    widget.beginDesignProjectSelection();
-    expectBool("new workspace does not inherit the previous Add query",
-               widget.searchLineEdit->text().isEmpty(), true);
+    expectBool("new workspace shows automatic hierarchy without an old search",
+               designSearch->text().isEmpty()
+                   && widget.designTreeWidget->model() == hierarchy,true);
     widget.setWorkspaceRoot(firstWorkspace.path());
-    expectBool("returning to a workspace does not resurrect a discarded Add query",
-               widget.searchLineEdit->text().isEmpty(), true);
+    expectBool("returning to a workspace does not resurrect discarded transient search",
+               designSearch->text().isEmpty(),true);
     widget.setWorkspaceRoot(QString());
     widget.clearDesignHierarchy();
     widget.setSearchFilter(NavigationWidget::DesignTab, QString());
@@ -8237,38 +8230,23 @@ static void runNavigationHierarchyModelRegression(bool tabsOnly = false)
     widget.updateFileHierarchy({designTopFile, designStageFile, designExtraFile});
     widget.updateDesignHierarchy(designReport);
 
-    QTreeWidgetItem* designItem = nullptr;
-    QLabel* designStatusLabel = nullptr;
-    for (QLabel* label : widget.findChildren<QLabel*>()) {
-        if (label->text().contains(QStringLiteral("Design Top: design_top"))) {
-            designStatusLabel = label;
-            break;
-        }
-    }
-    for (QTreeWidget* tree : widget.findChildren<QTreeWidget*>()) {
-        designItem = findItemByText(tree, QStringLiteral("u_stage"), 0);
-        if (designItem
-            && designItem->text(1) != QStringLiteral("design_stage")) {
-            designItem = nullptr;
-        }
-        if (designItem)
-            break;
-    }
-    expectBool("design hierarchy status shows top",
-               designStatusLabel != nullptr,
-               true);
-    expectBool("design hierarchy renders instance text",
-               designItem != nullptr,
-               true);
-    QTreeWidgetItem* designInterfaceItem = nullptr;
-    for (QTreeWidget* tree : widget.findChildren<QTreeWidget*>()) {
-        designInterfaceItem = findItemByText(tree, QStringLiteral("u_design_if"), 0);
-        if (designInterfaceItem)
-            break;
-    }
+    auto* designModel=qobject_cast<DesignHierarchyModel*>(widget.designTreeWidget->model());
+    expectBool("Design uses the automatic hierarchy model",designModel != nullptr,true);
+    if (!designModel) return;
+    expectBool("Design model applies the report",
+               waitUntil([&] { return !designModel->applying(); },2000),true);
+    const auto designRoot=designModel->indexForId(designReport.nodes.first().id);
+    const auto designItem=designModel->indexForId(designReport.nodes.last().id);
+    expectBool("design hierarchy root shows top",
+               designRoot.isValid() && !designRoot.parent().isValid()
+                   && designRoot.data().toString() == QStringLiteral("design_top"),true);
+    expectBool("design hierarchy renders instance and module text in one column",
+               designItem.isValid() && designItem.parent() == designRoot
+                   && designModel->columnCount() == 1
+                   && designItem.data().toString() == QStringLiteral("u_stage [design_stage]"),true);
     expectBool("design hierarchy tree filters interface instance",
-               designInterfaceItem == nullptr,
-               true);
+               designModel->rowCount() == 1 && designModel->rowCount(designRoot) == 1
+                   && designModel->node(designItem).instanceName == QStringLiteral("u_stage"),true);
 
     bool designDoubleClicked = false;
     DesignHierarchyNode clickedDesignNode;
@@ -8277,8 +8255,8 @@ static void runNavigationHierarchyModelRegression(bool tabsOnly = false)
                          designDoubleClicked = true;
                          clickedDesignNode = node;
                      });
-    if (designItem)
-        widget.onDesignTreeDoubleClicked(designItem, 0);
+    if (designItem.isValid())
+        widget.onDesignTreeDoubleClicked(designItem);
     expectBool("design hierarchy double-click emits node",
                designDoubleClicked,
                true);
@@ -11091,11 +11069,11 @@ void runLiveInsightSidebarRoutingRegression(
         stateSurface && stateSurface->graphModeForTest() == QStringLiteral("state-transition")
             && stateSurface->graphNodeItemCountForTest() > 0, true);
 
-    // The section header names its target and re-picking runs in the editor:
+    // The content target control names its target and re-picking runs in the editor:
     // this is the only place that exercises the whole chain through MainWindow.
     QAbstractButton* scopeChip =
-        controller->dockHost()->sectionScope(active.stableKey());
-    expectBool("State section header names the pinned target",
+        compactView ? compactView->findChild<QToolButton*>(QStringLiteral("liveInsightsScope")) : nullptr;
+    expectBool("State content control names the pinned target",
                scopeChip != nullptr && scopeChip->isVisible()
                    && !scopeChip->text().trimmed().isEmpty()
                    && scopeChip->text() != QStringLiteral("Pick target"),
@@ -11559,8 +11537,8 @@ int main(int argc, char** argv)
     expectBool("startup keeps passive bottom content collapsed",
                window.panelLayoutController
                    && window.panelLayoutController->isBottomCollapsed()
-                   && window.panelLayoutController->buttonBar()
-                   && window.panelLayoutController->buttonBar()->isVisible(),
+                    && window.panelLayoutController->tabStrip()
+                    && window.panelLayoutController->tabStrip()->isVisible(),
                true);
     expectBool("startup does not create hidden Settings Search Change Preview or Connections pages",
                !window.settingsCenterPanel
@@ -11710,12 +11688,15 @@ int main(int argc, char** argv)
                        && !window.navigationPane->isAnimating()
                        && projectSidebar->width() == sidebarWidth;
                }, 2000), true);
-    expectBool("only Problems and Activity remain permanent in the drawer",
-               window.panelLayoutController->buttonForPanel(QStringLiteral("problems"))->isVisible()
-                   && window.panelLayoutController->buttonForPanel(QStringLiteral("activity"))->isVisible()
-                   && !window.panelLayoutController->buttonForPanel(QStringLiteral("scopedSearch"))->isVisible()
-                   && !window.panelLayoutController->buttonForPanel(QStringLiteral("foldShelf"))
-                   && !window.panelLayoutController->buttonForPanel(QStringLiteral("connections"))->isVisible(), true);
+    expectBool("default drawer tabs remain available while auxiliary panels stay parked",
+               PanelTabTest::visible(window.panelLayoutController.get(), QStringLiteral("problems"))
+                   && PanelTabTest::visible(window.panelLayoutController.get(), QStringLiteral("simulationLog"))
+                   && PanelTabTest::visible(window.panelLayoutController.get(), QStringLiteral("simulationEvents"))
+                   && PanelTabTest::visible(window.panelLayoutController.get(), QStringLiteral("hotspot"))
+                   && !PanelTabTest::group(window.panelLayoutController.get(), QStringLiteral("activity"))
+                   && !PanelTabTest::group(window.panelLayoutController.get(), QStringLiteral("scopedSearch"))
+                   && !PanelTabTest::page(window.panelLayoutController.get(), QStringLiteral("foldShelf"))
+                   && !PanelTabTest::group(window.panelLayoutController.get(), QStringLiteral("connections")), true);
     settingsButton->click();
     auto* settingsHost = window.findChild<SettingsDialog*>();
     auto* initialSettingsPanel = window.settingsCenterPanel;
@@ -12649,12 +12630,15 @@ int main(int argc, char** argv)
         ? drawerController->drawerDock()
         : nullptr;
     QWidget* drawerBar = drawerController
-        ? drawerController->buttonBar()
+        ? drawerController->tabStrip()
         : nullptr;
     const QStringList expectedDrawerIds = {
         QStringLiteral("problems"),
         QStringLiteral("scopedSearch"),
         QStringLiteral("activity"),
+        QStringLiteral("simulationLog"),
+        QStringLiteral("simulationEvents"),
+        QStringLiteral("hotspot"),
         QStringLiteral("rtlHighRiskEdit"),
         QStringLiteral("connections"),
     };
@@ -12662,26 +12646,31 @@ int main(int argc, char** argv)
         QStringLiteral("Problems"),
         QStringLiteral("Search"),
         QStringLiteral("Activity"),
+        QStringLiteral("Run log"),
+        QStringLiteral("Simulation events"),
+        QStringLiteral("Signal Trace"),
         QStringLiteral("Change Preview"),
         QStringLiteral("Connections"),
     };
-    bool drawerButtonsComplete = drawerController
+    bool drawerTabsComplete = drawerController
         && drawerController->bottomPanelIds() == expectedDrawerIds;
     for (int index = 0; index < expectedDrawerIds.size(); ++index) {
-        QToolButton* button = drawerController
-            ? drawerController->buttonForPanel(
-                  expectedDrawerIds.at(index))
-            : nullptr;
-        drawerButtonsComplete = drawerButtonsComplete
-            && button
-            && button->text() == expectedDrawerLabels.at(index)
-            && button->accessibleName()
-                   == expectedDrawerLabels.at(index)
-            && !button->icon().isNull()
-            && !button->toolTip().isEmpty();
+        const auto id=expectedDrawerIds.at(index);
+        if (drawerController && !PanelTabTest::group(drawerController,id))
+            drawerTabsComplete &= PanelTabTest::reopen(drawerController,id);
+        auto* tabs=PanelTabTest::group(drawerController,id);
+        auto* page=PanelTabTest::page(drawerController,id);
+        const int tab=tabs ? tabs->indexOf(page) : -1;
+        const auto badge=drawerController ? drawerController->panelBadgeText(id) : QString();
+        const auto label=expectedDrawerLabels.at(index)
+            +(badge.isEmpty() ? QString() : QStringLiteral(" (%1)").arg(badge));
+        drawerTabsComplete = drawerTabsComplete && tabs && tab>=0
+            && tabs->tabText(tab)==label
+            && PanelTabTest::accessibleName(drawerController,id)==label
+            && !tabs->tabIcon(tab).isNull() && !tabs->tabToolTip(tab).isEmpty();
     }
-    expectBool("bottom tool drawer has registered accessible panel actions",
-               drawerButtonsComplete,
+    expectBool("bottom tool drawer exposes registered accessible panel tabs",
+               drawerTabsComplete,
                true);
     expectBool("drawer actions exist without retired pin and close menu entries",
                drawerController
@@ -12698,7 +12687,7 @@ int main(int argc, char** argv)
         for (int iteration = 0; iteration < 3; ++iteration)
             QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     }
-    expectBool("bottom panel collapses while retaining its button bar",
+    expectBool("bottom panel collapses while retaining its single tab strip",
                drawerController
                    && drawerController->isBottomCollapsed()
                    && drawerDock

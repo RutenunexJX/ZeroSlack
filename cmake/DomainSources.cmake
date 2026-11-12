@@ -51,6 +51,7 @@ set(ZEROSLACK_SEMANTIC_SOURCES
     src/semantic/effectivevalueservice.cpp
     src/semantic/hierarchyservice.cpp
     src/semantic/hierarchyservicetraversal.cpp
+    src/semantic/designhierarchyindex.cpp
     src/semantic/projectsnapshot.cpp
     src/semantic/relationshipanalysisworker.cpp
     src/semantic/relationshipservice.cpp

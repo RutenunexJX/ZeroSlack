@@ -3,6 +3,7 @@
 #include "editorfileidentity.h"
 #include "uidialogs.h"
 #include "roundedicons.h"
+#include "uicontrols.h"
 #include <QDir>
 #include <QEventLoop>
 #include <QElapsedTimer>
@@ -10,6 +11,21 @@
 #include <QFileDialog>
 #include <QJsonDocument>
 #include <QTimer>
+
+namespace {
+void updateWebTabPresentation(QTabWidget* group, WebDocumentPage* page) {
+    if (!group || group->indexOf(page) < 0) return;
+    UiControls::TabPresentation state;
+    state.documentId = page->documentId(); state.viewId = page->viewIdentity();
+    state.path = QDir::toNativeSeparators(page->fileName());
+    state.title = page->fileName().isEmpty()
+        ? (page->documentKind() == WebDocumentPage::Kind::Markdown ? QStringLiteral("Untitled.md") : QStringLiteral("Untitled.zblock"))
+        : QFileInfo(page->fileName()).fileName();
+    state.dirty = page->dirty(); state.conflict = page->documentSession()->hasExternalConflict();
+    state.readOnly = page->documentSession()->isProtected();
+    UiControls::setTabPresentation(group, page, state);
+}
+}
 
 QList<WebDocumentPage*> TabManager::webDocuments() const {
     QList<WebDocumentPage*> result;
@@ -22,7 +38,7 @@ WebDocumentPage* TabManager::currentWebDocument() const {
     const auto* group = activeTabWidget();
     return group ? qobject_cast<WebDocumentPage*>(group->currentWidget()) : nullptr;
 }
-bool TabManager::hasCurrentDocument() const { return getCurrentEditor() || currentWebDocument() || currentPdfDocument(); }
+bool TabManager::hasCurrentDocument() const { return getCurrentEditor() || currentWebDocument() || currentPdfDocument() || currentAssociatedBlock(); }
 bool TabManager::importMarkdownDocument(const QString& requested) {
     const QString source = requested.isEmpty() ? QFileDialog::getOpenFileName(activeTabWidget(), QStringLiteral("Import Markdown as Block Document"), QString(), QStringLiteral("Markdown (*.md *.markdown)")) : requested;
     if (source.isEmpty()) return false;
@@ -102,6 +118,7 @@ void TabManager::registerWebDocument(WebDocumentPage* page, QTabWidget* group) {
     connect(page, &WebDocumentPage::statusChanged, this, [this, page] {
         if (auto* owner = splitController->groupForPage(page)) {
             const int index = owner->indexOf(page); if (index >= 0) { owner->setTabText(index, page->title()); owner->setTabToolTip(index, page->fileName().isEmpty() ? page->title() : page->fileName()); }
+            updateWebTabPresentation(owner, page);
         }
         if (currentWebDocument() == page) if (auto* host = qobject_cast<QWidget*>(parent())) host->setWindowTitle(page->title() + QStringLiteral(" - ZeroSlack"));
         emit workspaceSessionStateChanged();
@@ -115,6 +132,7 @@ void TabManager::registerWebDocument(WebDocumentPage* page, QTabWidget* group) {
     });
     group->addTab(page, RoundedIcons::icon(page->documentKind() == WebDocumentPage::Kind::Markdown ? RoundedIcons::File : RoundedIcons::Grid), page->title()); group->setCurrentWidget(page); splitController->setActiveGroup(group);
     group->setTabToolTip(group->indexOf(page),page->fileName().isEmpty() ? page->title() : page->fileName());
+    updateWebTabPresentation(group, page);
     emit webDocumentOpened(page);
     applyWorkspaceScope(); emit workspaceSessionStateChanged();
 }
@@ -129,7 +147,7 @@ bool TabManager::closeWebDocument(WebDocumentPage* page, bool confirm, bool reme
     }
     if (page->documentSession()->views().size() == 1) clearWebRecovery(page);
     splitController->unregisterPage(page);
-    group->removeTab(group->indexOf(page)); page->releaseView(); page->deleteLater();
+    group->removeTab(group->indexOf(page)); repairContextPage(); page->releaseView(); page->deleteLater();
     if (!closingBatch) splitController->removeEmptyGroups(); emit tabClosed(name); emit workspaceSessionStateChanged(); return true;
 }
 bool TabManager::confirmWebDocuments(const QList<WebDocumentPage*>& pages) {

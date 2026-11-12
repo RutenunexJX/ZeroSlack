@@ -15,6 +15,7 @@
 #include <QEvent>
 #include <QTimer>
 #include <QThread>
+#include <algorithm>
 
 namespace {
 QString navigationViewName(NavigationManager::NavigationView view)
@@ -45,6 +46,7 @@ NavigationManager::NavigationManager(QObject *parent)
 NavigationManager::~NavigationManager()
 {
     designShuttingDown = true;
+    if (activeDesignRequest) activeDesignRequest->cancelled->store(true);
     ++designRequestGeneration;
     pendingDesignRequest.reset();
     if (designWatcher)
@@ -55,10 +57,7 @@ NavigationManager::~NavigationManager()
 bool NavigationManager::eventFilter(QObject* watched, QEvent* event)
 {
     if (watched == navigationWidget) {
-        if (event->type() == QEvent::Hide) {
-            ++designRequestGeneration;
-            pendingDesignRequest.reset();
-        } else if (event->type() == QEvent::Show) {
+        if (event->type() == QEvent::Show) {
             QTimer::singleShot(0, this, [this] {
                 refreshCurrentView();
                 warmDesignHierarchyCache();
@@ -200,10 +199,7 @@ void NavigationManager::navigateToFile(const QString& filePath, int lineNumber)
 }
 
 QList<DesignHierarchyRoot> NavigationManager::currentDesignRoots() const
-{
-    return designProjects && EditorFileIdentity::same(designProjects->workspace(), context.currentWorkspacePath)
-        ? designProjects->designRoots() : QList<DesignHierarchyRoot>{};
-}
+{ return caches.designRoots; }
 void NavigationManager::connectToDesignProjects(DesignProjectService* service)
 {
     if (designProjects == service) return;
@@ -211,14 +207,10 @@ void NavigationManager::connectToDesignProjects(DesignProjectService* service)
     designProjects = service;
     if (!service) return;
     connect(service, &DesignProjectService::designProjectsChanged, this, &NavigationManager::synchronizeDesignProjects);
-    connect(service, &DesignProjectService::designExpansionChanged, this, [this](const QString& id, bool expanded) {
-        for (auto& root : caches.designRoots) if (root.projectId == id) root.expanded = expanded;
-        for (auto& node : caches.designHierarchy.nodes) if (node.isTop && node.projectId == id) node.expanded = expanded;
-        if (navigationWidget) navigationWidget->setDesignProjectExpanded(id, expanded);
-    });
     connect(service, &QObject::destroyed, this, [this] { designProjects = nullptr; });
     synchronizeDesignProjects();
 }
+
 void NavigationManager::setSimulationHandlers(std::function<QPair<QString,QString>()> target,
                                               std::function<QString(const QString&,const QString&)> select)
 {
@@ -228,58 +220,39 @@ void NavigationManager::setSimulationHandlers(std::function<QPair<QString,QStrin
 }
 void NavigationManager::synchronizeDesignProjects()
 {
-    if (!designProjects || !EditorFileIdentity::same(designProjects->workspace(), context.currentWorkspacePath)) return;
-    const auto roots = currentDesignRoots();
-    const auto active = designProjects->activeProjectId();
-    if (connectedWorkspaceManager) {
-        QString module, file;
-        for (const auto& root : roots) if (root.projectId == active) { module = root.module; file = root.file; }
-        connectedWorkspaceManager->getProjectModel()->setActiveDesignProject(active, module, file);
+    if (connectedWorkspaceManager && connectedWorkspaceManager->isWorkspaceOpen()) {
+        auto* model = connectedWorkspaceManager->getProjectModel();
+        if (!model->snapshot().explicitDesignSelection) model->setActiveDesignProject({}, {}, {});
     }
-    if (roots == caches.designRoots && active == caches.activeProjectId) return;
-    invalidateCurrentDesignHierarchyCache();
-    if (currentView == DesignHierarchyView) refreshDesignHierarchy();
-    else warmDesignHierarchyCache();
+    if (designProjects && navigationWidget && EditorFileIdentity::same(designProjects->workspace(), context.currentWorkspacePath))
+        navigationWidget->restoreDesignViewState(designProjects->viewState());
 }
 QString NavigationManager::setDesignTop(const QString& moduleName, const QString& definitionFile)
 {
-    if (!designProjects || !navigationService) return tr("The workspace project service is unavailable.");
-    if (context.currentWorkspacePath.isEmpty() || !EditorFileIdentity::same(designProjects->workspace(), context.currentWorkspacePath))
-        return tr("Open a workspace before adding a design project.");
+    if (!navigationService || !navigationWidget) return tr("Design is unavailable.");
     QList<SemanticSymbolRecord> matches;
     const auto scope = getSystemVerilogFiles();
     for (const auto& module : navigationService->availableModules()) {
         if (module.name != moduleName || (!definitionFile.isEmpty() && !EditorFileIdentity::same(module.location.fileName, definitionFile))) continue;
-        bool inScope = false;
-        for (const auto& file : scope) if (EditorFileIdentity::same(file, module.location.fileName)) { inScope = true; break; }
-        if (!inScope) continue;
-        matches << module;
+        if (std::any_of(scope.cbegin(), scope.cend(), [&](const auto& file) { return EditorFileIdentity::same(file, module.location.fileName); })) matches.append(module);
     }
-    if (matches.size() != 1) return matches.isEmpty()
-        ? tr("No current module definition matches this source. Analyze the file before creating a design project.")
-        : tr("Multiple definitions match this module. Choose the module from its source file.");
-    const auto issue = designProjects->addDesignProject(matches.first().location.fileName, moduleName);
-    if (issue.isEmpty() && navigationWidget) {
-        navigationWidget->finishDesignProjectSelection({}, matches.first().location.fileName, moduleName);
-        navigationWidget->setActiveTab(NavigationWidget::DesignTab);
-    }
-    return issue;
+    if (matches.size() != 1) return matches.isEmpty() ? tr("No current module definition matches this source.")
+        : tr("Multiple definitions match this module; choose its source file.");
+    navigationWidget->setActiveTab(NavigationWidget::DesignTab);
+    navigationWidget->finishDesignProjectSelection({}, matches.first().location.fileName, moduleName);
+    refreshDesignHierarchy();
+    return {};
 }
 void NavigationManager::chooseDesignProject()
-{
-    if (!navigationWidget) return;
-    navigationWidget->beginDesignProjectSelection();
-    refreshDesignHierarchy();
-}
+{ if (navigationWidget) navigationWidget->beginDesignProjectSelection(); }
 void NavigationManager::clearDesignTop()
 {
-    if (designProjects) designProjects->activateProject({});
+    caches.activeProjectId.clear();
+    if (connectedWorkspaceManager) connectedWorkspaceManager->getProjectModel()->setActiveDesignProject({}, {}, {});
 }
 QString NavigationManager::selectedDesignTopModule() const
 {
-    if (!designProjects) return {};
-    for (const auto& root : currentDesignRoots())
-        if (root.projectId == designProjects->activeProjectId()) return root.module;
+    for (const auto& node : caches.designHierarchy.nodes) if (node.isTop && node.rootId == caches.activeProjectId) return node.moduleType;
     return {};
 }
 
@@ -331,6 +304,8 @@ void NavigationManager::onWorkspaceChanged(const QString& workspacePath)
     saveDesignHierarchyCache();
     ++designRequestGeneration;
     pendingDesignRequest.reset();
+    if (activeDesignRequest) activeDesignRequest->cancelled->store(true);
+    pendingNavigationNode.clear();
     context.setCurrentWorkspacePath(workspacePath);
     semanticAnalysisContext = {};
     if (navigationWidget)
@@ -340,6 +315,7 @@ void NavigationManager::onWorkspaceChanged(const QString& workspacePath)
     // cached per workspace to keep tab switching lightweight.
     caches.clearFileList();
     restoreDesignHierarchyCache();
+    synchronizeDesignProjects();
     designHierarchyWidgetValid = false;
     if (navigationWidget)
         navigationWidget->clearDesignHierarchy();

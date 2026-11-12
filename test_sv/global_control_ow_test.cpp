@@ -6,6 +6,7 @@
 #include <QEventLoop>
 #include <QFileInfo>
 #include <QFile>
+#include <QFileSystemWatcher>
 #include <QPointer>
 #include <QQueue>
 #include <QSettings>
@@ -52,6 +53,7 @@
 #include "tabmanager.h"
 #include "workspacemanager.h"
 #undef private
+#include "designhierarchymodel.h"
 
 namespace {
 int failures = 0;
@@ -270,28 +272,17 @@ QSet<QString> designInstanceKeys(const DesignHierarchyReport& report)
 }
 
 bool designTreeContainsNestedModule(
-    QTreeWidgetItem* item,
+    QTreeView* tree,
     const QString& moduleType)
 {
-    if (!item)
+    auto* model = tree ? qobject_cast<DesignHierarchyModel*>(tree->model()) : nullptr;
+    if (!model)
         return false;
-    if (item->data(0, NavigationRowStyle::TypeRole).toString() == moduleType && item->parent())
-        return true;
-    for (int i = 0; i < item->childCount(); ++i) {
-        if (designTreeContainsNestedModule(item->child(i), moduleType))
-            return true;
-    }
-    return false;
-}
-
-bool designTreeContainsNestedModule(
-    QTreeWidget* tree,
-    const QString& moduleType)
-{
-    if (!tree)
-        return false;
-    for (int i = 0; i < tree->topLevelItemCount(); ++i) {
-        if (designTreeContainsNestedModule(tree->topLevelItem(i), moduleType))
+    for (const auto& node : model->report()->nodes) {
+        if (node.moduleType != moduleType || node.parentId.isEmpty()) continue;
+        const auto index = model->indexForId(node.id);
+        if (index.isValid() && index.parent().isValid()
+            && index.data(NavigationRowStyle::TypeRole).toString() == moduleType)
             return true;
     }
     return false;
@@ -421,7 +412,7 @@ class OwDesignTrace final : public QObject
 {
 public:
     OwDesignTrace(NavigationManager* navigation, AnalysisScheduler* scheduler,
-                  TabManager* tabs, SemanticIndex* semantic)
+                  TabManager* tabs, SemanticIndex* semantic, WorkspaceManager* workspace)
         : manager(navigation), widget(navigation->navigationWidget), index(semantic)
     {
         clock.start();
@@ -440,6 +431,31 @@ public:
             });
         connections << connect(scheduler, &AnalysisScheduler::fileSymbolAnalysisStarted, this,
             [this](const QString& file) { mark("fileSymbolAnalysisStarted", {{"file", file}}); });
+        connections << connect(scheduler, &AnalysisScheduler::semanticAnalysisTelemetry, this,
+            [this](const SemanticAnalysisTelemetry& telemetry) {
+                mark("semanticAnalysisTelemetry", {{"telemetry", telemetryJson(telemetry)}});
+            });
+        if (widget) {
+            connections << connect(widget, &NavigationWidget::designViewStateChanged, this,
+                [this](const QString& root, const QJsonObject&) {
+                    mark("designViewStateChanged", {{"workspace", root}});
+                });
+        }
+        if (workspace) {
+            connections << connect(workspace, &WorkspaceManager::semanticInputsChanged, this,
+                [this](const QString& root) { mark("semanticInputsChanged", {{"workspace", root}}); });
+            connections << connect(workspace, &WorkspaceManager::projectChanged, this,
+                [this](const ProjectSnapshot& project) {
+                    mark("projectChanged", {{"workspace", project.workspaceRoot},
+                        {"semanticIdentity", project.semanticIdentity()}});
+                });
+            for (auto* watcher : workspace->findChildren<QFileSystemWatcher*>()) {
+                connections << connect(watcher, &QFileSystemWatcher::directoryChanged, this,
+                    [this](const QString& path) { mark("watchedDirectoryChanged", {{"path", path}}); });
+                connections << connect(watcher, &QFileSystemWatcher::fileChanged, this,
+                    [this](const QString& path) { mark("watchedFileChanged", {{"path", path}}); });
+            }
+        }
         connections << connect(scheduler, &AnalysisScheduler::fileSymbolAnalysisFinished, this,
             [this](const QString& file, int symbols) {
                 mark("fileSymbolAnalysisFinished", {{"file", file}, {"symbols", symbols}});
@@ -895,7 +911,7 @@ int main(int argc, char** argv)
 
     SemanticIndex* semanticIndex = SemanticIndex::getInstance();
     OwDesignTrace designTrace(window.navigationManager.get(), window.analysisScheduler.get(),
-                              window.tabManager.get(), semanticIndex);
+                              window.tabManager.get(), semanticIndex, window.workspaceManager.get());
     designTrace.mark("before-setDesignTop");
     check("design project selection succeeds",
           window.navigationManager->setDesignTop(QStringLiteral("rtl_top")).isEmpty());
@@ -904,7 +920,7 @@ int main(int argc, char** argv)
     designTrace.mark("after-setActiveView-before-refreshCurrentView");
     window.navigationManager->refreshCurrentView();
     designTrace.mark("after-preparation-refreshCurrentView");
-    QTreeWidget* designTree = window.navigationPane
+    QTreeView* designTree = window.navigationPane
         && window.navigationPane->navigationWidget
         ? window.navigationPane->navigationWidget->designTreeWidget
         : nullptr;

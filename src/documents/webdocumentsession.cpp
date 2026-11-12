@@ -1,4 +1,5 @@
 #include "webdocumentsession.h"
+#include "insightvisualstyle.h"
 #include "filecreation.h"
 #include "webdocumentpage.h"
 #include "editorfileidentity.h"
@@ -131,7 +132,7 @@ void WebDocumentSession::initializeEditor(WebDocumentPage* view) {
     view->web->postMessage({{"type", "initialize"}, {"session", session}, {"document", id},
         {"view", view->viewId}, {"kind", kind == Kind::Markdown ? "markdown" : "blocks"},
         {"content", initialContent}, {"appearance", view->appearance}, {"importMarkdown", !importSource.isEmpty()},
-        {"dark", view->palette().color(QPalette::Window).lightness() < 128}});
+        {"dark", view->palette().color(QPalette::Window).lightness() < 128}, {"uiTheme", InsightVisualStyle::webThemeTokens()}});
 }
 void WebDocumentSession::receive(WebDocumentPage* view, const QJsonObject& message) {
     if (!view || !pages.contains(view)) return;

@@ -13,6 +13,24 @@ export interface EditorAdapter {
   appearance?(value:{family:string;size:number;lineHeight:number}):void;
 }
 export interface ClipboardPayload {text:string;html:string;image?:string}
+function applyUiTheme(value:Record<string,unknown>|undefined){
+  if(!value)return;
+  const properties:Record<string,string[]>={
+    panel:['--ui-panel','--editor-bg-color','--affine-background-primary-color'],
+    subtle:['--ui-subtle','--float-bg-color','--affine-background-secondary-color'],
+    text:['--ui-text','--editor-color','--editor-color-80','--affine-text-primary-color'],
+    secondary:['--ui-secondary','--editor-color-50','--icon-color','--affine-text-secondary-color'],
+    muted:['--ui-muted','--editor-color-30','--affine-text-disable-color','--affine-placeholder-color'],
+    border:['--ui-border','--float-border-color','--table-border-color','--affine-border-color'],
+    hover:['--ui-hover','--float-hover-color','--affine-hover-color'],
+    accent:['--ui-accent','--link-color','--affine-primary-color'],
+  };
+  for(const [key,names] of Object.entries(properties)){
+    const color=value[key];if(typeof color!=='string'||!/^#[0-9a-f]{6}$/i.test(color))continue;
+    for(const name of names)document.documentElement.style.setProperty(name,color);
+  }
+  if(typeof value.shellFont==='string')document.documentElement.style.setProperty('--ui-font',value.shellFont);
+}
 export function pasteEvent(value:ClipboardPayload){
   const clipboardData=new DataTransfer();
   if(value.text)clipboardData.setData('text/plain',value.text);
@@ -110,7 +128,7 @@ export class DocumentBridge {
       this.revision=0;this.frozen=false;
       try{
         const result=await this.adapter.initialize(String(message.content??''),message);
-        this.adapter.theme?.(!!message.dark);if(message.appearance?.size)this.adapter.appearance?.(message.appearance);this.initialized=true;
+        this.adapter.theme?.(!!message.dark);applyUiTheme(message.uiTheme);if(message.appearance?.size)this.adapter.appearance?.(message.appearance);this.initialized=true;
         if(message.viewState)this.adapter.restoreViewState?.(message.viewState);
         this.send({type:'ready',...result});this.viewChanged();
       }catch(error){this.report(String(error));}
@@ -125,7 +143,7 @@ export class DocumentBridge {
       clearTimeout(request.timer);this.requests.delete(message.request);
       message.error?request.reject(new Error(message.error)):request.resolve(message);return;
     }
-    if(message.type==='theme'){this.adapter.theme?.(!!message.dark);return}
+    if(message.type==='theme'){this.adapter.theme?.(!!message.dark);applyUiTheme(message.uiTheme);return}
     if(message.type==='appearance'){this.adapter.appearance?.(message.appearance);return}
     if(message.type==='release'){++this.barrier;this.frozen=false;return}
     if(!this.initialized)return;

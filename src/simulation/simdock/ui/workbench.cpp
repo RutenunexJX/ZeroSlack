@@ -73,6 +73,8 @@ void Workbench::buildUi()
     m_run = Ui::button(QStringLiteral("Run"), this, true);
     m_run->setObjectName(QStringLiteral("startSimulation"));
     m_run->setMinimumWidth(76);
+    m_run->setMaximumWidth(240);
+    m_run->installEventFilter(this);
     row->addWidget(m_run);
     connect(m_run, &QPushButton::clicked, this, &Workbench::startSimulation);
     m_settings = UiControls::toolButton(this); m_settings->setObjectName(QStringLiteral("openSettings"));
@@ -95,6 +97,7 @@ void Workbench::buildUi()
 }
 bool Workbench::eventFilter(QObject* watched, QEvent* event)
 {
+    if (watched == m_run && event->type() == QEvent::Resize) updateControls();
     if (event->type() == QEvent::MouseButtonDblClick && m_log && watched == m_log->viewport()) {
         const auto* mouse = static_cast<QMouseEvent*>(event);
         const auto text = m_log->cursorForPosition(mouse->position().toPoint()).block().text();
@@ -127,13 +130,19 @@ bool Workbench::eventFilter(QObject* watched, QEvent* event)
 }
 void Workbench::updateControls()
 {
-    const auto target = m_controller->target();
     const bool active = m_controller->busy();
+    if (active && !m_wasBusy) m_runningTarget = m_controller->target();
+    m_wasBusy = active;
+    const auto target = active ? m_runningTarget : m_controller->target();
+    const QString action = m_controller->preparing() ? QStringLiteral("Cancel") : active ? QStringLiteral("Stop") : QStringLiteral("Run");
     m_run->setEnabled(active || !workspace().isEmpty());
-    m_run->setText(m_controller->preparing() ? QStringLiteral("Cancel") : active ? QStringLiteral("Stop") : QStringLiteral("Run"));
+    const QString label = target.isEmpty() ? action : action + QStringLiteral(" · ") + target.top;
+    m_run->setText(m_run->fontMetrics().elidedText(label, Qt::ElideRight, 208));
     m_run->setToolTip(target.isEmpty() ? QStringLiteral("Choose a simulation top in Design")
         : target.top + QStringLiteral(" — ") + target.file + '\n' + m_controller->state());
-    m_run->setAccessibleName(m_run->text());
+    m_run->setAccessibleName(target.isEmpty() ? QStringLiteral("Choose a simulation target in Design") : label);
+    m_run->setProperty("simulationTarget", target.top);
+    m_run->setProperty("simulationAction", action);
 }
 void Workbench::reportIssue(const QString& issue)
 {
@@ -216,7 +225,11 @@ void Workbench::startSimulation()
         return;
     }
     if (workspace().isEmpty()) { reportIssue(QStringLiteral("Open a workspace before running simulation.")); return; }
-    if (m_controller->target().isEmpty()) { reportIssue(QStringLiteral("Choose a simulation top in Design before running.")); return; }
+    if (m_controller->target().isEmpty()) {
+        if (m_standalone) reportIssue(QStringLiteral("Select a module in Design and set it as the simulation top."));
+        else emit selectSimulationTargetRequested();
+        return;
+    }
     QPointer<Workbench> owner(this);
     if (!simulatorError(m_simulator).isEmpty()) openSettings();
     if (!owner) return;

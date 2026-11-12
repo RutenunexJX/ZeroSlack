@@ -24,6 +24,7 @@ class QLineEdit;
 class QPushButton;
 class QStackedWidget;
 class QStandardItemModel;
+class QTextEdit;
 
 Q_DECLARE_METATYPE(SettingsCenterScope)
 
@@ -48,6 +49,13 @@ public:
     bool isScopeDirty(SettingsCenterScope scope) const;
     void commitPendingEditors();
     QStringList unappliedScopes() const;
+    struct PendingScope {
+        QString key;
+        QString label;
+        bool current = false;
+    };
+    QList<PendingScope> pendingScopes() const;
+    SettingsCenterSaveResult applyDraft(const QString& key);
     void discardUnappliedChanges();
     QList<SettingsCenterValidationIssue> currentIssues() const;
 
@@ -89,6 +97,8 @@ private:
         QLabel* stateLabel = nullptr;
         QLineEdit* filePathEditor = nullptr;
         QStandardItemModel* stringMapModel = nullptr;
+        QBoxLayout* rowLayout = nullptr;
+        QLabel* titleLabel = nullptr;
     };
 
     void buildUi();
@@ -101,6 +111,7 @@ private:
     void populateFields();
     void populateField(FieldBinding* binding);
     void updateFieldStates();
+    void updateBlockPreview();
     void updateFieldState(FieldBinding* binding);
     void updateButtons();
     void updateScopePresentation();
@@ -132,9 +143,16 @@ private:
     SettingsCenterSnapshot loadedSnapshot;
     QVariantMap globalDraft;
     QVariantMap workspaceDraft;
+    using StringMapRows = QHash<QString, QList<QStringList>>;
+    StringMapRows globalRows;
+    StringMapRows workspaceRows;
+    StringMapRows& activeRows();
+    static QList<SettingsCenterValidationIssue> rowIssues(
+        const StringMapRows& rows, const QVariantMap& values, SettingsCenterScope scope);
     struct WorkspaceDraft {
         SettingsCenterSnapshot baseline;
         QVariantMap values;
+        StringMapRows rows;
     };
     QHash<QString, WorkspaceDraft> workspaceDrafts;
     QList<SettingsCenterValidationIssue> displayedIssues;
@@ -146,6 +164,9 @@ private:
     QLabel* statusLabel = nullptr;
     QPushButton* applyButton = nullptr;
     QPushButton* revertButton = nullptr;
+    QTextEdit* blockPreview = nullptr;
+    QLabel* blockFontResult = nullptr;
+    QPushButton* blockFontReset = nullptr;
     QHash<QString, FieldBinding> fieldBindings;
     bool populating = false;
     QBoxLayout* rootBox = nullptr;

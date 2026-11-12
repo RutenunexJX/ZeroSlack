@@ -8,6 +8,9 @@
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QLayout>
+#include <QStackedWidget>
+#include <QTimer>
 Q_PROPERTY_CREATE_Q_CPP(ElaTabWidget, bool, IsTabTransparent);
 Q_PROPERTY_CREATE_Q_CPP(ElaTabWidget, bool, IsContainerAcceptDrops);
 Q_PROPERTY_CREATE_Q_CPP(ElaTabWidget, QSize, FloatWidgetSize)
@@ -40,6 +43,10 @@ ElaTabWidget::ElaTabWidget(QWidget* parent)
 ElaTabWidget::~ElaTabWidget()
 {
     Q_D(ElaTabWidget);
+    if (_tabContainer && d->_tabBar) {
+        d->_tabBar->removeEventFilter(this);
+        d->_tabBar->setParent(this);
+    }
     if (!_host)
         d->_clearAllTabWidgetList();
 }
@@ -108,6 +115,76 @@ void ElaTabWidget::tabInserted(int index)
         d->_allTabWidgetList.append(widget(index));
     }
     QTabWidget::tabInserted(index);
+    scheduleHostedLayout();
+}
+
+void ElaTabWidget::tabRemoved(int index)
+{
+    QTabWidget::tabRemoved(index);
+    scheduleHostedLayout();
+}
+
+void ElaTabWidget::setHostedTabBarContainer(QWidget* container)
+{
+    if (_tabContainer == container) return;
+    tabBar()->removeEventFilter(this);
+    if (_tabContainer && _tabContainer->layout()) _tabContainer->layout()->removeWidget(tabBar());
+    _tabContainer = container;
+    tabBar()->setParent(container ? container : this);
+    if (container && container->layout()) {
+        container->layout()->addWidget(tabBar());
+        tabBar()->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        tabBar()->setMinimumWidth(0);
+        tabBar()->installEventFilter(this);
+    }
+    syncHostedLayout();
+    updateGeometry();
+}
+
+QSize ElaTabWidget::sizeHint() const
+{
+    if (_tabContainer)
+        if (auto* stack = findChild<QStackedWidget*>(QString(), Qt::FindDirectChildrenOnly)) return stack->sizeHint();
+    return QTabWidget::sizeHint();
+}
+
+QSize ElaTabWidget::minimumSizeHint() const
+{
+    if (_tabContainer)
+        if (auto* stack = findChild<QStackedWidget*>(QString(), Qt::FindDirectChildrenOnly)) return stack->minimumSizeHint();
+    return QTabWidget::minimumSizeHint();
+}
+
+void ElaTabWidget::syncHostedLayout()
+{
+    if (!_tabContainer || _syncingHostedLayout) return;
+    _syncingHostedLayout = true;
+    if (auto* stack = findChild<QStackedWidget*>(QString(), Qt::FindDirectChildrenOnly)) stack->setGeometry(rect());
+    tabBar()->setVisible(count() > 0);
+    if (auto* layout = _tabContainer->layout()) { layout->invalidate(); layout->activate(); }
+    _syncingHostedLayout = false;
+}
+
+void ElaTabWidget::scheduleHostedLayout()
+{
+    if (!_tabContainer || _syncingHostedLayout || _hostedLayoutPending) return;
+    _hostedLayoutPending = true;
+    QTimer::singleShot(0, this, [this] { _hostedLayoutPending = false; syncHostedLayout(); });
+}
+
+bool ElaTabWidget::event(QEvent* event)
+{
+    const bool result = QTabWidget::event(event);
+    if (event->type() == QEvent::Resize || event->type() == QEvent::LayoutRequest
+        || event->type() == QEvent::Show || event->type() == QEvent::StyleChange) syncHostedLayout();
+    return result;
+}
+
+bool ElaTabWidget::eventFilter(QObject* watched, QEvent* event)
+{
+    if (watched == tabBar() && (event->type() == QEvent::Move || event->type() == QEvent::Resize
+        || event->type() == QEvent::LayoutRequest)) scheduleHostedLayout();
+    return QTabWidget::eventFilter(watched, event);
 }
 
 void ElaTabWidget::setHostedTabs(QObject* scope, SplitResolver split, ReturnTarget returnTarget)
@@ -138,6 +215,7 @@ void ElaTabWidget::setHostedTabBar(ElaTabBar* bar)
     bar->setSmoothScrollEnabled(true);
     setTabBar(bar);
     bar->setAcceptDrops(true);
+    bar->setProperty("elaHostedTabOwner", QVariant::fromValue(static_cast<QObject*>(this)));
     connect(bar, &ElaTabBar::tabDragCreate, d, &ElaTabWidgetPrivate::onTabDragCreate);
     connect(bar, &ElaTabBar::tabDragEnter, d, &ElaTabWidgetPrivate::onTabDragEnter);
     connect(bar, &ElaTabBar::tabDragLeave, d, &ElaTabWidgetPrivate::onTabDragLeave);

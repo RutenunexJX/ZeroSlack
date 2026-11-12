@@ -330,8 +330,7 @@ QJsonObject tabObject(
     QJsonObject object;
     object.insert(
         QStringLiteral("path"),
-        QDir(root).relativeFilePath(
-            tab.filePath));
+        tab.filePath.isEmpty() ? QString() : QDir(root).relativeFilePath(tab.filePath));
     object.insert(
         QStringLiteral("cursorLine"),
         qMax(1, tab.cursorLine));
@@ -391,6 +390,9 @@ QJsonObject sessionObject(
     QJsonArray tabs;
     for (const WorkspaceSessionTabState& tab :
          state.tabs) {
+        if(tab.kind=="associatedBlock" && tab.filePath.isEmpty() && tab.documentId.startsWith("untitled:") && !tab.viewState.value("recovery").toObject().isEmpty()) {
+            tabs.append(tabObject(root,tab)); continue;
+        }
         const QString filePath =
             QDir::cleanPath(
                 QDir::fromNativeSeparators(
@@ -603,6 +605,8 @@ void restoreTabs(
     for (const QJsonValue& value : array) {
         const QJsonObject object =
             value.toObject();
+        const bool untitledBlock=object.value("kind")=="associatedBlock" && object.value("path").toString().isEmpty()
+            && object.value("documentId").toString().startsWith("untitled:") && !object.value("viewState").toObject().value("recovery").toObject().isEmpty();
         const QString path =
             QDir::cleanPath(
                 QDir::fromNativeSeparators(
@@ -618,15 +622,15 @@ void restoreTabs(
             root.endsWith(QLatin1Char('/'))
             ? root
             : root + QLatin1Char('/');
-        if ((pathKey(path) != pathKey(root)
+        if (!untitledBlock && ((pathKey(path) != pathKey(root)
              && !pathKey(path).startsWith(
                  pathKey(prefix)))
-            || !QFileInfo(path).isFile()) {
+            || (!QFileInfo(path).isFile() && object.value("kind")!="associatedBlock"))) {
             skipped->append(path);
             continue;
         }
         WorkspaceSessionTabState tab;
-        tab.filePath = path;
+        tab.filePath = untitledBlock ? QString() : path;
         tab.cursorLine =
             qMax(1,
                  object.value(

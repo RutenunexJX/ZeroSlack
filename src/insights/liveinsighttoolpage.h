@@ -15,12 +15,16 @@ class QMainWindow;
 class QHideEvent;
 class QShowEvent;
 class SignalTracePanel;
+struct ModuleBlockDiagramNode;
 
 struct LiveInsightToolContext {
     QString workspaceRoot;
     QString workspaceId;
     QString projectId;
     QString instancePath;
+    QString rootIdentity;
+    QString configurationIdentity;
+    std::function<void(const ModuleBlockDiagramNode&, bool)> navigateModule;
     std::function<void(SignalTracePanel*)> configureTrace;
     QString documentId;
     quint64 documentRevision = 0;

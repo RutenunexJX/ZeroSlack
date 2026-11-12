@@ -1,7 +1,6 @@
 #include "testuistyle.h"
 #include "applicationthememanager.h"
 #include "mainwindow.h"
-#include "welcomecard.h"
 #include "workspacemanager.h"
 #include "tabmanager.h"
 #include "editorsplitcontroller.h"
@@ -11,7 +10,7 @@
 class WelcomeMainWindowTest : public QObject {
     Q_OBJECT
     void capture(MainWindow& window, const QString& name) {
-        const auto directory=qEnvironmentVariable("ZEROSLACK_TEST_ARTIFACT_DIR");
+        const auto directory=qEnvironmentVariable("ZEROSLACK_UI_REVIEW_DIR");
         if (!directory.isEmpty()) { QVERIFY(QDir().mkpath(directory)); QVERIFY(window.grab().save(directory+'/'+name+".png")); }
     }
 private slots:
@@ -38,39 +37,56 @@ private slots:
         QVERIFY(registry->movePage(page,registry->regionGroup("left")));
         QVERIFY(!registry->regionHasPages("main"));QVERIFY(!welcome->isVisible());
         QVERIFY(tabs->closeAllTabs());QTRY_VERIFY(welcome->isVisible());
-        QList<WelcomeCard*> cards;
-        for (int i=0;i<3;++i) {
-            auto* card=dynamic_cast<WelcomeCard*>(window->findChild<QPushButton*>(QString("welcomeCard%1").arg(i)));
-            QVERIFY(card);QVERIFY(!card->findChild<QVariantAnimation*>());cards.append(card);
-        }
-        QVERIFY(cards[0]->isEnabled());QVERIFY(!cards[1]->isEnabled() && !cards[2]->isEnabled());
-        QCOMPARE(cards[0]->title(),QString("RTL Development"));QCOMPARE(cards[1]->title(),QString("Waveform Design"));QCOMPARE(cards[2]->title(),QString("Register Design"));
-        QTest::qWait(100);capture(*window,"welcome-light");
-        theme.setMode(ThemeMode::Dark);QTest::qWait(100);capture(*window,"welcome-dark");
-        qInfo() << "All three static cards: lifecycle and dark theme checked";
+        QVERIFY(!window->findChild<QWidget*>("welcomeCard0"));
+        QVERIFY(!window->findChild<QWidget*>("welcomeCard1"));
+        QVERIFY(!window->findChild<QWidget*>("welcomeCard2"));
+        QVERIFY(!window->findChild<QWidget*>("welcomeOpenProjectButton"));
+        QVERIFY(window->findChild<QLabel*>("welcomeRecentTitle")->isVisible());
+        QVERIFY(window->findChild<QLabel*>("welcomeRecentEmpty")->isVisible());
+        QTest::qWait(100);capture(*window,"welcome-empty-light");
+        theme.setMode(ThemeMode::Dark);QTest::qWait(100);capture(*window,"welcome-empty-dark");
         theme.setMode(ThemeMode::Light);window->resize(700,900);QTest::qWait(100);
         QCOMPARE(welcome->horizontalScrollBar()->maximum(),0);capture(*window,"welcome-narrow");
         window->resize(1400,900);QTest::qWait(100);
         const auto workspace=profile.filePath("Workspace 中文");QVERIFY(QDir().mkpath(workspace));
         QFile source(workspace+"/top.sv");QVERIFY(source.open(QIODevice::WriteOnly));source.write("module top; endmodule\n");source.close();
-        const auto openUsing = [&](QPushButton* button) {
-            qInfo() << "Opening workspace using" << button->objectName();
-            bool picker=false;
-            QTimer::singleShot(100,[&] {
-                for(auto* top:QApplication::topLevelWidgets())if(auto* dialog=qobject_cast<QFileDialog*>(top)) {
-                    picker=true;dialog->setDirectory(workspace);dialog->selectFile(workspace);QMetaObject::invokeMethod(dialog,"accept");
-                }
-            });
-            button->click();QVERIFY(picker);QTRY_VERIFY(window->workspaceManager->isWorkspaceOpen());
-            QTRY_VERIFY(!welcome->isVisible());for(auto* card:cards)QVERIFY(!card->findChild<QVariantAnimation*>());
-            window->workspaceManager->closeWorkspace();QTRY_VERIFY(welcome->isVisible());
-        };
-        openUsing(cards[0]);
-        auto* open=window->findChild<QPushButton*>("welcomeOpenProjectButton");QVERIFY(open);openUsing(open);
+        QAction* openAction=nullptr;
+        for(auto* action:window->findChildren<QAction*>())
+            if(action->property("executionRoute").toString()=="ui.workspace.open") {openAction=action;break;}
+        QVERIFY(openAction);
+        bool picker=false;
+        QTimer::singleShot(100,[&] {
+            for(auto* top:QApplication::topLevelWidgets())if(auto* dialog=qobject_cast<QFileDialog*>(top)) {
+                picker=true;dialog->setDirectory(workspace);dialog->selectFile(workspace);QMetaObject::invokeMethod(dialog,"accept");
+            }
+        });
+        openAction->trigger();QVERIFY(picker);QTRY_VERIFY(window->workspaceManager->isWorkspaceOpen());
+        QTRY_VERIFY(!welcome->isVisible());
+        window->workspaceManager->closeWorkspace();QTRY_VERIFY(welcome->isVisible());
         auto* recent=window->findChild<QToolButton*>("welcomeRecentProject");QVERIFY(recent);
         recent->click();QTRY_VERIFY(window->workspaceManager->isWorkspaceOpen());QTRY_VERIFY(!welcome->isVisible());
-        qInfo() << "RTL, Open workspace and Recent workspaces completed";
+        qInfo() << "Global open and recent workspace entries completed";
         window->workspaceManager->closeWorkspace();QTRY_VERIFY(welcome->isVisible());
+        for(int i=0;i<7;++i) {
+            const auto next=profile.filePath(QString("long workspace name %1/%2/项目").arg(i).arg(QString(50,'x')));
+            QVERIFY(QDir().mkpath(next));QVERIFY(window->workspaceManager->openWorkspace(next));
+            window->workspaceManager->closeWorkspace();
+        }
+        QTRY_VERIFY(welcome->isVisible());
+        QCOMPARE(welcome->findChildren<QToolButton*>("welcomeRecentProject").size(),5);
+        QVERIFY(!welcome->findChild<QLabel*>("welcomeRecentEmpty"));
+        for(int width:{700,1400}) {
+            window->resize(width,900);QTest::qWait(100);
+            QCOMPARE(welcome->horizontalScrollBar()->maximum(),0);
+            for(auto* path:welcome->findChildren<QLabel*>("welcomeRecentPath")) {
+                QCOMPARE(path->text(),path->property("fullPath").toString());
+                QCOMPARE(path->toolTip(),path->text());
+                QVERIFY(path->width()>0);
+                QVERIFY(path->parentWidget()->rect().contains(path->geometry()));
+            }
+            capture(*window,QString("welcome-recent-%1").arg(width));
+        }
+        theme.setMode(ThemeMode::Dark);QTest::qWait(100);capture(*window,"welcome-recent-dark");
         window.reset();QTest::qWait(100);
     }
 };

@@ -82,6 +82,41 @@ private slots:
         open("clocked process"); QTest::keyClick(search(), Qt::Key_Return);
         QCOMPARE(editor->toPlainText(), text); QVERIFY(popup()->isVisible());
     }
+    void candidateEligibilityIsVisibleAndSideEffectFree() {
+        auto record = resource("qualified", "logic added;");
+        record.command.insert("context", "codeLine");
+        QVERIFY(UserTemplateService::getInstance()->setRecords({record}).valid);
+        QTRY_VERIFY(!editor->syntaxDocument()->hasPendingEdits());
+        const auto before = editor->toPlainText();
+        const auto undo = editor->document()->availableUndoSteps();
+        open("qualified");
+        auto* list = editor->findChild<QListWidget*>("editorSlashCandidates");
+        QCOMPARE(list->count(), 1);
+        QCOMPARE(list->item(0)->data(Qt::UserRole + 20).toString(), QString("Unavailable"));
+        QVERIFY(list->item(0)->data(Qt::UserRole + 21).toString().contains("empty code line"));
+        QTest::keyClick(search(), Qt::Key_Return);
+        QVERIFY(popup()->isVisible()); QCOMPARE(editor->toPlainText(), before);
+        QCOMPARE(editor->document()->availableUndoSteps(), undo);
+        QTest::keyClick(search(), Qt::Key_Escape);
+        QTextCursor cursor(editor->document()); cursor.setPosition(10); cursor.insertText("\n");
+        cursor.setPosition(10); editor->setTextCursor(cursor);
+        const auto pendingText = editor->toPlainText();
+        const auto pendingUndo = editor->document()->availableUndoSteps();
+        QKeyEvent slash(QEvent::KeyPress, Qt::Key_Slash, Qt::NoModifier, "/");
+        QApplication::sendEvent(editor.get(), &slash); search()->setText("qualified");
+        QCOMPARE(list->count(), 1);
+        // Deferred syntax completion must refresh qualification without inserting.
+        const auto initial = list->item(0)->data(Qt::UserRole + 20).toString();
+        QVERIFY(initial == "Waiting" || initial == "Available");
+        QTRY_COMPARE(list->item(0)->data(Qt::UserRole + 20).toString(), QString("Available"));
+        QVERIFY(popup()->isVisible()); QCOMPARE(editor->toPlainText(), pendingText);
+        QCOMPARE(editor->document()->availableUndoSteps(), pendingUndo);
+        editor->setReadOnly(true);
+        QTest::keyClick(search(), Qt::Key_Return);
+        QCOMPARE(editor->toPlainText(), pendingText);
+        QCOMPARE(list->item(0)->data(Qt::UserRole + 20).toString(), QString("Unavailable"));
+        editor->setReadOnly(false); QTest::keyClick(search(), Qt::Key_Escape);
+    }
     void compositionAndAtomicUndo() {
         auto leaf = resource("leaf", "${count} + ${count}");
         leaf.command.insert("inputs", QVariantMap{{"count", QVariantMap{{"kind", "Value"}, {"default", "3"}, {"integer", true}}}});

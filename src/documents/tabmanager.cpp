@@ -1,4 +1,6 @@
 #include "tabmanager.h"
+#include "associatedblockpage.h"
+#include "associatedblockdragcontroller.h"
 #include <QSplitter>
 #include "documentblockstore.h"
 #include "documenttemplatemodel.h"
@@ -8,6 +10,7 @@
 #include "documentmodel.h"
 #include "documentrecoveryqueue.h"
 #include "editorfileidentity.h"
+#include "uicontrols.h"
 
 #include <QApplication>
 #include <QCryptographicHash>
@@ -310,6 +313,11 @@ TabManager::TabManager(QTabWidget* initialTabWidget, QObject* parent)
             });
     if (!tabWidget)
         return;
+    blockDragController = std::make_unique<AssociatedBlockDragController>(this);
+    connect(blockDragController.get(),&AssociatedBlockDragController::gestureFinished,this,[this] {
+        const auto documents=sharedDocuments->documents();
+        for(auto* document:documents) reconcileAssociatedBlocks(document);
+    });
 
     registerTabGroup(tabWidget);
     connect(splitController.get(),
@@ -339,7 +347,11 @@ TabManager::TabManager(QTabWidget* initialTabWidget, QObject* parent)
             this,
             &TabManager::splitLayoutChanged);
     connect(splitController.get(), &EditorSplitController::pageMoved, this,
-            [this] { applyWorkspaceScope(); applyTabGrouping(); });
+            [this](QWidget* page) {
+                applyWorkspaceScope(); applyTabGrouping();
+                const auto state = UiControls::tabPresentation(page);
+                if (state.valid()) UiControls::setTabPresentation(splitController->groupForPage(page), page, state);
+            });
     connect(splitController.get(),
             &EditorSplitController::layoutChanged,
             this,
@@ -351,12 +363,16 @@ TabManager::TabManager(QTabWidget* initialTabWidget, QObject* parent)
         if (!now) return;
         for (auto* widget=now; widget; widget=widget->parentWidget()) {
             if (auto* editor=qobject_cast<MyCodeEditor*>(widget); editor && sharedDocumentForEditor(editor)) {
-                lastActionEditor=editor; contextDocumentPage=editor; return;
+                lastActionEditor=editor; setContextPage(editor); return;
             }
         }
         for (auto* group : splitController->groups()) {
             auto* page=group->currentWidget();
-            if (page && (page==now || page->isAncestorOf(now))) { lastActionEditor.clear(); return; }
+            if (page && (page==now || page->isAncestorOf(now))) {
+                lastActionEditor.clear();
+                if (validContextPage(page)) setContextPage(page);
+                return;
+            }
         }
     });
     QTimer::singleShot(0, this, [this] {
@@ -372,6 +388,8 @@ TabManager::~TabManager()
     }
     recoveryQueue.reset();
     recoveryClosing = true;
+    blockDragController.reset();
+    for (auto* page : associatedBlockPages()) { splitController->unregisterPage(page); delete page; }
     const QList<MyCodeEditor*> auxiliary = auxiliaryViews();
     for (MyCodeEditor* editor : auxiliary)
         closeAuxiliaryView(editor);
@@ -1046,12 +1064,14 @@ bool TabManager::openFileInTab(const QString& requestedFileName)
 
 bool TabManager::saveCurrentTab()
 {
+    if (auto* page = currentAssociatedBlock()) return saveSharedDocument(page->ownerDocument());
     if (auto* page = currentWebDocument()) return page->save();
     return saveEditor(getCurrentEditor(), false);
 }
 
 bool TabManager::saveAsCurrentTab()
 {
+    if (auto* page = currentAssociatedBlock()) return saveSharedDocument(page->ownerDocument(), true);
     if (auto* page = currentWebDocument()) return page->save(true);
     return saveEditor(getCurrentEditor(), true);
 }
@@ -1420,7 +1440,7 @@ bool TabManager::saveExternalConflictLocalAs(
     SharedDocument* document =
         sharedDocuments->documentForFile(
             review.fileName);
-    if (!document || document->views().isEmpty()) {
+    if (!document) {
         if (failureReason) {
             *failureReason = QStringLiteral(
                 "The reviewed document is no longer open.");
@@ -1461,8 +1481,8 @@ bool TabManager::saveExternalConflictLocalAs(
             *failureReason = validation.failureReason;
         return false;
     }
-    if (!saveEditor(
-            document->views().first(),
+    if (!saveSharedDocument(
+            document,
             true,
             targetFileName)) {
         if (failureReason && failureReason->isEmpty()) {
@@ -1477,6 +1497,8 @@ bool TabManager::saveExternalConflictLocalAs(
 bool TabManager::closeOtherTabs()
 {
     QTabWidget* group = activeTabWidget();
+    QList<AssociatedBlockPage*> blockTargets;
+    for (auto* page:associatedBlockPages()) if (splitController->groupForPage(page)==group && group->currentWidget()!=page) blockTargets.append(page);
     QList<PdfDocumentPage*> pdfTargets;
     for (auto* page : pdfDocuments()) if (splitController->groupForPage(page) == group && page != currentPdfDocument()) pdfTargets.append(page);
     QList<WebDocumentPage*> webTargets;
@@ -1493,6 +1515,7 @@ bool TabManager::closeOtherTabs()
     if (!closeEditorsAtomically(targets)) return false;
     for (auto* page : webTargets) closeWebDocument(page, false);
     for (auto* page : pdfTargets) closePdfDocument(page);
+    for (auto* page:blockTargets) if(!closeAssociatedBlock(page)) return false;
     return true;
 }
 
@@ -1501,6 +1524,8 @@ bool TabManager::closeTabsToRight()
     QTabWidget* group = activeTabWidget();
     if (!group)
         return false;
+    QList<AssociatedBlockPage*> blockTargets;
+    for(auto* page:associatedBlockPages()) if(splitController->groupForPage(page)==group && group->indexOf(page)>group->currentIndex()) blockTargets.append(page);
     QList<PdfDocumentPage*> pdfTargets;
     for (auto* page : pdfDocuments()) if (splitController->groupForPage(page) == group && group->indexOf(page) > group->currentIndex()) pdfTargets.append(page);
     QList<WebDocumentPage*> webTargets;
@@ -1518,11 +1543,15 @@ bool TabManager::closeTabsToRight()
     if (!closeEditorsAtomically(targets)) return false;
     for (auto* page : webTargets) closeWebDocument(page, false);
     for (auto* page : pdfTargets) closePdfDocument(page);
+    for(auto* page:blockTargets) if(!closeAssociatedBlock(page)) return false;
     return true;
 }
 
 bool TabManager::closeAllTabs()
 {
+    QList<SharedDocument*> blockDocuments;
+    for(auto* page:associatedBlockPages()) if(!blockDocuments.contains(page->ownerDocument())) blockDocuments.append(page->ownerDocument());
+    if(!resolvePendingDocuments(blockDocuments,nullptr)) return false;
     const auto pdfTargets = pdfDocuments();
     const auto webTargets = webDocuments();
     if (!confirmWebDocuments(webTargets)) return false;
@@ -1534,7 +1563,9 @@ bool TabManager::closeAllTabs()
     if (!closeEditorsAtomically(targets)) return false;
     for (auto* page : webTargets) closeWebDocument(page, false);
     for (auto* page : pdfTargets) closePdfDocument(page);
-    return true;
+    bool closed=true;
+    for(auto* page:associatedBlockPages()) closed=closeAssociatedBlock(page,false) && closed;
+    return closed;
 }
 
 bool TabManager::reopenClosedTab()
@@ -1543,6 +1574,25 @@ bool TabManager::reopenClosedTab()
         return false;
     const ClosedTabState state =
         recentlyClosedTabs.takeLast();
+    if (!state.associatedBlockId.isEmpty()) {
+        auto* document = sharedDocuments->documentById(state.ownerDocumentId);
+        if (!document && !state.fileName.isEmpty()) document = acquireFileDocument(state.fileName);
+        if (!document && state.fileName.isEmpty()) {
+            document = sharedDocuments->acquireUntitled(state.ownerDocumentId, state.text);
+            observeDocument(document);
+            QString issue;
+            if (!DocumentBlockStore::get(DocumentBlockModel::get(document->textDocument()))->restoreRecovery(state.associations, &issue)) {
+                emit fileSaveFailed({},issue); sharedDocuments->releaseIfUnused(document); recentlyClosedTabs.append(state); return false;
+            }
+        }
+        auto* group=state.floatingGeometry.isValid() ? splitController->regionGroup(state.regionId) : closedTabGroup(state);
+        if (document) if (auto* page=openAssociatedBlock(document, state.associatedBlockId, group,state.viewState.viewId)) {
+            if (state.floatingGeometry.isValid()) if(auto* floating=splitController->floatPage(page,state.floatingGeometry.topLeft())) floating->window()->setGeometry(state.floatingGeometry);
+            return true;
+        }
+        if (document) sharedDocuments->releaseIfUnused(document);
+        recentlyClosedTabs.append(state); return false;
+    }
     if (state.pdfDocument) {
         auto* page = openPdfDocument(state.fileName, closedTabGroup(state));
         if (page) page->restoreViewState(state.pdfState);
@@ -1552,9 +1602,12 @@ bool TabManager::reopenClosedTab()
         return openWebDocument(state.fileName, closedTabGroup(state)) != nullptr;
     }
     SharedDocument* document = nullptr;
+    bool restoreUntitledAssociations=false;
     if (state.fileName.isEmpty()) {
-        document =
-            sharedDocuments->createUntitled(state.text);
+        document = sharedDocuments->documentById(state.ownerDocumentId);
+        restoreUntitledAssociations=!document;
+        if (!document) document = state.ownerDocumentId.isEmpty() ? sharedDocuments->createUntitled(state.text)
+            : sharedDocuments->acquireUntitled(state.ownerDocumentId,state.text);
     } else {
         document =
             sharedDocuments->documentForFile(
@@ -1571,7 +1624,7 @@ bool TabManager::reopenClosedTab()
         createView(document, group, state.viewState);
     if (!editor)
         return false;
-    if (state.fileName.isEmpty() && !state.associations.isEmpty()) {
+    if (restoreUntitledAssociations && !state.associations.isEmpty()) {
         QString issue;
         if (!DocumentBlockStore::get(editor->blockModel())->restoreRecovery(state.associations,&issue)) emit fileSaveFailed({},issue);
     }
@@ -1645,13 +1698,19 @@ MyCodeEditor* TabManager::getEditorAt(int index) const
 
 DocumentSnapshot TabManager::getCurrentDocument() const
 {
-    if (currentWebDocument() || currentPdfDocument()) return getCurrentDocumentMetadata();
+    if (currentWebDocument() || currentPdfDocument() || currentAssociatedBlock()) return getCurrentDocumentMetadata();
     return documentQueries.currentDocument(
         getCurrentEditor());
 }
 
 DocumentSnapshot TabManager::getCurrentDocumentMetadata() const
 {
+    if (auto* page=currentAssociatedBlock()) {
+        DocumentSnapshot value; if (auto* document=page->ownerDocument()) {
+            value.documentId=document->documentId(); value.fileName=document->fileName(); value.dirty=document->dirty();
+            value.saved=!value.fileName.isEmpty(); value.textVersion=int(document->textRevision());
+        } return value;
+    }
     if (auto* page = currentPdfDocument()) {
         DocumentSnapshot value; value.documentId = QStringLiteral("pdf:") + identityKey(page->fileName()); value.fileName = page->fileName(); value.saved = true; return value;
     }
@@ -1673,12 +1732,76 @@ DocumentSnapshot TabManager::getDocumentForEditor(
 
 MyCodeEditor* TabManager::contextEditor() const
 {
-    auto* editor = qobject_cast<MyCodeEditor*>(contextDocumentPage.data());
-    return sharedDocumentForEditor(editor) && editorVisibleInWorkspaceScope(editor) ? editor : nullptr;
+    return qobject_cast<MyCodeEditor*>(contextPage());
+}
+
+QWidget* TabManager::contextPage() const
+{
+    return validContextPage(contextDocumentPage) ? contextDocumentPage.data() : nullptr;
+}
+
+bool TabManager::validContextPage(QWidget* page) const
+{
+    if (!page || !splitController) return false;
+    auto* group = splitController->groupForPage(page);
+    const int index = group ? group->indexOf(page) : -1;
+    if (index < 0 || !group->isTabVisible(index)) return false;
+    if (auto* editor = qobject_cast<MyCodeEditor*>(page))
+        return sharedDocumentForEditor(editor) && editorVisibleInWorkspaceScope(editor);
+    QString file;
+    if (auto* web = qobject_cast<WebDocumentPage*>(page)) file = web->fileName();
+    else if (auto* pdf = qobject_cast<PdfDocumentPage*>(page)) file = pdf->fileName();
+    else if (auto* block=qobject_cast<AssociatedBlockPage*>(page); block && block->ownerDocument()) file=block->ownerDocument()->fileName();
+    else return false;
+    const QString owner = workspaceForFile(file);
+    return owner.isEmpty() || identityKey(owner) == identityKey(activeWorkspaceRoot);
+}
+
+void TabManager::setContextPage(QWidget* page)
+{
+    if (page && !validContextPage(page)) return;
+    if (contextDocumentPage == page) return;
+    contextDocumentPage = page;
+    emit contextDocumentChanged(contextDocumentMetadata());
+}
+
+void TabManager::repairContextPage()
+{
+    if (contextPage() || changingWorkspaceScope) return;
+    auto* active = activeTabWidget();
+    if (active && validContextPage(active->currentWidget())) {
+        setContextPage(active->currentWidget());
+        return;
+    }
+    for (auto* group : splitController->groups()) {
+        if (validContextPage(group->currentWidget())) {
+            setContextPage(group->currentWidget());
+            return;
+        }
+    }
+    setContextPage(nullptr);
 }
 
 DocumentSnapshot TabManager::contextDocumentMetadata() const
 {
+    if (auto* page=qobject_cast<AssociatedBlockPage*>(contextPage())) {
+        DocumentSnapshot value; if (auto* document=page->ownerDocument()) {
+            value.documentId=document->documentId(); value.fileName=document->fileName(); value.dirty=document->dirty();
+            value.saved=!value.fileName.isEmpty(); value.textVersion=int(document->textRevision());
+        } return value;
+    }
+    if (auto* page = qobject_cast<WebDocumentPage*>(contextPage())) {
+        DocumentSnapshot value;
+        value.documentId = page->documentId(); value.fileName = page->fileName();
+        value.dirty = page->dirty(); value.saved = !value.fileName.isEmpty();
+        value.textVersion = int(page->documentSession()->currentRevision());
+        return value;
+    }
+    if (auto* page = qobject_cast<PdfDocumentPage*>(contextPage())) {
+        DocumentSnapshot value;
+        value.documentId = QStringLiteral("pdf:") + identityKey(page->fileName());
+        value.fileName = page->fileName(); return value;
+    }
     return documentQueries.currentDocumentMetadata(contextEditor());
 }
 
@@ -1848,6 +1971,18 @@ void TabManager::updateTabTitle(MyCodeEditor* editor)
     group->tabBar()->setTabData(
         index,
         editor->property("editorViewId"));
+    if (auto* document = sharedDocumentForEditor(editor)) {
+        UiControls::TabPresentation state;
+        state.documentId = document->documentId();
+        state.viewId = editor->property("editorViewId").toString();
+        state.title = tabTitleForEditor(editor, false);
+        state.path = QDir::toNativeSeparators(document->fileName());
+        state.dirty = document->dirty();
+        state.externalChange = document->externalState() == SharedDocumentExternalState::ExternallyModified;
+        state.conflict = document->externalState() == SharedDocumentExternalState::Conflict;
+        state.readOnly = document->readOnly(); state.locked = isTabLocked(editor);
+        UiControls::setTabPresentation(group, editor, state);
+    }
     if (editor == getCurrentEditor()) {
         const QString fileName =
             documentModel->documentMetadataForEditor(editor).fileName;
@@ -1874,7 +2009,7 @@ void TabManager::setWorkspaceScope(
             lastWorkspaceEditors.insert(previousRoot, editor);
     }
     changingWorkspaceScope = true;
-    if (switched) contextDocumentPage.clear();
+    if (switched) setContextPage(nullptr);
     scopedWorkspaceRoots =
         lexicalTabWorkspaceRoots(workspaceRoots);
     activeWorkspaceRoot =
@@ -1909,7 +2044,7 @@ void TabManager::setWorkspaceScope(
             }
         }
         if (preferred) {
-            contextDocumentPage = preferred;
+            setContextPage(preferred);
             if (QTabWidget* group = splitController->groupForPage(preferred)) {
                 splitController->setActiveGroup(group);
                 group->setCurrentWidget(preferred);
@@ -1917,6 +2052,7 @@ void TabManager::setWorkspaceScope(
         }
     }
     changingWorkspaceScope = false;
+    repairContextPage();
     updateAllTabTitles();
     scanCrashRecoveryCandidates(
         recoveryWorkspacePath(QString()));
@@ -1973,6 +2109,10 @@ bool TabManager::closeTabsInWorkspace(
         if (document && identityKey(workspaceForFile(document->fileName())) == identityKey(workspaceRoot)
             && !documents.contains(document)) documents.append(document);
     }
+    for(auto* page:associatedBlockPages()) {
+        auto* document=page->ownerDocument();
+        if(document && identityKey(workspaceForFile(document->fileName()))==identityKey(workspaceRoot) && !documents.contains(document)) documents.append(document);
+    }
     if (!resolvePendingDocuments(documents, nullptr)) return false;
     for (auto* page : webPending) closeWebDocument(page, false);
     for (auto* page : pdfDocuments()) if (identityKey(workspaceForFile(page->fileName())) == identityKey(workspaceRoot)) closePdfDocument(page);
@@ -1985,6 +2125,7 @@ bool TabManager::closeTabsInWorkspace(
         setTabLocked(editor, false);
         closed = closeEditor(editor, false) && closed;
     }
+    for(auto* page:associatedBlockPages()) if(documents.contains(page->ownerDocument())) closed=closeAssociatedBlock(page,false) && closed;
     lastWorkspaceEditors.remove(identityKey(workspaceRoot));
     if (splitController) splitController->removeEmptyGroups();
     return closed;
@@ -2077,6 +2218,8 @@ bool TabManager::prepareWorkspacePathMutation(
         entry.identity = document->documentId();
         entry.revision = document->textRevision();
         for (auto* view : document->views()) entry.views.append(view);
+        entry.associationRevision=DocumentBlockModel::get(document->textDocument())->revision();
+        for (auto* page:associatedBlockPages()) if (page->ownerDocument()==document) entry.blocks.append(page);
         confirmedDocuments.append(std::move(entry));
     }
 
@@ -2121,10 +2264,13 @@ bool TabManager::validateWorkspacePathMutation(const WorkspacePathMutation& prep
     for (const auto& entry : prepared.documents) {
         if (!entry.document || entry.document->documentId() != entry.identity
             || entry.document->textRevision() != entry.revision
-            || entry.document->views().size() != entry.views.size()) return fail();
+            || entry.document->views().size() != entry.views.size()
+            || DocumentBlockModel::get(entry.document->textDocument())->revision()!=entry.associationRevision
+            || entry.document->consumerCount()!=entry.blocks.size()) return fail();
         for (const auto& view : entry.views) {
             if (!view || sharedDocumentForEditor(view) != entry.document || isTabLocked(view)) return fail();
         }
+        for (const auto& page:entry.blocks) if (!page || page->ownerDocument()!=entry.document || !splitController->groupForPage(page)) return fail();
     }
     return true;
 }
@@ -2168,6 +2314,8 @@ bool TabManager::finalizeWorkspacePathMutation(const WorkspacePathMutation& prep
             : closeEditor(editor, false, false);
         closedAll = closed && closedAll;
     }
+    for (const auto& entry:prepared.documents)
+        for (const auto& page:entry.blocks) closedAll=(page && closeAssociatedBlock(page,false,false)) && closedAll;
     closingBatch = false;
     if (splitController)
         splitController->removeEmptyGroups();
@@ -2190,6 +2338,8 @@ TabManager::workspaceSessionTabs(const QString& workspaceRoot) const
 {
     QList<WorkspaceSessionTabState> states;
     if (workspaceRoot.isEmpty()) return states;
+    for (const auto& pending : pendingAssociatedTabs)
+        if (identityKey(pending.filePath.isEmpty() ? pending.viewState.value("workspaceRoot").toString() : workspaceForFile(pending.filePath))==identityKey(workspaceRoot)) states.append(pending);
     const auto groups = splitController->groups();
     for (auto* group : groups) for (int index = 0; index < group->count(); ++index) {
         QWidget* page = group->widget(index);
@@ -2200,6 +2350,17 @@ TabManager::workspaceSessionTabs(const QString& workspaceRoot) const
         } else if (auto* pdf = qobject_cast<PdfDocumentPage*>(page)) {
             state.filePath = pdf->fileName(); state.kind = "pdf"; state.documentId = "pdf:" + identityKey(state.filePath);
             state.viewId = pdf->viewIdentity(); state.viewState = pdf->viewState();
+        } else if (auto* block = qobject_cast<AssociatedBlockPage*>(page)) {
+            auto* document=block->ownerDocument(); if(!document) continue;
+            state.filePath=document->fileName(); state.kind="associatedBlock"; state.documentId=document->documentId();
+            state.viewId=block->viewIdentity(); state.viewState={{"blockId",block->blockId()}};
+            if (state.filePath.isEmpty()) {
+                if(identityKey(document->property("associatedWorkspace").toString())!=identityKey(workspaceRoot)) continue;
+                QString issue;
+                const auto associations=DocumentBlockStore::get(block->model())->recoveryState(&issue,crashRecoveryService->recoveryRootPath());
+                if(!issue.isEmpty()) continue;
+                state.viewState.insert("recovery",QJsonObject{{"text",document->textDocument()->toPlainText()},{"associations",associations}});
+            }
         } else if (auto* editor = qobject_cast<MyCodeEditor*>(page)) {
             const auto snapshot = getDocumentForEditor(editor);
             state.filePath = snapshot.fileName; state.documentId = snapshot.documentId; state.kind = "code";
@@ -2217,7 +2378,8 @@ TabManager::workspaceSessionTabs(const QString& workspaceRoot) const
             state.active = editor == getCurrentEditor() || (isTemporaryEditor(getCurrentEditor())
                 && lastWorkspaceEditors.value(identityKey(workspaceRoot)) == editor);
         } else continue;
-        if (identityKey(workspaceForFile(state.filePath)) != identityKey(workspaceRoot) || !QFileInfo(state.filePath).isFile()) continue;
+        if (!(state.kind=="associatedBlock" && state.filePath.isEmpty())
+            && (identityKey(workspaceForFile(state.filePath)) != identityKey(workspaceRoot) || !QFileInfo(state.filePath).isFile())) continue;
         state.pageId = splitController->pageId(page); state.regionId = splitController->regionForGroup(group);
         state.groupId = splitController->groupId(group); state.groupIndex = groups.indexOf(group); state.tabIndex = index;
         state.active = state.active || (group == activeTabWidget() && group->currentWidget() == page);
@@ -2231,7 +2393,7 @@ QJsonObject TabManager::workspaceSessionPageLayout(const QString& workspaceRoot)
     QSet<QString> documentPages;
     for (const auto& tab : workspaceSessionTabs(workspaceRoot)) documentPages.insert(tab.pageId);
     return splitController->savePageLayout([&](QWidget* page) {
-        if (qobject_cast<MyCodeEditor*>(page) || qobject_cast<WebDocumentPage*>(page) || qobject_cast<PdfDocumentPage*>(page))
+        if (qobject_cast<MyCodeEditor*>(page) || qobject_cast<WebDocumentPage*>(page) || qobject_cast<PdfDocumentPage*>(page) || qobject_cast<AssociatedBlockPage*>(page))
             return documentPages.contains(splitController->pageId(page));
         return true;
     });
@@ -2268,8 +2430,15 @@ QStringList TabManager::restoreWorkspaceSessionTabs(const QString& workspaceRoot
     };
     for (const auto& tab : tabs) {
         const QString path = lexicalPath(tab.filePath);
-        const auto skip = [&] { if (skippedFiles) skippedFiles->append(path); };
-        if (identityKey(workspaceForFile(path)) != identityKey(workspaceRoot) || !QFileInfo(path).isFile()
+        const bool untitledBlock=tab.kind=="associatedBlock" && tab.filePath.isEmpty() && tab.documentId.startsWith("untitled:") && !tab.viewState.value("recovery").toObject().isEmpty();
+        const auto skip = [&] {
+            if (skippedFiles) skippedFiles->append(path.isEmpty() ? tab.documentId : path);
+            if(tab.kind=="associatedBlock" && (tab.filePath.isEmpty() || identityKey(workspaceForFile(path))==identityKey(workspaceRoot))) {
+                auto retained=tab; if (retained.filePath.isEmpty()) retained.viewState.insert("workspaceRoot",workspaceRoot);
+                pendingAssociatedTabs.removeIf([&](const auto& prior) { return prior.pageId==tab.pageId; }); pendingAssociatedTabs.append(retained);
+            }
+        };
+        if ((!untitledBlock && (identityKey(workspaceForFile(path)) != identityKey(workspaceRoot) || !QFileInfo(path).isFile()))
             || tab.viewId.size() > 128 || tab.pageId.size() > 128 || tab.groupId.size() > 128
             || (!tab.regionId.isEmpty() && !splitController->regions().contains(tab.regionId))
             || (!tab.viewId.isEmpty() && identities.contains(tab.viewId))) { skip(); continue; }
@@ -2283,12 +2452,14 @@ QStringList TabManager::restoreWorkspaceSessionTabs(const QString& workspaceRoot
                 QString existingPath;
                 if (auto* web = qobject_cast<WebDocumentPage*>(existing)) existingPath = web->fileName();
                 else if (auto* pdf = qobject_cast<PdfDocumentPage*>(existing)) existingPath = pdf->fileName();
+                else if (auto* block=qobject_cast<AssociatedBlockPage*>(existing); block && block->ownerDocument()) existingPath=block->ownerDocument()->fileName();
                 else if (auto* editor = qobject_cast<MyCodeEditor*>(existing)) existingPath = getDocumentForEditor(editor).fileName;
-                if (!EditorFileIdentity::same(existingPath, path)
+                if ((!untitledBlock && !EditorFileIdentity::same(existingPath, path))
                     || (!tab.viewId.isEmpty() && existing->property("editorViewId").toString() != tab.viewId)) { skip(); continue; }
             }
         }
-        const QString kind = WebDocumentPage::supportsFile(path) ? (WebDocumentPage::kindForFile(path) == WebDocumentPage::Kind::Markdown ? "markdown" : "blocks")
+        const QString kind = tab.kind=="associatedBlock" && (untitledBlock || fileIo.isSystemVerilogFile(path)) ? "associatedBlock"
+            : WebDocumentPage::supportsFile(path) ? (WebDocumentPage::kindForFile(path) == WebDocumentPage::Kind::Markdown ? "markdown" : "blocks")
             : PdfDocumentPage::supportsFile(path) ? "pdf" : fileIo.isSystemVerilogFile(path) ? "code" : QString();
         if (kind.isEmpty() || (!tab.kind.isEmpty() && kind != tab.kind)) { skip(); continue; }
         if ((kind == "markdown" || kind == "blocks") && !tab.documentId.isEmpty()) {
@@ -2317,6 +2488,24 @@ QStringList TabManager::restoreWorkspaceSessionTabs(const QString& workspaceRoot
             if (!pdf) pdf = openPdfDocument(path, group, tab.viewId, &issue);
             if (pdf) pdf->restoreViewState(tab.viewState);
             page = pdf;
+        } else if (kind=="associatedBlock") {
+            const auto id=tab.viewState.value("blockId").toString();
+            if(id.isEmpty() || id.size()>128 || tab.documentId.size()>1024) { skip(); continue; }
+            auto* document=untitledBlock ? sharedDocuments->documentById(tab.documentId) : sharedDocuments->documentForFile(path);
+            if (!document && untitledBlock) {
+                const auto recovery=tab.viewState.value("recovery").toObject();
+                if(!recovery.value("text").isString() || !recovery.value("associations").isObject()) { skip(); continue; }
+                document=sharedDocuments->acquireUntitled(tab.documentId,recovery.value("text").toString());
+                QString issue;
+                if(!DocumentBlockStore::get(DocumentBlockModel::get(document->textDocument()))->restoreRecovery(recovery.value("associations").toObject(),&issue)) {
+                    emit fileSaveFailed({},issue); sharedDocuments->releaseIfUnused(document); skip(); continue;
+                }
+                document->setProperty("associatedWorkspace",workspaceRoot); observeDocument(document);
+            }
+            if(!document && !untitledBlock) document=acquireFileDocument(path);
+            page=openAssociatedBlock(document,id,group,tab.viewId);
+            if (page) pendingAssociatedTabs.removeIf([&](const auto& prior) { return prior.pageId==tab.pageId; });
+            else if (document) sharedDocuments->releaseIfUnused(document);
         } else {
             auto* document = sharedDocuments->documentForFile(path);
             if (!document) document = acquireFileDocument(path);
@@ -2383,8 +2572,11 @@ void TabManager::applyWorkspaceScope()
                         group->widget(index));
                 const auto* web = qobject_cast<WebDocumentPage*>(group->widget(index));
                 const auto* pdf = qobject_cast<PdfDocumentPage*>(group->widget(index));
-                const QString webOwner = web ? workspaceForFile(web->fileName()) : pdf ? workspaceForFile(pdf->fileName()) : QString();
-                const bool visible = (web || pdf) ? (webOwner.isEmpty() || identityKey(webOwner) == identityKey(activeWorkspaceRoot)) : editorVisibleInWorkspaceScope(editor);
+                const auto* block=qobject_cast<AssociatedBlockPage*>(group->widget(index));
+                const QString webOwner = web ? workspaceForFile(web->fileName()) : pdf ? workspaceForFile(pdf->fileName())
+                    : block && block->ownerDocument() ? (block->ownerDocument()->fileName().isEmpty()
+                        ? block->ownerDocument()->property("associatedWorkspace").toString() : workspaceForFile(block->ownerDocument()->fileName())) : QString();
+                const bool visible = (web || pdf || block) ? (webOwner.isEmpty() || identityKey(webOwner) == identityKey(activeWorkspaceRoot)) : editorVisibleInWorkspaceScope(editor);
                 group->setTabVisible(index, visible);
                 if (visible
                     && firstVisibleIndex < 0) {
@@ -2414,6 +2606,7 @@ void TabManager::applyWorkspaceScope()
             group,
             group ? group->currentIndex() : -1);
     }
+    repairContextPage();
 }
 
 bool TabManager::editorVisibleInWorkspaceScope(
@@ -2427,7 +2620,7 @@ bool TabManager::editorVisibleInWorkspaceScope(
     const QString fileName =
         documentModel
         ? documentModel
-              ->documentForEditor(editor)
+              ->documentMetadataForEditor(editor)
               .fileName
         : QString();
     if (fileName.isEmpty())
@@ -2576,6 +2769,10 @@ MyCodeEditor* TabManager::createBoundView(
             editorPointer, document, state)) {
         return nullptr;
     }
+    if (blockDragController) blockDragController->attachEditor(editorPointer);
+    connect(editorPointer,&MyCodeEditor::editorBlockPageRequested,this,[this,editorPointer](const QString& id) {
+        openAssociatedBlock(sharedDocumentForEditor(editorPointer),id,splitController->groupForPage(editorPointer));
+    });
     connect(editorPointer,
             &MyCodeEditor::fileNameChanged,
             this,
@@ -2743,6 +2940,7 @@ SharedDocument* TabManager::acquireFileDocument(
             !QFileInfo(
                  document->fileName())
                  .isWritable());
+        DocumentBlockStore::get(DocumentBlockModel::get(document->textDocument()))->bind(document->fileName(),workspaceForFile(document->fileName()));
         observeDocument(document, &source);
         if (loaded)
             *loaded = true;
@@ -2756,13 +2954,18 @@ bool TabManager::saveEditor(
     const QString& explicitFileName,
     WorkspaceFileSnapshot* savedGeneration)
 {
-    SharedDocument* document =
-        sharedDocumentForEditor(editor);
-    if (!editor || !document)
-        return false;
-    editor->cancelSlashSearch();
-    editor->finishBlockEditing();
-    auto* blocks = DocumentBlockStore::get(editor->blockModel());
+    return editor && saveSharedDocument(sharedDocumentForEditor(editor), forceSaveAs, explicitFileName, savedGeneration);
+}
+
+bool TabManager::saveSharedDocument(SharedDocument* document, bool forceSaveAs,
+    const QString& explicitFileName, WorkspaceFileSnapshot* savedGeneration)
+{
+    if (!document || sharedDocuments->documentById(document->documentId()) != document) return false;
+    const QPointer<SharedDocument> guardedDocument(document);
+    QPointer<MyCodeEditor> editor = document->views().value(0);
+    for (auto* view : document->views()) { view->cancelSlashSearch(); view->finishBlockEditing(); }
+    auto* model = DocumentBlockModel::get(document->textDocument()); model->endTextSession();
+    auto* blocks = DocumentBlockStore::get(model);
     if (!forceSaveAs && !document->fileName().isEmpty()
         && (explicitFileName.isEmpty() || sameLexicalPath(explicitFileName, document->fileName()))) {
         QString reason;
@@ -2794,7 +2997,8 @@ bool TabManager::saveEditor(
         : explicitFileName;
     if (fileName.isEmpty())
         return false;
-    if (!sameLexicalPath(fileName, document->fileName()) && editorTransitionGuard && !editorTransitionGuard(editor))
+    if (!guardedDocument) return false;
+    if (editor && !sameLexicalPath(fileName, document->fileName()) && editorTransitionGuard && !editorTransitionGuard(editor))
         return false;
     for (auto* page : webDocuments()) {
         if (!page->fileName().isEmpty() && EditorFileIdentity::same(fileName, page->fileName())) {
@@ -2831,7 +3035,7 @@ bool TabManager::saveEditor(
         return false;
     }
     QString saveFailure;
-    const QString& savedText = editor->cachedDocumentText();
+    const QString savedText = editor ? editor->cachedDocumentText() : document->textDocument()->toPlainText();
     QByteArray savedRawFingerprint;
     // Bind the selected target once. The atomic writer uses this physical
     // path, so a rebound display alias cannot redirect its temporary file.
@@ -2916,7 +3120,7 @@ bool TabManager::saveEditor(
             documentModel->refreshEditorState(view);
         }
     }
-    if (sourceWritten) documentModel->markSaved(editor);
+    if (sourceWritten && editor) documentModel->markSaved(editor);
     document->setReadOnly(
         !QFileInfo(fileName).isWritable());
     document->setExternalState(
@@ -2932,7 +3136,7 @@ bool TabManager::saveEditor(
     if (renamedDocument)
         applyWorkspaceScope();
     if (sourceWritten) emit fileSaved(document->fileName());
-    else emit editor->editorStatusMessageRequested("Block associations saved.");
+    else if (editor) emit editor->editorStatusMessageRequested("Block associations saved.");
     return true;
 }
 
@@ -2970,11 +3174,11 @@ bool TabManager::resolvePendingDocuments(
             ? dialogParent
             : qobject_cast<QWidget*>(parent()),
         [this, &guard, failureReason](SharedDocument* document) {
-            if (!document || document->views().isEmpty())
+            if (!document)
                 return false;
             if (guard.validate && !guard.validate(failureReason)) return false;
             WorkspaceFileSnapshot saved;
-            if (!saveEditor(document->views().first(), false, {}, guard.acceptSave ? &saved : nullptr)) return false;
+            if (!saveSharedDocument(document, false, {}, guard.acceptSave ? &saved : nullptr)) return false;
             return !guard.acceptSave || guard.acceptSave(saved, failureReason);
         });
 }
@@ -2994,6 +3198,7 @@ bool TabManager::closeEditor(
         return false;
     if (confirmUnsaved
         && document->viewCount() == 1
+        && document->consumerCount() == 0
         && !confirmCloseDocument(document)) {
         return false;
     }
@@ -3007,6 +3212,7 @@ bool TabManager::closeEditor(
 
     if (remember) {
         ClosedTabState closed;
+        closed.ownerDocumentId = document->documentId();
         closed.fileName = document->fileName();
         closed.text =
             document->textDocument()->toPlainText();
@@ -3042,7 +3248,7 @@ bool TabManager::closeEditor(
     document->detachView(editor, true);
     lockedViewIds.remove(viewId);
     editor->deleteLater();
-    if (document->viewCount() == 0)
+    if (document->viewCount() == 0 && document->consumerCount() == 0)
         clearRecoverySnapshot(document, false);
     sharedDocuments->releaseIfUnused(document);
     splitController->removeEmptyGroups();
@@ -3085,6 +3291,11 @@ void TabManager::observeDocument(
     if (!document || observedDocuments.contains(document))
         return;
     observedDocuments.insert(document);
+    auto* blockModel = DocumentBlockModel::get(document->textDocument());
+    for (const auto& block : blockModel->items()) if (block.detached) previousDetachedBlocks[document].insert(block.id);
+    connect(blockModel, &DocumentBlockModel::changed, this, [this, guarded=QPointer<SharedDocument>(document)] {
+        QTimer::singleShot(0, this, [this,guarded] { if (guarded) reconcileAssociatedBlocks(guarded); });
+    });
     auto* associationTimer = new QTimer(document); associationTimer->setSingleShot(true); associationTimer->setInterval(500);
     connect(DocumentBlockModel::get(document->textDocument()), &DocumentBlockModel::changed, associationTimer, [associationTimer,document] {
         if (document->dirty()) associationTimer->start();
@@ -3149,6 +3360,8 @@ void TabManager::observeDocument(
             this,
             [this, document]() {
                 observedDocuments.remove(document);
+                previousDetachedBlocks.remove(document);
+                blockPageLocations.remove(document);
                 if (recoveryQueue) recoveryQueue->cancel(document);
                 explicitExternalReloadDocuments.remove(
                     document);
@@ -3164,6 +3377,7 @@ void TabManager::updateTitlesForDocument(
         return;
     for (MyCodeEditor* editor : document->views())
         updateTabTitle(editor);
+    for (auto* page : associatedBlockPages()) if (page->ownerDocument() == document) updateAssociatedBlockTitle(page);
     applyTabGrouping();
 }
 
@@ -3230,7 +3444,7 @@ QString TabManager::shortestDistinctTitle(
 }
 
 QString TabManager::tabTitleForEditor(
-    MyCodeEditor* editor) const
+    MyCodeEditor* editor, bool includeStatus) const
 {
     SharedDocument* document =
         sharedDocumentForEditor(editor);
@@ -3252,6 +3466,7 @@ QString TabManager::tabTitleForEditor(
     if (isTemporaryEditor(editor))
         title = QStringLiteral("TEMP  ") + title;
 
+    if (!includeStatus) return title;
     QStringList markers;
     if (document->dirty())
         markers.append(QStringLiteral("●"));
@@ -3429,8 +3644,8 @@ void TabManager::handleCurrentTabChanged(
     previousActiveEditor = editor;
     lastActionEditor = editor;
     auto* page = group->widget(index);
-    if (editor || qobject_cast<WebDocumentPage*>(page) || qobject_cast<PdfDocumentPage*>(page))
-        contextDocumentPage = page;
+    if (editor || qobject_cast<WebDocumentPage*>(page) || qobject_cast<PdfDocumentPage*>(page) || qobject_cast<AssociatedBlockPage*>(page))
+        setContextPage(page);
     if (editor) {
         if (!changingWorkspaceScope && !isTemporaryEditor(editor)) {
             const QString owner = workspaceForFile(getDocumentForEditor(editor).fileName);
@@ -3644,6 +3859,7 @@ bool TabManager::closeEditorsAtomically(
     for (SharedDocument* document :
          std::as_const(closingDocuments)) {
         if (document
+            && document->consumerCount() == 0
             && closingViewCounts.value(document)
                    >= document->viewCount()) {
             pendingDocuments.append(document);

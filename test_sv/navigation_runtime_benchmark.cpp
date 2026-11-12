@@ -3,6 +3,7 @@
 #include "applicationthememanager.h"
 #include "mainwindow.h"
 #include "navigationwidget.h"
+#include "navigationmanager.h"
 #include "workspacemanager.h"
 #include <QtWidgets>
 #include <QtTest>
@@ -23,9 +24,12 @@ public:
     qint64 paints = 0;
     qint64 modelRevision = 0;
     qint64 paintedRevision = -1;
+    qint64 longestEventNs = 0;
     bool notify(QObject* receiver, QEvent* event) override {
+        QElapsedTimer elapsed; elapsed.start();
         const bool paint = receiver == viewport && event->type() == QEvent::Paint;
         const bool result = QApplication::notify(receiver, event);
+        longestEventNs = qMax(longestEventNs, elapsed.nsecsElapsed());
         if (paint) { ++paints; paintedRevision = modelRevision; }
         return result;
     }
@@ -63,9 +67,128 @@ static QJsonObject memory() {
     return {};
 }
 
+static int materializedRows(QAbstractItemModel* model, const QModelIndex& parent = {})
+{
+    int result = model->rowCount(parent);
+    for (int row = 0; row < model->rowCount(parent); ++row)
+        result += materializedRows(model, model->index(row, 0, parent));
+    return result;
+}
+
+static int measureDesign(MeasuredApplication& app, MainWindow& host, NavigationWidget* navigation,
+                         const QString& output, const QString& fixtureRoot, int count,
+                         double constructMs)
+{
+    auto* tree = host.findChild<QTreeView*>("navigationDesignTree");
+    auto* search = host.findChild<QLineEdit*>("navigationDesignSearchLineEdit");
+    if (!tree || !search) return 20;
+    app.viewport = tree->viewport();
+    QJsonArray telemetry, actions;
+    int applied = 0;
+    const auto connection = QObject::connect(host.navigationManager.get(), &NavigationManager::navigationTelemetry, tree,
+        [&](const SemanticAnalysisTelemetry& value) {
+            telemetry.append(QJsonObject{{"generation", double(value.generation)},
+                {"workerMs", double(value.workerMs)}, {"applyMs", double(value.uiRefreshMs)},
+                {"detail", value.detail}});
+            ++applied;
+        });
+    const auto cleanup = qScopeGuard([&] { QObject::disconnect(connection); app.viewport = nullptr; });
+    QSignalSpy resets(tree->model(), &QAbstractItemModel::modelReset);
+    navigation->setActiveTab(NavigationWidget::DesignTab);
+    QElapsedTimer init; init.start();
+    app.longestEventNs = 0;
+    std::fprintf(stderr, "design: opening workspace\n"); std::fflush(stderr);
+    if (!host.workspaceManager->openWorkspace(fixtureRoot)) return 21;
+    if (!waitUntil([&] { return !host.workspaceManager->isWorkspaceScanActive()
+            && !host.analysisScheduler->isSemanticAnalysisActive()
+            && !host.workspaceManager->getSystemVerilogFiles().isEmpty(); }, 180000)) return 22;
+    const double semanticReadyMs = init.nsecsElapsed() / 1e6;
+    std::fprintf(stderr, "design: semantic ready %.2f\n", semanticReadyMs); std::fflush(stderr);
+    // The pre-migration UI requires this explicit browse entry. The new UI uses
+    // the same operation only to reveal a module, without choosing Simulation top.
+    const auto issue = host.navigationManager->setDesignTop("top", QDir(fixtureRoot).filePath("design.sv"));
+    std::fprintf(stderr, "design: selected top %s\n", qPrintable(issue)); std::fflush(stderr);
+    if (!issue.isEmpty()) { std::fprintf(stderr, "%s\n", qPrintable(issue)); return 23; }
+    if (!waitUntil([&] { return tree->isVisible() && tree->isEnabled()
+            && tree->model()->rowCount() > 0 && applied > 0; }, 180000)) return 24;
+    tree->viewport()->update();
+    const auto firstPaint = app.paints;
+    if (!waitUntil([&] { return app.paints > firstPaint; })) return 25;
+    const double firstScreenMs = init.nsecsElapsed() / 1e6;
+    const double firstLongestMs = app.longestEventNs / 1e6;
+    const int firstRows = materializedRows(tree->model());
+    std::fprintf(stderr, "design: first screen rows=%d\n", firstRows); std::fflush(stderr);
+    const auto measure = [&](const QString& name, const std::function<void()>& action,
+                             const std::function<bool()>& condition = [] { return true; }) {
+        const auto paints = app.paints;
+        const auto resetCount = resets.size();
+        app.longestEventNs = 0;
+        QElapsedTimer elapsed; elapsed.start();
+        const double cpuBefore = cpuMs();
+        action();
+        const double dispatch = elapsed.nsecsElapsed() / 1e6;
+        tree->viewport()->update();
+        const bool ready = waitUntil([&] {
+            const auto pending = tree->property("designSearchPending");
+            return condition() && (!pending.isValid() || !pending.toBool()) && app.paints > paints;
+        }, 180000);
+        const double paintMs = elapsed.nsecsElapsed() / 1e6;
+#ifdef Q_OS_WIN
+        const long sync = DwmFlush();
+#else
+        const long sync = -1;
+#endif
+        actions.append(QJsonObject{{"action", name}, {"ready", ready}, {"dispatchMs", dispatch},
+            {"paintReadyMs", paintMs}, {"presentSyncMs", elapsed.nsecsElapsed() / 1e6},
+            {"dwmResult", double(sync)}, {"threadCpuMs", cpuMs() - cpuBefore},
+            {"maximumEventMs", app.longestEventNs / 1e6},
+            {"modelResets", resets.size() - resetCount}, {"materializedRows", materializedRows(tree->model())}});
+        std::fprintf(stderr, "design: %s ready=%d %.2fms\n", qPrintable(name), ready, paintMs); std::fflush(stderr);
+        QTest::qWait(80);
+        return ready;
+    };
+    bool valid = true;
+    const auto designRoot = [&] {
+        for (int row=0;row<tree->model()->rowCount();++row) {
+            const auto index=tree->model()->index(row,0);
+            if (index.data(Qt::UserRole+43).toString()==QStringLiteral("top")
+                || index.data().toString()==QStringLiteral("top")) return index;
+        }
+        return tree->model()->index(0,0);
+    };
+    for (int i = 0; i < 6; ++i) {
+        valid &= measure("collapse", [&] { tree->collapse(designRoot()); });
+        valid &= measure("cached-expand", [&] { tree->expand(designRoot()); });
+        valid &= measure("cached-locate", [&] { navigation->selectDesignInstance("top.u_0", true); });
+        valid &= measure("search-instance", [&] { search->setText("u_0"); });
+        valid &= measure("clear-search", [&] { search->clear(); });
+    }
+    const int beforeEdit = applied;
+    const QString source = QDir(fixtureRoot).filePath("design.sv");
+    QFile input(source); if (!input.open(QIODevice::ReadOnly)) return 26;
+    const auto original = input.readAll(); input.close();
+    valid &= measure("anchor-edit-refresh", [&] {
+        QSaveFile file(source);
+        if (file.open(QIODevice::WriteOnly)) { file.write("// benchmark anchor edit\n" + original); file.commit(); }
+        host.analysisScheduler->handleExternalFileChanged(source, 0);
+    }, [&] { return applied > beforeEdit && !host.analysisScheduler->isSemanticAnalysisActive(); });
+    host.grab().save(output + ".png");
+    QFile file(output);
+    if (!file.open(QIODevice::WriteOnly)) return 27;
+    file.write(QJsonDocument(QJsonObject{{"mode", "design"}, {"platform", QApplication::platformName()},
+        {"dpr", host.devicePixelRatioF()}, {"fixtureInstanceCount", count},
+        {"mainWindowConstructMs", constructMs}, {"semanticReadyMs", semanticReadyMs},
+        {"firstScreenMs", firstScreenMs}, {"firstMaximumEventMs", firstLongestMs},
+        {"firstMaterializedRows", firstRows}, {"modelResets", resets.size()},
+        {"actions", actions}, {"telemetry", telemetry}, {"memory", memory()}, {"valid", valid}}).toJson());
+    app.viewport = nullptr;
+    host.close();
+    return valid ? 0 : 28;
+}
+
 int main(int argc, char** argv) {
     MeasuredApplication app(argc, argv);
-    if (argc != 5) return 2;
+    if (argc != 5 && argc != 6) return 2;
     const QString output = QString::fromLocal8Bit(argv[1]);
     const QString fixtureRoot = QString::fromLocal8Bit(argv[2]);
     const int count = QByteArray(argv[3]).toInt();
@@ -90,6 +213,8 @@ int main(int argc, char** argv) {
     host.workspaceManager->setRecentWorkspacePersistenceEnabledForTesting(false);
     host.resize(1280, 800); host.show();
     auto* navigation = host.findChild<NavigationWidget*>();
+    if (argc == 6 && QByteArray(argv[5]) == "design")
+        return measureDesign(app, host, navigation, output, fixtureRoot, count, constructMs);
     auto* tree = host.findChild<QTreeWidget*>("navigationFileTree");
     auto* search = host.findChild<QLineEdit*>("navigationSearchLineEdit");
     if (!navigation || !tree || !search) return 5;

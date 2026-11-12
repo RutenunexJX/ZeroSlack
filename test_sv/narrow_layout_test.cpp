@@ -18,6 +18,7 @@
 #include "navigationmanager.h"
 #include "navigationpanecoordinator.h"
 #include "navigationwidget.h"
+#include "designhierarchymodel.h"
 #include "panellayoutcontroller.h"
 #include "semanticdockcoordinator.h"
 #include "problemspanelcoordinator.h"
@@ -60,6 +61,7 @@
 #include <QTableView>
 #include <QToolButton>
 #include <QTreeWidget>
+#include <QTreeView>
 #include <QTreeWidgetItemIterator>
 #include <QVBoxLayout>
 #include <QScopeGuard>
@@ -890,6 +892,11 @@ private slots:
         if(populated)for(auto it=fixture.sources.cbegin();it!=fixture.sources.cend();++it){
             QFile out(workspace+'/'+QFileInfo(it.key()).fileName());QVERIFY(out.open(QIODevice::WriteOnly));QCOMPARE(out.write(it.value().toUtf8()),it.value().toUtf8().size());
         }
+        if(populated){
+            QFile alternate(workspace+"/alternate_root.sv");QVERIFY(alternate.open(QIODevice::WriteOnly));
+            const QByteArray source="module alternate_root; endmodule\n";
+            QCOMPARE(alternate.write(source),source.size());
+        }
         qputenv("ZEROSLACK_SESSION_STORAGE_PATH",temporary.filePath("sessions.ini").toUtf8());
         qputenv("ZEROSLACK_EDITING_TIME_STORAGE_PATH",temporary.filePath("editing.json").toUtf8());
         ApplicationThemeManager::instance().setMode(dark?ThemeMode::Dark:ThemeMode::Light);
@@ -907,7 +914,6 @@ private slots:
             QVERIFY(window.tabManager->openFileInTab(top));window.analysisScheduler->requestDocumentSemanticRefresh({top});
             QTRY_VERIFY_WITH_TIMEOUT(SemanticIndex::getInstance()->snapshotToken().snapshot
                 && !SemanticIndex::getInstance()->snapshotToken().snapshot->getSymbolRecordsByName("core",top).isEmpty(),20000);
-            QVERIFY(window.navigationManager->setDesignTop("top",top).isEmpty());
         }
         QTRY_VERIFY_WITH_TIMEOUT(!window.analysisScheduler->isSemanticAnalysisActive(),20000);
         ApplicationThemeManager::instance().setMode(dark?ThemeMode::Dark:ThemeMode::Light);
@@ -917,18 +923,45 @@ private slots:
         auto* navigationPane=owner<NavigationPaneCoordinator>(&window);QVERIFY(navigationPane);
         const int designWidth=width==480?400:width;
         navigationPane->showDesign();navigationPane->dock()->setFixedWidth(designWidth);
-        auto* design=navigation->findChild<QTreeWidget*>("navigationDesignTree");QVERIFY(design);
+        auto* design=navigation->findChild<QTreeView*>("navigationDesignTree");QVERIFY(design);
+        auto* designModel=qobject_cast<DesignHierarchyModel*>(design->model());QVERIFY(designModel);
         if(populated){
-            QTRY_VERIFY_WITH_TIMEOUT(design->topLevelItemCount()>0,10000);
+            QTRY_VERIFY_WITH_TIMEOUT(designModel->rowCount()>=2,10000);
             QTRY_VERIFY_WITH_TIMEOUT(navigation->selectDesignInstance("top.instance_with_a_long_name_left",true),10000);
-            QVERIFY(!design->currentItem()->toolTip(0).isEmpty());
-            auto* simulation=window.findChild<simdock::Workbench*>();QVERIFY(simulation);
-            const auto project=simulation->designService()->activeProjectId();QVERIFY(!project.isEmpty());
-            QVERIFY(window.navigationManager->setDesignTop("leaf",workspace+"/leaf.sv").isEmpty());
-            QTRY_VERIFY(simulation->designService()->activeProjectId()!=project);
-            QVERIFY(window.navigationManager->setDesignTop("top",top).isEmpty());
-            QTRY_COMPARE(simulation->designService()->activeProjectId(),project);
+            QVERIFY(!design->currentIndex().data(Qt::ToolTipRole).toString().isEmpty());
+            auto* projectModel=window.workspaceManager->getProjectModel();QVERIFY(projectModel);
+            const auto activateCurrent=[&]{
+                QCoreApplication::processEvents();
+                const auto rect=design->visualRect(design->currentIndex());
+                if(!rect.isValid() || !design->viewport()->rect().contains(rect.center()))return false;
+                QTest::mouseClick(design->viewport(),Qt::LeftButton,Qt::NoModifier,rect.center());return true;
+            };
+            QVERIFY(activateCurrent());
+            const auto project=designModel->node(design->currentIndex()).rootId;QVERIFY(!project.isEmpty());
+            QTRY_COMPARE(projectModel->snapshot().activeDesignProjectId,project);
+            QTRY_VERIFY(navigation->selectDesignInstance("alternate_root",true));
+            QVERIFY(activateCurrent());
+            QTRY_VERIFY(projectModel->snapshot().activeDesignProjectId!=project);
+            QCOMPARE(projectModel->snapshot().activeDesignTopModule,QString("alternate_root"));
+            QTRY_VERIFY(navigation->selectDesignInstance("top",true));
+            QVERIFY(activateCurrent());
+            QTRY_COMPARE(projectModel->snapshot().activeDesignProjectId,project);
             QTRY_VERIFY(navigation->selectDesignInstance("top.instance_with_a_long_name_left",true));
+            if(width==220 && height==160){
+                // The filesystem probe must not leave a deleted editor document
+                // requiring a save decision when the test closes its window.
+                QVERIFY(window.tabManager->closeAllTabs());
+                const QString alternate=workspace+"/alternate_root.sv";
+                {QFile changed(alternate);QVERIFY(changed.open(QIODevice::WriteOnly|QIODevice::Truncate));
+                 const QByteArray source="module alternate_updated; endmodule\n";QCOMPARE(changed.write(source),source.size());}
+                QTRY_VERIFY_WITH_TIMEOUT(navigation->selectDesignInstance("alternate_updated",true),10000);
+                QVERIFY(!navigation->selectDesignInstance("alternate_root",false));
+                QVERIFY(QFile::remove(alternate));
+                QTRY_COMPARE_WITH_TIMEOUT(designModel->rowCount(),1,10000);
+                QVERIFY(!navigation->selectDesignInstance("alternate_updated",false));
+                QTRY_VERIFY(navigation->selectDesignInstance("top.instance_with_a_long_name_left",true));
+                QVERIFY(window.tabManager->openFileInTab(top));
+            }
             design->collapseAll();design->expandAll();
         }
 #ifdef ZEROSLACK_ENABLE_ELA
@@ -1074,9 +1107,12 @@ private slots:
             auto* group=registry->groupForPage(panel);QVERIFY(group);
             const auto sizeContent=[&](const QSize& desired) {
                 // Requested dimensions refer to the content, excluding shared tab chrome.
-                const int chromeHeight=group->height()-panel->height();
-                if (!layout->setPanelHeight(id,desired.height()+chromeHeight)) return false;
+                int chromeHeight=0;
                 for(int settle=0;settle<3;++settle) {
+                    // A newly activated shared page can still have its parked
+                    // geometry. Re-read chrome after each normal layout turn.
+                    chromeHeight=group->height()-panel->height();
+                    if (!layout->setPanelHeight(id,desired.height()+chromeHeight)) return false;
                     const int groupWidth=desired.width()+group->width()-panel->width();
                     splitter->setSizes({groupWidth,splitter->width()-groupWidth-splitter->handleWidth()});
                     WaitCost waitCost(10); QTest::qWait(10);

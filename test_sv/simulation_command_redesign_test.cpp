@@ -100,6 +100,31 @@ class SimulationCommandRedesignTest : public QObject
 {
     Q_OBJECT
   private slots:
+    void runTargetPresentationAndSelectionRequest()
+    {
+        QTemporaryDir root;
+        QVERIFY(put(root.filePath("tops.sv"), "module top_one; endmodule\nmodule top_two; endmodule\n"));
+        simdock::Workbench workbench;
+        workbench.openWorkspace(root.path());
+        auto* run = workbench.findChild<QPushButton*>("startSimulation");
+        QVERIFY(run && run->isEnabled());
+        QSignalSpy select(&workbench, &simdock::Workbench::selectSimulationTargetRequested);
+        run->click(); QCOMPARE(select.count(), 1);
+        auto* controller = workbench.controller();
+        QVERIFY(controller->selectTarget({"tops.sv", "top_one"}).isEmpty());
+        QCOMPARE(run->property("simulationTarget").toString(), QString("top_one"));
+        QCOMPARE(run->property("simulationAction").toString(), QString("Run"));
+        QVERIFY(run->text().contains("top_one"));
+        QVERIFY(controller->selectTarget({"tops.sv", "top_two"}).isEmpty());
+        QVERIFY(run->accessibleName().contains("top_two"));
+        QVERIFY(!run->accessibleName().contains("top_one"));
+        workbench.resize(300, 140); workbench.show();
+        QCoreApplication::processEvents();
+        QVERIFY(run->width() <= 240);
+        QVERIFY(controller->clearTarget().isEmpty());
+        QCOMPARE(run->text(), QString("Run"));
+        run->click(); QCOMPARE(select.count(), 2);
+    }
     void storageScopeMigration()
     {
         QTemporaryDir root;

@@ -467,13 +467,13 @@ bool AnalysisScheduler::isSelfWriteWatcherEvent(const QString& fileName) const
 
 void AnalysisScheduler::handleSemanticInputsChanged(const QString& root)
 {
-    if (shuttingDown || !projectModel || !projectModel->isOpen()
+    if (shuttingDown || !semanticRuntimePolicy.enabled || !symbolAnalyzer
+        || !projectModel || !projectModel->isOpen()
         || normalizedFileName(projectModel->workspaceRoot()) != normalizedFileName(root))
         return;
-    // Include search precedence or an indirect file may have changed. The
-    // worker validates all recorded reads; the controller coalesces requests.
-    requestSemanticAnalysis(SemanticAnalysisReason::ExternalFileChange,
-                            SemanticChangeImpact::FullFallback, {}, {}, projectModel->snapshot());
+    // Native directory notifications also cover view-state writes. Validate the
+    // published positive/negative reads before invalidating facts or queuing analysis.
+    symbolAnalyzer->checkSemanticInputsAsync(projectModel->snapshot());
 }
 
 void AnalysisScheduler::handleExternalFileChanged(const QString& fileName,

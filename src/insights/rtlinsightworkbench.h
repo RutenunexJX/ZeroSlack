@@ -24,6 +24,8 @@ class QLabel;
 class QLineEdit;
 class QPushButton;
 class QToolButton;
+class ModuleBlockDiagramView;
+struct ModuleBlockDiagramNode;
 
 class ZEROSLACK_API RtlInsightWorkbench final : public QWidget
 {
@@ -70,6 +72,8 @@ public:
     // title line and detach entry), for embedding in a titled container.
     void setCompactChrome(bool compact);
     void fitGraph();
+    ModuleBlockDiagramView* moduleView() const { return blockView; }
+    void setModuleNavigationHandler(std::function<void(const ModuleBlockDiagramNode&, bool)> handler);
 
 protected:
     void showEvent(QShowEvent* event) override;
@@ -98,6 +102,8 @@ private:
     std::function<void(const QString&,const QString&)> designHandler;
     InsightGraphCore core;
     InsightCanvas* canvasValue = nullptr;
+    ModuleBlockDiagramView* blockView = nullptr;
+    std::function<void(const ModuleBlockDiagramNode&, bool)> moduleNavigationHandler;
     QLabel* titleLabel = nullptr;
     QLabel* statusLabel = nullptr;
     QLineEdit* searchEdit = nullptr;

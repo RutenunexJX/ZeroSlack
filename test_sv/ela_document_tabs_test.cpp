@@ -58,6 +58,94 @@ void sendMouse(QWidget* target, QEvent::Type type, const QPoint& point,
 class ElaDocumentTabsTest final : public QObject {
     Q_OBJECT
 private slots:
+    void iconTabsProjectStateByViewIdentity() {
+        QTemporaryDir files;
+        const auto path = files.filePath("state.sv"); QVERIFY(writeFile(path));
+        Fixture f;
+        auto* split = f.tabs.editorSplitController();
+        QWidget leftHost; auto* left = split->registerRegion("left", &leftHost);
+        leftHost.resize(420,400); leftHost.show();
+        auto* other = new QWidget; left->addTab(other,"Navigation");
+        QVERIFY(f.tabs.openFileInTab(path));
+        auto* editor=f.tabs.getCurrentEditor(); auto* document=f.tabs.sharedDocumentForEditor(editor);
+        QVERIFY(split->movePage(editor,left)); left->setCurrentWidget(other);
+        auto* bar=left->tabBar(); const auto viewId=editor->property("editorViewId");
+        const auto rect=bar->tabRect(left->indexOf(editor));
+        editor->insertPlainText("// changed\n");
+        document->setExternalState(SharedDocumentExternalState::Conflict);
+        document->setReadOnly(true); QVERIFY(f.tabs.setTabLocked(editor,true));
+        QApplication::processEvents();
+        const auto state=UiControls::tabPresentation(editor);
+        QVERIFY(state.dirty && state.conflict && state.readOnly && state.locked);
+        QCOMPARE(state.documentId,document->documentId()); QCOMPARE(state.viewId,viewId.toString());
+        QVERIFY(!state.title.contains(QChar(0x25cf))); QVERIFY(!state.title.contains(QChar(0x26a0)));
+        QCOMPARE(bar->tabData(left->indexOf(editor)),viewId);
+        QCOMPARE(bar->tabRect(left->indexOf(editor)),rect);
+        QVERIFY(bar->tabToolTip(left->indexOf(editor)).contains("Unsaved changes"));
+        QVERIFY(bar->accessibleTabName(left->indexOf(editor)).contains("External conflict"));
+        bar->moveTab(left->indexOf(editor),0);
+        QCOMPARE(bar->tabData(0),viewId); QVERIFY(UiControls::tabPresentation(left->widget(0)).conflict);
+        auto* floating=split->floatPage(editor,QPoint(80,80)); QVERIFY(floating);
+        QCOMPARE(UiControls::tabPresentation(editor).viewId,viewId.toString());
+        QVERIFY(floating->tabBar()->accessibleTabName(floating->indexOf(editor)).contains("Read only"));
+        QVERIFY(split->movePage(editor,left));
+        document->setReadOnly(false); document->setExternalState(SharedDocumentExternalState::Current);
+        QVERIFY(f.tabs.setTabLocked(editor,false)); editor->undo();
+        const auto clean=UiControls::tabPresentation(editor);
+        QVERIFY(!clean.dirty && !clean.conflict && !clean.readOnly && !clean.locked);
+        QVERIFY(!left->tabBar()->accessibleTabName(left->indexOf(editor)).contains("Unsaved changes"));
+    }
+    void bottomRealTabStripMovesAcrossRegions_data() {
+        QTest::addColumn<QString>("edge");
+        for (const auto* value : {"center", "left", "right", "top", "bottom"})
+            QTest::newRow(value) << QString::fromLatin1(value);
+    }
+    void bottomRealTabStripMovesAcrossRegions() {
+        QFETCH(QString, edge);
+        QWidget window;
+        auto* layout = new QVBoxLayout(&window);
+        auto* mainHost = new QWidget(&window);
+        auto* bottomHost = new QWidget(&window);
+        auto* strip = new QWidget(&window);
+        auto* stripLayout = new QHBoxLayout(strip);
+        stripLayout->setContentsMargins(0,0,0,0);
+        layout->addWidget(mainHost,1); layout->addWidget(bottomHost,1); layout->addWidget(strip);
+        auto* initial = UiControls::editorTabWidget(mainHost);
+        EditorSplitController split(initial); split.setHost(mainHost);
+        auto* bottom = split.registerRegion("bottom",bottomHost);
+        split.setRegionTabStrip("bottom",strip);
+        if (edge == "center") initial->addTab(new QWidget,"editor");
+        auto* page = new QWidget;
+        page->setProperty("retainedState","unsaved view state");
+        bottom->addTab(page,"tool"); bottom->addTab(new QWidget,"keep");
+        split.registerPage(page,"tool:sample","tool");
+        window.resize(960,700);window.show();window.activateWindow();
+        QVERIFY(QTest::qWaitForWindowActive(&window));
+        auto* bar=bottom->tabBar();
+        QCOMPARE(bar->parentWidget(),strip);QCOMPARE(bottom->tabPosition(),QTabWidget::South);
+        bool accepted=false;
+        connect(qobject_cast<ElaTabWidget*>(bottom),&ElaTabWidget::hostedTabDragStarted,&window,[&](QDrag* drag) {
+            QPoint pos=initial->rect().center();
+            if (edge == "left") pos.setX(2);
+            if (edge == "right") pos.setX(initial->width()-3);
+            if (edge == "top") pos.setY(40);
+            if (edge == "bottom") pos.setY(initial->height()-3);
+            QDragEnterEvent enter(pos,Qt::MoveAction,drag->mimeData(),Qt::LeftButton,Qt::NoModifier);
+            QApplication::sendEvent(initial,&enter);
+            QDropEvent drop(pos,Qt::MoveAction,drag->mimeData(),Qt::LeftButton,Qt::NoModifier);
+            QApplication::sendEvent(initial,&drop);accepted=enter.isAccepted() && drop.isAccepted();
+        });
+        const auto press=bar->tabRect(0).center();
+        QTest::mousePress(bar,Qt::LeftButton,Qt::NoModifier,press);
+        sendMouse(bar,QEvent::MouseMove,press+QPoint(0,-80),Qt::NoButton,Qt::LeftButton);
+        QTest::mouseRelease(bar,Qt::LeftButton,Qt::NoModifier,press);
+        QVERIFY(accepted);QCOMPARE(split.groupForPage(page),initial);
+        QCOMPARE(split.groups("main").size(),1);
+        QCOMPARE(split.pageId(page),QString("tool:sample"));
+        QCOMPARE(page->property("retainedState").toString(),QString("unsaved view state"));
+        QVERIFY(split.movePage(page,bottom));QCOMPARE(bottom->tabBar(),bar);
+        QCOMPARE(bar->parentWidget(),strip);QCOMPARE(split.pageId(page),QString("tool:sample"));
+    }
     void leftLabelsKeepIdentityAndCloseProtection() {
         QTemporaryDir files;
         const auto path = files.filePath("project/long_selected_document.sv");

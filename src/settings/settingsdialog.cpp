@@ -1,11 +1,23 @@
 #include "settingsdialog.h"
 #include "settingscenterpanel.h"
 #include "uicontrols.h"
+#include "applicationthememanager.h"
+#include "insightvisualstyle.h"
+#ifdef ZEROSLACK_ENABLE_ELA
+#include "ElaAppBar.h"
+#endif
+#ifdef Q_OS_WIN
+#include <windows.h>
+#include <dwmapi.h>
+#endif
 
 #include <QApplication>
 #include <QCloseEvent>
 #include <QGuiApplication>
 #include <QScreen>
+#include <QListWidget>
+#include <QScopedValueRollback>
+#include <QSet>
 #include <QScrollArea>
 #include <QSettings>
 #include <QShowEvent>
@@ -68,6 +80,7 @@ SettingsDialog::SettingsDialog(SettingsCenterPanel* panel, QWidget* parent)
     : UiDialog(parent), settingsPanel(panel)
 {
     setObjectName(QStringLiteral("settingsDialog"));
+    setProperty("settingsWindowChrome", true);
     setWindowTitle(tr("Settings"));
     setWindowModality(Qt::NonModal);
     setAttribute(Qt::WA_DeleteOnClose, false);
@@ -75,6 +88,7 @@ SettingsDialog::SettingsDialog(SettingsCenterPanel* panel, QWidget* parent)
     setWindowFlag(Qt::WindowMinimizeButtonHint, false);
     setWindowFlag(Qt::WindowMaximizeButtonHint, false);
     auto* body = new QWidget(this);
+    body->setObjectName(QStringLiteral("settingsDialogBody"));
     auto* layout = new QVBoxLayout(body);
     layout->setContentsMargins(0, 0, 0, 12);
     layout->setSizeConstraint(QLayout::SetNoConstraint);
@@ -114,6 +128,31 @@ SettingsDialog::SettingsDialog(SettingsCenterPanel* panel, QWidget* parent)
     connect(qApp, &QGuiApplication::screenRemoved, this, [this] {
         if (isVisible()) QTimer::singleShot(0, this, &SettingsDialog::constrainPlacement);
     });
+    connect(&ApplicationThemeManager::instance(), &ApplicationThemeManager::themeChanged,
+            this, &SettingsDialog::refreshSurfaces);
+    refreshSurfaces();
+}
+
+void SettingsDialog::refreshSurfaces()
+{
+    const auto& theme = InsightVisualStyle::theme();
+    setStyleSheet(QStringLiteral(
+        "QWidget#settingsDialogBody { background: %1; }"
+        "QWidget#settingsCenterNavigationSurface { background: %2; border-radius: 8px; }"
+        "QWidget#settingsCenterContentSurface { background: %3; border-radius: 8px; }"
+        "QListWidget#settingsCenterCategoryList { background: transparent; border: 0; }"
+        "QScrollArea#settingsDialogScroll { background: %1; border: 0; }")
+        .arg(theme.surface.canvas.name(), theme.panelSubtle.name(), theme.surface.panel.name()));
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (auto* bar = findChild<ElaAppBar*>(QString(), Qt::FindDirectChildrenOnly)) {
+        auto colors = bar->palette();
+        colors.setColor(QPalette::Window, theme.surface.raised);
+        bar->setPalette(colors);
+        bar->setStyleSheet(QStringLiteral("ElaAppBar { background: %1; border-bottom: 1px solid %2; }")
+            .arg(theme.surface.raised.name(), theme.border.name()));
+        bar->setAttribute(Qt::WA_StyledBackground);
+    }
+#endif
 }
 
 void SettingsDialog::showSettings()
@@ -142,28 +181,75 @@ bool SettingsDialog::confirmDiscard()
     if (lastEditor && !settingsPanel->isAncestorOf(lastEditor))
         lastEditor.clear();
     settingsPanel->commitPendingEditors();
-    const QStringList scopes = settingsPanel->unappliedScopes();
+    auto scopes = settingsPanel->pendingScopes();
     if (scopes.isEmpty())
         return true;
-    confirming = true;
-    UiMessageDialog message(this);
-    message.setObjectName(QStringLiteral("settingsDiscardConfirmation"));
-    message.setWindowTitle(tr("Unapplied settings"));
-    message.setText(tr("The following changes have not been applied:\n%1\n\n"
-                       "Return to the relevant scope and use Apply to save them.")
-                        .arg(scopes.join(QLatin1Char('\n'))));
-    auto* keep = message.addButton(tr("Keep Editing"), QMessageBox::RejectRole);
-    auto* discard = message.addButton(tr("Discard Unapplied Changes"), QMessageBox::DestructiveRole);
-    keep->setObjectName(QStringLiteral("settingsKeepEditing"));
-    discard->setObjectName(QStringLiteral("settingsDiscardUnapplied"));
-    message.setDefaultButton(keep);
-    message.setEscapeButton(keep);
-    message.exec();
-    confirming = false;
-    const bool accepted = message.clickedButton() == discard;
-    if (!accepted && lastEditor)
-        lastEditor->setFocus(Qt::OtherFocusReason);
-    return accepted;
+    const QScopedValueRollback<bool> guard(confirming, true);
+    QSet<QString> selected;
+    for (const auto& scope : scopes)
+        if (scope.current) selected.insert(scope.key);
+    QStringList outcomes;
+    while (!scopes.isEmpty()) {
+        UiMessageDialog message(this);
+        message.setObjectName(QStringLiteral("settingsDiscardConfirmation"));
+        message.setWindowTitle(tr("Unapplied settings"));
+        const bool multiple = scopes.size() > 1;
+        message.setText(multiple ? tr("Choose the changes to apply. Unselected drafts remain open.")
+            : tr("Apply changes to %1 before closing?").arg(scopes.first().label));
+        if (!outcomes.isEmpty()) message.setText(outcomes.join(QLatin1Char('\n'))
+            + QStringLiteral("\n\n") + message.text());
+        QListWidget* list = nullptr;
+        if (multiple) {
+            list = UiControls::listWidget(&message);
+            list->setObjectName(QStringLiteral("settingsPendingScopes"));
+            list->setWordWrap(true);
+            list->setSelectionMode(QAbstractItemView::NoSelection);
+            for (const auto& scope : scopes) {
+                auto* item = new QListWidgetItem(scope.label, list);
+                item->setData(Qt::UserRole, scope.key);
+                item->setToolTip(scope.label);
+                item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsUserCheckable);
+                item->setCheckState(selected.contains(scope.key) ? Qt::Checked : Qt::Unchecked);
+            }
+            message.setContentWidget(list);
+        }
+        auto* apply = message.addButton(multiple ? tr("Apply Selected") : tr("Apply and Close"), QMessageBox::AcceptRole);
+        auto* discard = message.addButton(tr("Discard Changes"), QMessageBox::DestructiveRole);
+        auto* keep = message.addButton(tr("Keep Editing"), QMessageBox::RejectRole);
+        apply->setObjectName(QStringLiteral("settingsApplyOnClose"));
+        keep->setObjectName(QStringLiteral("settingsKeepEditing"));
+        discard->setObjectName(QStringLiteral("settingsDiscardUnapplied"));
+        if (list) {
+            const auto updateSelection = [list, apply, &selected] {
+                selected.clear();
+                for (int i = 0; i < list->count(); ++i)
+                    if (list->item(i)->checkState() == Qt::Checked)
+                        selected.insert(list->item(i)->data(Qt::UserRole).toString());
+                apply->setEnabled(!selected.isEmpty());
+            };
+            connect(list, &QListWidget::itemChanged, &message, updateSelection);
+            updateSelection();
+        } else {
+            selected = {scopes.first().key};
+        }
+        message.setDefaultButton(keep);
+        message.setEscapeButton(keep);
+        message.exec();
+        if (message.clickedButton() == discard) return true;
+        if (message.clickedButton() != apply) {
+            if (lastEditor) lastEditor->setFocus(Qt::OtherFocusReason);
+            return false;
+        }
+        outcomes.clear();
+        for (const auto& scope : scopes) {
+            if (!selected.contains(scope.key)) continue;
+            const auto result = settingsPanel->applyDraft(scope.key);
+            outcomes.append(result.saved ? tr("Applied: %1").arg(scope.label)
+                : tr("%1: %2").arg(scope.label, result.message));
+        }
+        scopes = settingsPanel->pendingScopes();
+    }
+    return true;
 }
 
 void SettingsDialog::closeEvent(QCloseEvent* event)
@@ -234,6 +320,14 @@ void SettingsDialog::constrainPlacement()
 void SettingsDialog::showEvent(QShowEvent* event)
 {
     UiDialog::showEvent(event);
+#ifdef Q_OS_WIN
+    // Ela's compatibility shadow path excludes Qt 6.10. Apply DWM only to
+    // this top-level surface; its native resize and focus handling stay intact.
+    if (QGuiApplication::platformName() == QStringLiteral("windows")) {
+        const MARGINS shadow{1, 1, 1, 1};
+        DwmExtendFrameIntoClientArea(reinterpret_cast<HWND>(winId()), &shadow);
+    }
+#endif
     if (windowHandle())
         connect(windowHandle(), &QWindow::screenChanged, this,
                 &SettingsDialog::constrainPlacement, Qt::UniqueConnection);

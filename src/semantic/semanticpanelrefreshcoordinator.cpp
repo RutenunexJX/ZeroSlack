@@ -4,6 +4,7 @@
 #include "navigationcommandcoordinator.h"
 #include "navigationmanager.h"
 #include "rtlinsightspanelcoordinator.h"
+#include "problemspanelcoordinator.h"
 #include "symbolpresentationservice.h"
 #include "tabmanager.h"
 #include "workspacemanager.h"
@@ -114,6 +115,7 @@ SemanticPanelRefreshCoordinator::
     QObject::disconnect(editorSelectionConnection);
     QObject::disconnect(
         editorInstanceContextConnection);
+    QObject::disconnect(documentContextConnection);
 }
 
 void SemanticPanelRefreshCoordinator::ContextDependencies::set(
@@ -130,7 +132,8 @@ void SemanticPanelRefreshCoordinator::ContextDependencies::set(
 
 QString SemanticPanelRefreshCoordinator::ContextDependencies::currentFileName() const
 {
-    return tabManager ? tabManager->getCurrentDocument().fileName : QString();
+    return tabManager && tabManager->contextEditor()
+        ? tabManager->contextDocumentMetadata().fileName : QString();
 }
 
 QStringList SemanticPanelRefreshCoordinator::ContextDependencies::workspaceFiles() const
@@ -217,6 +220,17 @@ void SemanticPanelRefreshCoordinator::configurePanels()
 {
     if (panels.isConfigured())
         return;
+
+    if (dependencies.tabManager) {
+        documentContextConnection = QObject::connect(dependencies.tabManager,
+            &TabManager::contextDocumentChanged, dependencies.tabManager, [this] {
+                handleActiveEditorChanged(dependencies.tabManager->contextEditor());
+            });
+        if (panels.problemsPanel) panels.problemsPanel->setCurrentFileStatusProvider([this] {
+            return dependencies.tabManager->contextPage() && !dependencies.tabManager->contextEditor()
+                ? QStringLiteral("Current document does not support HDL diagnostics") : QString();
+        });
+    }
 
     const CurrentFileProvider currentFileProvider = [this]() {
         return currentFileName();
@@ -344,6 +358,8 @@ void SemanticPanelRefreshCoordinator::showModuleBlockDiagramForSymbol(
 
 void SemanticPanelRefreshCoordinator::handleActiveEditorChanged(MyCodeEditor* editor)
 {
+    if (dependencies.tabManager) editor = dependencies.tabManager->contextEditor();
+    if (observedEditor == editor) { updateProblemsPanel(); return; }
     dependencies.handleActiveEditorChanged(editor);
     QObject::disconnect(editorCursorConnection);
     QObject::disconnect(editorSelectionConnection);

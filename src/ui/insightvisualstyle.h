@@ -6,6 +6,7 @@
 #include <QBrush>
 #include <QColor>
 #include <QFont>
+#include <QJsonObject>
 #include <QPalette>
 #include <QPen>
 #include <QString>
@@ -258,6 +259,8 @@ class InsightVisualStyle
 public:
     static const InsightTheme& theme();
     static const InsightTheme& theme(ThemeMode mode);
+    static QJsonObject webThemeTokens();
+    static QJsonObject webThemeTokens(bool dark);
     static QColor subtleBorder(const QColor& surface, const QColor& foreground);
 
     static QColor roleColor(InsightVisualRole role);

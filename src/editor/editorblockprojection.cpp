@@ -1,21 +1,26 @@
 #include "editorblockprojection.h"
 #include "documentblockmodel.h"
+#include "editorblockpreview.h"
+#include "blocknotestyle.h"
 #include "mycodeeditor.h"
 #include <QAbstractTextDocumentLayout>
 #include <QScrollBar>
 #include <QSignalBlocker>
 #include <QTextDocument>
 #include <QTextLayout>
+#include <QSet>
 #include <QtMath>
 #include <algorithm>
 
 void EditorBlockProjection::ensure(MyCodeEditor* editor, const QList<QPair<int,int>>& folds) {
     auto* model = DocumentBlockModel::get(editor->document());
-    if (model->items().isEmpty()) { enabled = false; runs.clear(); gaps.clear(); heights.clear(); return; }
+    if (std::none_of(model->items().cbegin(), model->items().cend(), [](const auto& block) { return !block.detached; })) {
+        enabled = false; runs.clear(); gaps.clear(); heights.clear(); noteHeights.clear(); return;
+    }
     const bool wasEnabled = enabled;
     const int previousSource = wasEnabled ? sourceForRow(rowAtY(offset(editor))) : editor->QPlainTextEdit::firstVisibleBlock().blockNumber();
     const bool layoutChanged = document != editor->document() || fontKey != editor->font().toString()
-        || (editor->lineWrapMode() != QPlainTextEdit::NoWrap && width != editor->viewport()->width());
+        || width != editor->viewport()->width() || styleRevision != BlockNoteStyle::instance().revision();
     if (layoutChanged || sourceCount != editor->document()->blockCount() || collapsed != folds) heights.clear();
     if (!dirty && !layoutChanged && sourceCount == editor->document()->blockCount()
         && modelRevision == model->revision() && collapsed == folds && enabled) {
@@ -24,6 +29,7 @@ void EditorBlockProjection::ensure(MyCodeEditor* editor, const QList<QPair<int,i
     document = editor->document(); sourceCount = document->blockCount(); width = editor->viewport()->width();
     fontKey = editor->font().toString(); estimate = qMax(1, editor->fontMetrics().height());
     modelRevision = model->revision(); collapsed = folds;
+    styleRevision = BlockNoteStyle::instance().revision();
     QList<QPair<int,int>> hidden;
     for (auto range : folds) {
         range.first = qBound(0, range.first + 1, sourceCount);
@@ -43,16 +49,32 @@ void EditorBlockProjection::ensure(MyCodeEditor* editor, const QList<QPair<int,i
     }
     if (from < sourceCount) { runs.append({from, sourceCount - from, count}); count += sourceCount - from; }
     gaps.clear();
+    QSet<QString> measuredNotes;
     for (const auto& block : model->items()) {
+        if (block.detached) continue;
         const int position = qBound(0, block.end > block.start ? block.end - 1 : block.end, document->characterCount() - 1);
         int line = block.missing ? sourceCount - 1 : document->findBlock(position).blockNumber();
         const bool hiddenAnchor = rowForSource(line) < 0;
         if (hiddenAnchor) for (const auto& range : merged) if (range.first <= line && line < range.second) { line = qMax(0, range.first - 1); break; }
         const int row = rowForSource(line);
         if (row < 0) continue;
-        const qreal blockHeight = block.collapsed || hiddenAnchor ? 36 : block.height + 36;
+        qreal blockHeight = block.collapsed || hiddenAnchor ? 36 : block.height + 36;
+        const auto autoText=block.type=="text" ? block.text : block.autoHeight ? EditorBlockPreview::linkOnlyText(block) : QString();
+        if (!block.collapsed && !hiddenAnchor && block.autoHeight && (block.type=="text" || !autoText.isEmpty())) {
+            measuredNotes.insert(block.id);
+            auto& measured = noteHeights[block.id];
+            if (measured.revision != block.revision || measured.style != styleRevision || measured.width != width
+                || !qFuzzyCompare(measured.dpr, editor->devicePixelRatioF())) {
+                measured = {block.revision, styleRevision, width, editor->devicePixelRatioF(),
+                    qMax<qreal>(52, BlockNoteStyle::measure(autoText, width - 40,
+                        BlockNoteStyle::instance().appearance(block.appearance)) + 24)};
+            }
+            blockHeight = measured.height;
+        }
         gaps.append({block.id, line, row, block.order, 0, blockHeight, hiddenAnchor});
     }
+    for (auto it = noteHeights.begin(); it != noteHeights.end();)
+        if (!measuredNotes.contains(it.key())) it = noteHeights.erase(it); else ++it;
     std::stable_sort(gaps.begin(), gaps.end(), [](const auto& a, const auto& b) { return a.row != b.row ? a.row < b.row : a.order < b.order; });
     int lastRow = -1; qreal within = 0;
     for (auto& gap : gaps) { if (gap.row != lastRow) within = 0; gap.offset = within; within += gap.height; lastRow = gap.row; }

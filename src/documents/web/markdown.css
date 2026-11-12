@@ -5,3 +5,6 @@ html.dark{color-scheme:dark}html.dark,html.dark body{color:#d7e0ed;background:#2
 html.dark{--editor-color:#d7e0ed;--editor-color-80:#e7edf7;--editor-color-50:#a4afbf;--editor-color-30:#727f91;--editor-color-10:#475163;--editor-color-04:#292f39;--editor-bg-color:#20242c;--icon-color:#bac7d9;--code-block-bg-color:#292f39;--table-border-color:#475163;--input-bg-color:#394456;--button-bg-color:#292f39;--button-bg-color-hover:#394456;--button-border:1px solid #475163;--float-bg-color:#292f39;--float-hover-color:#394456;--float-border-color:#475163;--link-color:#87b8ff}
 @media(max-width:600px){#editor .mu-container{margin:16px auto;padding-right:12px;padding-left:38px}}
 .mu-quick-insert .short-cut{display:none}
+:root{--ui-text:#37352f;--ui-panel:#fff}html.dark{--ui-text:#e7e7e5;--ui-panel:#202020}
+html,body,html.dark,html.dark body{color:var(--ui-text);background:var(--ui-panel)}
+.mu-quick-insert,.mu-format-picker,.mu-table-picker,.mu-inline-format-toolbar{font-family:var(--ui-font,system-ui,sans-serif);font-size:14px}

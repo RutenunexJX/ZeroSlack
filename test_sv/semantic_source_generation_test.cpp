@@ -149,6 +149,167 @@ private slots:
         QCOMPARE(readDocumentFile(file).rawBytes, latest.toUtf8());
     }
 
+    void unchangedDirectoryNotifications_data()
+    {
+        QTest::addColumn<bool>("dirtyOverlay");
+        QTest::newRow("disk-publication") << false;
+        QTest::newRow("dirty-document-publication") << true;
+    }
+    void unchangedDirectoryNotifications()
+    {
+        QFETCH(bool, dirtyOverlay);
+        std::atomic_bool release{false};
+        std::atomic_int workers{0};
+        Fixture f;
+        const QString file = f.directory.filePath("stable.sv");
+        const QString disk = "module fixture; logic stable_value; endmodule\n";
+        QString visible = disk;
+        QVERIFY(writeBytes(file, disk.toUtf8()));
+        if (dirtyOverlay) {
+            QVERIFY(f.tabs.openFileInTab(file));
+            QTextCursor cursor(f.tabs.getCurrentEditor()->document()); cursor.insertText("// local overlay\n");
+            visible = f.tabs.getCurrentEditor()->toPlainText();
+        }
+        f.start({file});
+        if (dirtyOverlay) {
+            QTRY_COMPARE(f.tabs.getDocumentModel()->cachedDocumentForFile(file).text, visible);
+            f.scheduler.requestDocumentSemanticRefresh({file});
+        }
+        QTRY_VERIFY_WITH_TIMEOUT(f.finished >= 1 && f.published(file, visible), 10000);
+        const auto publication = SemanticIndex::getInstance()->snapshotToken();
+        const int started = f.started, finished = f.finished;
+        QSignalSpy checked(&f.analyzer, &SymbolAnalyzer::semanticInputsChecked);
+        f.analyzer.setWorkspaceWorkerStartGateForTesting([&](const auto& cancelled) {
+            ++workers;
+            while (!release.load() && !cancelled()) QThread::msleep(2);
+        });
+        const auto releaseOnExit = qScopeGuard([&] { release = true; });
+        QVERIFY(QDir().mkpath(f.directory.filePath(".simdock")));
+        QVERIFY(writeBytes(f.directory.filePath(".simdock/design.json"), "{\"expanded\":[\"fixture\"]}"));
+        f.scheduler.handleSemanticInputsChanged(f.directory.path());
+        QTRY_COMPARE_WITH_TIMEOUT(workers.load(), 1, 3000);
+        for (int i = 0; i < 20; ++i) f.scheduler.handleSemanticInputsChanged(f.directory.path());
+        QCOMPARE(f.started, started); QVERIFY(!f.scheduler.isSemanticAnalysisActive());
+        release = true;
+        QTRY_COMPARE_WITH_TIMEOUT(checked.size(), 2, 10000);
+        QCOMPARE(workers.load(), 2);
+        for (const auto& result : checked) QVERIFY(!result.at(1).toBool());
+        QCOMPARE(f.started, started); QCOMPARE(f.finished, finished); QCOMPARE(f.failed, 0);
+        QCOMPARE(SemanticIndex::getInstance()->snapshotToken().revision, publication.revision);
+        QCOMPARE(SemanticIndex::getInstance()->snapshotToken().snapshot, publication.snapshot);
+        if (dirtyOverlay) {
+            QCOMPARE(f.tabs.getCurrentEditor()->toPlainText(), visible);
+            QVERIFY(f.tabs.getCurrentEditor()->document()->isModified());
+        }
+    }
+
+    void changedDirectoryInputs_data()
+    {
+        QTest::addColumn<QString>("kind");
+        for (const char* kind : {"source", "include", "missing-include", "higher-include-created", "higher-include-deleted"})
+            QTest::newRow(kind) << QString::fromLatin1(kind);
+    }
+    void changedDirectoryInputs()
+    {
+        QFETCH(QString, kind);
+        Fixture f;
+        const QString file = f.directory.filePath("top.sv");
+        const QString first = f.directory.filePath("first"), second = f.directory.filePath("second");
+        QVERIFY(QDir().mkpath(first)); QVERIFY(QDir().mkpath(second));
+        const QString initial = "`include \"pick.svh\"\nmodule fixture; logic source_before; endmodule\n";
+        QVERIFY(writeBytes(file, initial.toUtf8()));
+        if (kind != "missing-include")
+            QVERIFY(writeBytes(second + "/pick.svh", "module picked_low; endmodule\n"));
+        if (kind == "higher-include-deleted")
+            QVERIFY(writeBytes(first + "/pick.svh", "module picked_high; endmodule\n"));
+        ProjectSnapshot project;
+        project.workspaceRoot = f.directory.path(); project.systemVerilogFiles = {file}; project.allFiles = {file};
+        project.includeDirs = {first, second};
+        f.project.setWorkspaceState(project); f.scheduler.setProjectModel(&f.project);
+        QTRY_VERIFY_WITH_TIMEOUT(f.finished == 1 && f.published(file, initial), 10000);
+        QSignalSpy checked(&f.analyzer, &SymbolAnalyzer::semanticInputsChecked);
+        QString expected = "picked_after", absent = "picked_low";
+        if (kind == "source") {
+            QVERIFY(writeBytes(file, QString(initial).replace("source_before", "source_after").toUtf8()));
+            expected = "source_after"; absent = "source_before";
+        } else if (kind == "higher-include-deleted") {
+            QVERIFY(QFile::remove(first + "/pick.svh")); expected = "picked_low"; absent = "picked_high";
+        } else {
+            const QString folder = kind == "higher-include-created" ? first : second;
+            QVERIFY(writeBytes(folder + "/pick.svh", "module picked_after; endmodule\n"));
+        }
+        f.scheduler.handleSemanticInputsChanged(f.directory.path());
+        QTRY_VERIFY_WITH_TIMEOUT(!checked.isEmpty(), 10000);
+        QVERIFY(checked.first().at(1).toBool());
+        QTRY_VERIFY_WITH_TIMEOUT(f.finished == 2 && !f.scheduler.isSemanticAnalysisActive(), 10000);
+        QVERIFY(!SemanticIndex::getInstance()->getSymbolRecordsByName(expected).isEmpty());
+        QVERIFY(SemanticIndex::getInstance()->getSymbolRecordsByName(absent).isEmpty());
+        QCOMPARE(f.failed, 0);
+        const int started = f.started;
+        checked.clear(); f.scheduler.handleSemanticInputsChanged(f.directory.path());
+        QTRY_COMPARE_WITH_TIMEOUT(checked.size(), 1, 10000);
+        QVERIFY(!checked.first().at(1).toBool()); QCOMPARE(f.started, started);
+    }
+
+    void directoryProbeCancellation_data()
+    {
+        QTest::addColumn<QString>("transition");
+        for (const char* transition : {"workspace-switch", "disable", "shutdown"})
+            QTest::newRow(transition) << QString::fromLatin1(transition);
+    }
+    void directoryProbeCancellation()
+    {
+        QFETCH(QString, transition);
+        std::atomic_bool release{false}, entered{false}, exited{false};
+        Fixture f;
+        const QString file = f.directory.filePath("old.sv");
+        const QString text = "module old_root; endmodule\n";
+        QVERIFY(writeBytes(file, text.toUtf8())); f.start({file});
+        QTRY_VERIFY_WITH_TIMEOUT(f.finished == 1 && f.published(file, text), 10000);
+        QSignalSpy checked(&f.analyzer, &SymbolAnalyzer::semanticInputsChecked);
+        f.analyzer.setWorkspaceWorkerStartGateForTesting([&](const auto& cancelled) {
+            entered = true;
+            while (!release.load() && !cancelled()) QThread::msleep(2);
+            exited = true;
+        });
+        const auto releaseOnExit = qScopeGuard([&] { release = true; });
+        f.scheduler.handleSemanticInputsChanged(f.directory.path());
+        QTRY_VERIFY_WITH_TIMEOUT(entered.load(), 3000);
+        f.analyzer.setWorkspaceWorkerStartGateForTesting({});
+        QTemporaryDir next;
+        const QString nextFile = next.filePath("next.sv"), nextText = "module next_root; endmodule\n";
+        if (transition == "workspace-switch") {
+            QVERIFY(next.isValid()); QVERIFY(writeBytes(nextFile, nextText.toUtf8()));
+            f.project.setWorkspaceState(next.path(), {nextFile});
+        } else if (transition == "disable") {
+            auto policy = f.scheduler.semanticAnalysisRuntimePolicy(); policy.enabled = false;
+            f.scheduler.setSemanticAnalysisRuntimePolicy(policy);
+        } else {
+            QElapsedTimer timer; timer.start(); f.scheduler.shutdown(); QVERIFY(timer.elapsed() < 2000);
+        }
+        QTRY_VERIFY_WITH_TIMEOUT(exited.load(), 3000);
+        QCoreApplication::processEvents(); QVERIFY(checked.isEmpty());
+        if (transition == "workspace-switch") {
+            QTRY_VERIFY_WITH_TIMEOUT(f.published(nextFile, nextText), 10000);
+            const int started = f.started;
+            f.scheduler.handleSemanticInputsChanged(f.directory.path());
+            QTest::qWait(40); QCOMPARE(f.started, started); QVERIFY(checked.isEmpty());
+            f.scheduler.handleSemanticInputsChanged(next.path());
+            QTRY_COMPARE_WITH_TIMEOUT(checked.size(), 1, 10000);
+            QCOMPARE(qvariant_cast<ProjectSnapshot>(checked.first().at(0)).workspaceRoot, next.path());
+            QVERIFY(!checked.first().at(1).toBool()); QCOMPARE(f.started, started);
+        } else if (transition == "disable") {
+            const int started = f.started;
+            f.scheduler.handleSemanticInputsChanged(f.directory.path());
+            QTest::qWait(40); QVERIFY(checked.isEmpty()); QCOMPARE(f.started, started);
+            auto policy = f.scheduler.semanticAnalysisRuntimePolicy(); policy.enabled = true;
+            f.scheduler.setSemanticAnalysisRuntimePolicy(policy);
+            f.scheduler.handleSemanticInputsChanged(f.directory.path());
+            QTRY_COMPARE_WITH_TIMEOUT(checked.size(), 1, 10000);
+            QVERIFY(!checked.first().at(1).toBool()); QCOMPARE(f.started, started);
+        }
+    }
+
     void dirtyCloseAndUnreadableRecovery()
     {
         Fixture f;

@@ -108,6 +108,12 @@ struct DesignHierarchyNode {
     bool inSelectedTop = true;
     bool unresolved = false;
     QString unresolvedReason;
+    QString definitionId;
+    SymbolStableKey definitionKey;
+    QString configurationId;
+    QString status;
+    bool elaborated = false;
+    bool interfaceLike = false;
 };
 
 struct DesignHierarchyRoot {
@@ -124,6 +130,10 @@ struct DesignHierarchyReport {
     QSet<QString> participatingFiles;
     QList<QString> unresolvedModules;
     std::uint64_t snapshotGeneration = 0;
+    QHash<QString, int> nodeById;
+    QHash<QString, QList<int>> childrenById;
+    QHash<QString, QList<int>> nodesByPath;
+    QByteArray structureFingerprint;
 };
 
 class HierarchyService
@@ -160,6 +170,9 @@ public:
     QStringList modulesDefinedInFile(const QString& fileName) const;
     DesignHierarchyReport explicitDesignHierarchy(const QList<DesignHierarchyRoot>& roots,
         const QString& activeProjectId, const QSet<QString>& fileScope) const;
+    DesignHierarchyReport automaticDesignHierarchy(const QSet<QString>& fileScope = {},
+        const std::function<bool()>& cancelled = {}) const;
+    static QString definitionIdentity(const SymbolStableKey& key);
     HierarchyQuery queryForPanel(const HierarchyPanelQueryOptions& options) const;
     QList<HierarchyNode> moduleInstantiationChildren(const SymbolStableKey& moduleStableKey) const;
 

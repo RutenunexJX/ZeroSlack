@@ -20,6 +20,9 @@ LiveInsightGraphReportPtr buildLiveInsightGraphReport(
         query.fileName = input.fileName;
         query.moduleName = input.moduleName;
         query.maxDepth = input.maxDepth;
+        query.rootIdentity = input.rootIdentity;
+        query.instancePath = input.instancePath;
+        query.configurationIdentity = input.configurationIdentity;
         query.isCancelled = cancelled;
         report->value = ModuleBlockDiagramService(input.semantic).buildModuleBlockDiagram(query);
         break;
@@ -80,5 +83,6 @@ LiveInsightRequestKey liveInsightGraphRequestKey(
     key.semanticRevision = input.semantic.revision;
     key.contextKey = QStringLiteral("%1|%2|%3|%4|%5").arg(static_cast<int>(input.mode))
         .arg(input.fileName, input.moduleName, input.signalName).arg(input.maxDepth);
+    key.contextKey += '|' + input.rootIdentity + '|' + input.instancePath + '|' + input.configurationIdentity;
     return key;
 }

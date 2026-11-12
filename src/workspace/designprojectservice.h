@@ -18,6 +18,8 @@ public:
     QString setDesignExpanded(const QString& id, bool expanded);
     bool designMigrationCompleted() const { return m_explicitTopMigrated; }
     QString markDesignMigrationCompleted();
+    QJsonObject viewState() const { return m_store.value().value("viewState").toObject(); }
+    QString saveViewState(const QString& workspace, const QJsonObject& state);
 signals:
     void designProjectsChanged();
     void designExpansionChanged(const QString& id, bool expanded);

@@ -1,8 +1,8 @@
-#include "welcomecard.h"
 #include <QScrollArea>
 #include "uidialogs.h"
 #include "workspacechrome.h"
 #include "mainwindow.h"
+#include "compactlayout.h"
 #include "filecreation.h"
 #include <zeroslack/documents/documentfileread.h>
 #include "uicontrols.h"
@@ -70,6 +70,7 @@
 #include "scopedreplaceworkflow.h"
 #include "shareddocument.h"
 #include "settingscenterpanel.h"
+#include "blocknotestyle.h"
 #include "settingsdialog.h"
 #include <QScopeGuard>
 #include <QScopedValueRollback>
@@ -678,42 +679,21 @@ void MainWindow::setupWelcomePage()
     pageLayout->setContentsMargins(24,32,24,32);
     pageLayout->addStretch(1);
     auto* content = new QWidget(page);
-    content->setMaximumWidth(1120);
+    content->setMaximumWidth(600);
+    content->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     auto* contentLayout = new QVBoxLayout(content);
     contentLayout->setContentsMargins(0,0,0,0); contentLayout->setSpacing(16);
-    auto* heading = new QHBoxLayout;
-    auto* title = UiControls::label(tr("Get started"), content);
-    QFont titleFont=title->font(); titleFont.setPointSizeF(22); title->setFont(titleFont);
-    heading->addWidget(title,1);
-    auto* open = UiControls::pushButton(tr("Open workspace"), content);
-    open->setObjectName(QStringLiteral("welcomeOpenProjectButton"));
-    open->setIcon(RoundedIcons::icon(RoundedIcons::OpenProject));
-    open->setAccessibleName(tr("Open workspace"));
-    heading->addWidget(open);
-    contentLayout->addLayout(heading);
-    auto* subtitle = UiControls::label(tr("Code, waveforms, and registers."),content);
-    subtitle->setForegroundRole(QPalette::PlaceholderText); contentLayout->addWidget(subtitle);
-    auto* cards = new WelcomeCardGrid(content);
-    contentLayout->addWidget(cards);
-    const auto openWorkspace = [this] {
-        if (fileCommandCoordinator) fileCommandCoordinator->openDirectoryAsWorkspace();
-    };
-    connect(open,&QPushButton::clicked,this,openWorkspace);
-    connect(cards->card(0),&QPushButton::clicked,this,openWorkspace);
-    for (int i : {1,2}) {
-        auto* card=cards->card(i);
-        card->setEnabled(false); card->setCursor(Qt::ArrowCursor);
-        card->setToolTip(tr("This document entry is not available in this build."));
-        card->setAccessibleDescription(card->toolTip());
-        card->setAttribute(Qt::WA_AlwaysShowToolTips);
-    }
     auto* recentTitle = UiControls::label(tr("Recent workspaces"), content);
     recentTitle->setObjectName(QStringLiteral("welcomeRecentTitle"));
     UiTypography::apply(recentTitle, UiTypography::Role::PanelTitle);
     contentLayout->addWidget(recentTitle);
     recentProjectsLayout = new QVBoxLayout;
     recentProjectsLayout->setSpacing(8); contentLayout->addLayout(recentProjectsLayout);
-    pageLayout->addWidget(content,0,Qt::AlignHCenter);
+    auto* centered = new QHBoxLayout;
+    centered->addStretch(1);
+    centered->addWidget(content, 4);
+    centered->addStretch(1);
+    pageLayout->addLayout(centered);
     pageLayout->addStretch(2);
     scroll->setWidget(page);
     centralContentStack->addWidget(welcomePage);
@@ -731,9 +711,12 @@ void MainWindow::refreshWelcomePage()
     }
     if (workspaceManager) {
         const auto recent = workspaceManager->recentWorkspaceEntries();
-        if (auto* title = welcomePage->findChild<QLabel*>(
-                QStringLiteral("welcomeRecentTitle")))
-            title->setVisible(!recent.isEmpty());
+        if (recent.isEmpty()) {
+            auto* empty = UiControls::label(tr("No recent workspaces"), welcomePage);
+            empty->setObjectName(QStringLiteral("welcomeRecentEmpty"));
+            empty->setForegroundRole(QPalette::PlaceholderText);
+            recentProjectsLayout->addWidget(empty);
+        }
         for (int index = 0; index < qMin(recent.size(), 5); ++index) {
             const auto& entry = recent.at(index);
             auto* row = UiControls::toolButton(welcomePage);
@@ -743,7 +726,8 @@ void MainWindow::refreshWelcomePage()
             auto* rowLayout = new QVBoxLayout(row);
             rowLayout->setContentsMargins(14, 9, 14, 9);
             rowLayout->setSpacing(3);
-            auto* name = UiControls::label(entry.alias, row);
+            auto* name = new CompactTitleLabel(row);
+            name->setText(entry.alias);
             name->setAttribute(Qt::WA_TransparentForMouseEvents);
             UiTypography::apply(name, UiTypography::Role::Body);
             QFont nameFont = name->font();
@@ -751,22 +735,23 @@ void MainWindow::refreshWelcomePage()
             name->setFont(nameFont);
             rowLayout->addWidget(name);
             const QString fullPath = QDir::toNativeSeparators(entry.path);
-            auto* path = UiControls::label(row);
+            auto* path = new CompactTitleLabel(row);
+            path->setElideMode(Qt::ElideMiddle);
             path->setObjectName(QStringLiteral("welcomeRecentPath"));
             path->setAttribute(Qt::WA_TransparentForMouseEvents);
             UiTypography::apply(path, UiTypography::Role::Metadata);
             path->setForegroundRole(QPalette::PlaceholderText);
             path->setProperty("fullPath", fullPath);
-            path->setText(path->fontMetrics().elidedText(
-                fullPath, Qt::ElideMiddle, 328));
+            path->setText(fullPath);
+            path->setToolTip(fullPath);
             rowLayout->addWidget(path);
             row->setToolTip(QDir::toNativeSeparators(entry.path));
             row->setAccessibleName(entry.alias + QLatin1Char(' ')
                                    + entry.path);
             row->setMinimumHeight(60);
             row->setStyleSheet(QStringLiteral(
-                "QToolButton { background: palette(base); "
-                "border: 1px solid palette(midlight); border-radius: 9px; }"
+                "QToolButton { background: transparent; "
+                "border: 0; border-radius: 8px; }"
                 "QToolButton:hover { background: palette(midlight); }"));
             connect(row, &QToolButton::clicked, this,
                     [this, path = entry.path]() {
@@ -1925,6 +1910,13 @@ void MainWindow::setupPanelLayoutController()
         panelLayoutController->restorePanel(QStringLiteral("simulationLog"));
     };
     connect(simulation, &simdock::Workbench::issueRaised, this, showSimulationIssue);
+    connect(simulation, &simdock::Workbench::selectSimulationTargetRequested, this, [this] {
+        if (auto* navigation = findChild<NavigationWidget*>()) {
+            navigation->setActiveTab(NavigationWidget::DesignTab);
+            navigation->focusSearch();
+        }
+        statusBar()->showMessage(tr("Choose a module in Design, then use Set as simulation top."));
+    });
     connect(simulationWorkspace.get(), &SimDockContextView::issueRaised, this, showSimulationIssue);
     connect(workspaceSimulation.get(), &simdock::WorkspaceSimulationController::finished, this,
         [showSimulationIssue](bool completed, const QString& message) {
@@ -2078,7 +2070,7 @@ void MainWindow::setupLinkedContext()
         return;
     QList<QWidget*> chrome;
     if (panelLayoutController) {
-        chrome.append(panelLayoutController->buttonBar());
+        chrome.append(panelLayoutController->tabStrip());
         chrome.append(panelLayoutController->resizeHandle());
     }
     if (contextWorkspaceController) {
@@ -2831,7 +2823,7 @@ ActionExecutionResult MainWindow::executeActionRoute(
                     .toString();
             if (!tabManager
                 || (!tabManager->editorActionTarget(preferredViewId)
-                    && !(preferredViewId.isEmpty() && tabManager->currentWebDocument()))) {
+                    && !(preferredViewId.isEmpty() && (tabManager->currentWebDocument() || tabManager->currentAssociatedBlock())))) {
                 return fail();
             }
             fileCommandCoordinator->saveEditor(
@@ -2844,7 +2836,7 @@ ActionExecutionResult MainWindow::executeActionRoute(
                     .toString();
             if (!tabManager
                 || (!tabManager->editorActionTarget(preferredViewId)
-                    && !(preferredViewId.isEmpty() && tabManager->currentWebDocument()))) {
+                    && !(preferredViewId.isEmpty() && (tabManager->currentWebDocument() || tabManager->currentAssociatedBlock())))) {
                 return fail();
             }
             fileCommandCoordinator->saveEditor(
@@ -4572,7 +4564,8 @@ void MainWindow::ensureSettingsCenterPanel()
     settingsDialog = new SettingsDialog(settingsCenterPanel, this);
     connect(settingsCenterPanel, &SettingsCenterPanel::settingsApplied, this,
             [this](SettingsCenterScope) {
-                applySettingsCenterSnapshot(settingsCenterService->load(settingsCenterPanel->workspaceRoot()));
+                applySettingsCenterSnapshot(settingsCenterService->load(
+                    workspaceManager ? workspaceManager->getWorkspacePath() : QString()));
             });
 }
 
@@ -4585,6 +4578,7 @@ void MainWindow::showSettingsCenter()
 void MainWindow::applySettingsCenterSnapshot(
     const SettingsCenterSnapshot& snapshot)
 {
+    BlockNoteStyle::instance().apply(snapshot.effectiveValues);
     if (contextWorkspaceController)
         contextWorkspaceController->setFloatingOpacity(
             snapshot.value(QStringLiteral("appearance.floatingContextOpacity")).toInt());

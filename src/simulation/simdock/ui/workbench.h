@@ -57,6 +57,7 @@ signals:
     void scanFinished();
     void designProjectsChanged();
     void preferencesChanged();
+    void selectSimulationTargetRequested();
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
 private:
@@ -77,6 +78,8 @@ private:
     QString m_simulator;
     QVariantMap m_preferences;
     bool m_standalone = false, m_logFollow = true;
+    bool m_wasBusy = false;
+    SimulationTarget m_runningTarget;
     int m_logPosition = 0;
     std::function<QString()> m_runHandler;
     std::function<void()> m_configureWorkspace;

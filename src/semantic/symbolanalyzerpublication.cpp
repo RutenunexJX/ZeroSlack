@@ -169,6 +169,7 @@ void SymbolAnalyzer::waitForPublicationRetirements()
 
 void SymbolAnalyzer::clearSemanticIndex()
 {
+    cancelSemanticInputCheck();
     ++workspaceEpoch;
     ++workspaceAnalysisGeneration;
     overlayProject = {};

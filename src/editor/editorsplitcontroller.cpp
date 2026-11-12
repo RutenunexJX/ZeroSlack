@@ -465,6 +465,18 @@ void EditorSplitController::setRegionRevealHandler(const QString& id,std::functi
 {
     if (regionHosts.contains(id)) regionHosts[id].reveal=std::move(reveal);
 }
+void EditorSplitController::setRegionTabStrip(const QString& id, QWidget* strip)
+{
+    if (!regionHosts.contains(id)) return;
+    regionHosts[id].tabStrip = strip;
+#ifdef ZEROSLACK_ENABLE_ELA
+    for (auto* group : groups(id))
+        if (auto* ela = qobject_cast<ElaTabWidget*>(group); ela && !ela->isFloatingTabWidget()) {
+            ela->setTabPosition(id == QStringLiteral("bottom") ? QTabWidget::South : QTabWidget::North);
+            ela->setHostedTabBarContainer(strip);
+        }
+#endif
+}
 void EditorSplitController::revealGroup(QTabWidget* group)
 {
     if (restoringPageLayout) return;
@@ -1073,6 +1085,13 @@ void EditorSplitController::configureGroup(QTabWidget* group)
     if (leftLabels) group->tabBar()->setFocusPolicy(Qt::StrongFocus);
     group->tabBar()->setExpanding(false);
     group->tabBar()->setUsesScrollButtons(true);
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (auto* ela = qobject_cast<ElaTabWidget*>(group); ela && !ela->isFloatingTabWidget()) {
+        const auto region = regionForGroup(group);
+        ela->setTabPosition(region == QStringLiteral("bottom") ? QTabWidget::South : QTabWidget::North);
+        ela->setHostedTabBarContainer(regionHosts.value(region).tabStrip);
+    }
+#endif
     if (!group->tabBar()->property("zeroslackElaControl").toBool())
         group->tabBar()->setStyleSheet(QStringLiteral("QTabBar::tab { min-width: 108px; }"));
     bindGroupDropTargets(group);
@@ -1142,6 +1161,8 @@ QTabWidget* EditorSplitController::groupForObject(QObject* object) const
 {
     QWidget* widget = qobject_cast<QWidget*>(object);
     while (widget) {
+        if (auto* bar = qobject_cast<QTabBar*>(widget))
+            for (auto* group : groups()) if (group->tabBar() == bar) return group;
         if (auto* group = qobject_cast<QTabWidget*>(widget)) {
             if (tabGroups.contains(group))
                 return group;
@@ -1569,6 +1590,11 @@ void EditorSplitController::showTabContextMenu(
             "executionRoute",
             item.executionRoute);
         action->setEnabled(item.enabled);
+    }
+
+    if (auto* page = group->widget(index); page && !page->actions().isEmpty()) {
+        menu.addSeparator();
+        for (auto* action : page->actions()) menu.addAction(action);
     }
 
     QAction* selected = menu.exec(bar->mapToGlobal(position));

@@ -2,6 +2,7 @@
 #include "contextdockhost.h"
 #include "editorsplitcontroller.h"
 #include <QTabWidget>
+#include <QTabBar>
 #include "contextdocktransition.h"
 #include "contextpeekhost.h"
 #include "contextrail.h"
@@ -1372,7 +1373,8 @@ void verifySidebarStack()
     const auto keys = host->resourceKeys();
     bool visible = keys.size() == 3;
     for (const auto& key : keys)
-        visible &= host->viewForResource(key)->isVisible() && host->sectionWidget(key)->height() > host->sectionHeader(key)->height();
+        visible &= host->viewForResource(key)->isVisible() && host->viewForResource(key)->height() >= host->sectionWidget(key)->height() - 2
+            && !host->sectionWidget(key)->findChild<QWidget*>("contextSectionHeader");
     check(visible && host->viewForResource(keys[0]) != host->viewForResource(keys[1])
               && host->viewForResource(keys[1]) != host->viewForResource(keys[2])
               && host->viewForResource(keys[0]) != host->viewForResource(keys[2]),
@@ -1506,20 +1508,22 @@ void verifySectionStatusFromView()
     check(controller.openResource(item, keptPlacement), "section_status_open: kept resource opens");
     settleUi();
     auto* host = controller.dockHost();
-    QLabel* status = host->sectionStatus(key);
-    check(status && !status->isVisible(),
-          "section_status_absent: a view publishing no status leaves the header unchanged");
+    auto* frame = host->sectionWidget(key);
+    auto* group = host->pageRegistry()->groupForPage(frame);
+    const auto tooltip = [group, frame] { return group->tabToolTip(group->indexOf(frame)); };
+    check(!frame->findChild<QWidget*>("contextSectionHeader") && !tooltip().contains("Stale"),
+          "section_status_absent: the real tab names the view without a duplicate header");
     QWidget* view = host->viewForResource(key);
     view->setProperty("contextStatusText", QStringLiteral("Stale"));
     view->setProperty("contextStatusTooltip", QStringLiteral("last valid result"));
     settleUi();
-    check(status->isVisible() && status->text() == QStringLiteral("Stale")
-              && status->toolTip() == QStringLiteral("last valid result"),
-          "section_status_published: the header shows status published by the view");
+    check(tooltip().contains("Stale") && tooltip().contains("last valid result"),
+          "section_status_published: the real tab exposes freshness and its reason");
     view->setProperty("contextStatusText", QString());
+    view->setProperty("contextStatusTooltip", QString());
     settleUi();
-    check(!status->isVisible(),
-          "section_status_cleared: clearing the property hides the header chip");
+    check(!tooltip().contains("Stale") && !tooltip().contains("last valid result"),
+          "section_status_cleared: cleared status leaves no stale tab metadata");
 }
 
 void verifySidebarVisibilityToggle()
@@ -1628,7 +1632,7 @@ void verifySidebarCompression()
         }
         settleUi();
         auto* incoming = new QLabel("c");
-        if (bottom) incoming->setMinimumWidth(projectionHost.sectionHeader(first.stableKey())->minimumSizeHint().width());
+        if (bottom) incoming->setMinimumWidth(qMax(projectionHost.viewForResource(first.stableKey())->minimumWidth(), projectionHost.viewForResource(first.stableKey())->minimumSizeHint().width()));
         const auto predicted = projectionHost.projectedSectionRect(bottom, 1, projectionHost.viewportGlobalRect(bottom), incoming);
         projectionHost.addResource(inserted, incoming);
         if (bottom) projectionHost.moveResourceToArea(inserted.stableKey(), true, 1);
@@ -1706,8 +1710,16 @@ void verifySidebarDragOut()
     const QSize previousSize = host->sectionWidget(keys[0])->size();
     const QRect available = fixture.window.screen()->availableGeometry();
     const QPoint destination(available.left() - available.width(), available.bottom() + available.height() / 4);
-    QWidget* handle = host->sectionDragHandle(keys[2]);
-    check(handle && handle->isEnabled(), "stack_drag_handle: detachable section has an enabled explicit grip");
+    QWidget* page = host->sectionWidget(keys[2]);
+    auto* group = host->pageRegistry()->groupForPage(page);
+    check(group && group->tabBar()->isVisible() && page->property("hostedTabDetachable").toBool()
+              && !page->findChild<QWidget*>("contextSectionHeader"),
+          "stack_drag_tab: a detachable section uses its real page tab with no duplicate grip");
+    auto* nativeFloat = host->pageRegistry()->floatPage(page, fixture.window.mapToGlobal(QPoint(100,100)));
+    check(nativeFloat && host->viewForResource(keys[2]) == view && fixture.counters.created == created,
+          "stack_native_float: floating preserves the section and its content identity");
+    check(host->pageRegistry()->movePage(page, host->pageRegistry()->regionGroup("right")) && host->viewForResource(keys[2]) == view,
+          "stack_native_return: returning preserves the content and registry identity");
     check(controller.dragOutResource(keys[2],destination),"provider preview detach remains available beside shared tab movement");
     auto* floating = controller.floatingWindow();
     check(floating->view() == view && fixture.counters.created == created && !host->containsResource(keys[2])
@@ -1719,8 +1731,8 @@ void verifySidebarDragOut()
     const auto blocked = resource("drag-blocked");
     controller.openResource(blocked, keptPlacement);
     QString reason;
-    check(!host->sectionDragHandle(blocked.stableKey())->isEnabled()
-              && !host->sectionDragHandle(blocked.stableKey())->toolTip().isEmpty()
+    check(!host->sectionWidget(blocked.stableKey())->property("hostedTabDetachable").toBool()
+              && !host->pageRegistry()->floatPage(host->sectionWidget(blocked.stableKey()), destination)
               && !controller.dragOutResource(blocked.stableKey(), destination, &reason) && !reason.isEmpty()
               && controller.floatingWindows().size() == 1 && host->containsResource(blocked.stableKey()),
           "stack_drag_opt_out: non-detachable grip is disabled and forced detach is rejected without moving the resource");
@@ -2165,12 +2177,11 @@ int main(int argc, char* argv[])
                      second.stableKey()) == secondView
               && controller.dockWidget()->isVisible(),
           "pinning moves the existing view without recreating it");
-    QToolButton* dockFullView =
-        controller.dockHost()->findChild<QToolButton*>(
-            QStringLiteral("contextDockFullView"));
+    QAction* dockFullView = controller.dockHost()->sectionWidget(second.stableKey())
+        ->findChild<QAction*>(QStringLiteral("contextOpenInMain"));
     settleUi();
     if (dockFullView)
-        dockFullView->click();
+        dockFullView->trigger();
     check(dockFullView && dockFullView->isVisible()
               && fullViewRequests == 2,
           "Pinned host reuses the same provider full-view action");

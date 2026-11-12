@@ -129,7 +129,9 @@ InsightViewBuildResult ModuleBlockInsightViewPlugin::build(
     input.semantic = context.semantic.isValid() ? context.semantic : SemanticIndex::getInstance()->snapshotToken();
     input.fileName = context.fileName;
     input.moduleName = context.moduleName;
-    input.maxDepth = 2;
+    input.rootIdentity = context.rootIdentity;
+    input.instancePath = context.instancePath;
+    input.configurationIdentity = context.configurationIdentity;
     if (!input.semantic.isValid() || context.moduleName.trimmed().isEmpty())
         return unavailable(context, pluginId(), QStringLiteral("block"), QStringLiteral("Select an analyzed RTL module to view its block diagram."));
     return insightViewFromGraphReport(*buildLiveInsightGraphReport(input), context, pluginId());

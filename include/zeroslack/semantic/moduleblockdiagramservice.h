@@ -16,6 +16,9 @@ struct ModuleBlockDiagramQuery {
     QString fileName;
     int maxDepth = -1; // Negative means all descendants; cycles remain terminal nodes.
     std::function<bool()> isCancelled;
+    QString rootIdentity;
+    QString instancePath;
+    QString configurationIdentity;
 };
 
 enum class ModuleBlockDiagramNotFoundReason {
@@ -38,6 +41,14 @@ struct ModuleBlockDiagramNode {
     QString unresolvedReason;
     RtlInsightCodeLink definitionCodeLink;
     RtlInsightCodeLink instanceCodeLink;
+    QString stableId;
+    QString rootIdentity;
+    QString rootModule;
+    QString rootDefinitionFile;
+    QString definitionIdentity;
+    QString configurationIdentity;
+    QString instancePath;
+    QString status;
 };
 
 struct ModuleBlockDiagramEdge {
@@ -70,6 +81,7 @@ struct ModuleBlockDiagramReport {
     int edgeCount = 0;
     int resolvedInstanceCount = 0;
     int unresolvedInstanceCount = 0;
+    QString initialFocusId;
 };
 
 class ModuleBlockDiagramService

@@ -2346,6 +2346,7 @@ bool MyCodeEditor::viewProjectionActive() const
 void MyCodeEditor::invalidateViewProjection()
 {
     state->projection.invalidate();
+    if (blockHost) blockHost->schedule();
 }
 
 EditorViewProjectionMetrics MyCodeEditor::viewProjectionMetricsForTest() const

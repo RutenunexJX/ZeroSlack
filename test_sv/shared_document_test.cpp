@@ -526,6 +526,9 @@ void runUnifiedRegionDocuments()
     expect("toolbar focus retains last document target",manager.editorActionTarget()==second);
     registry->activatePage(tool); tool->setFocus(); QApplication::processEvents();
     expect("tool page clears background code command target",manager.editorActionTarget()==nullptr);
+    expect("tool focus retains the explicit document context without copying text",
+           manager.contextEditor()==second && manager.contextDocumentMetadata().documentId==documentId
+           && manager.contextDocumentMetadata().fileName==path && manager.contextDocumentMetadata().text.isEmpty());
     expect("unknown view identity cannot use a background document",manager.editorActionTarget(QStringLiteral("missing"))==nullptr);
     registry->activatePage(first); manager.flushCrashRecovery();
     const int candidates=manager.listCrashRecoveryCandidates(temporary.path()).candidates.size();
@@ -536,6 +539,8 @@ void runUnifiedRegionDocuments()
         && manager.listCrashRecoveryCandidates(temporary.path()).candidates.size()==1);
     expect("remaining sidebar view saves the shared document",manager.saveEditorView(second,false,path) && !document->dirty());
     expect("clean final regional view closes",manager.closeAllTabs() && manager.editorCount()==0);
+    expect("closing the final code view clears its context even when a tool remains",
+           !manager.contextPage() && manager.contextDocumentMetadata().documentId.isEmpty());
 }
 
 int main(int argc, char** argv)

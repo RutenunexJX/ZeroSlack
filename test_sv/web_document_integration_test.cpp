@@ -166,6 +166,33 @@ private slots:
             if (data->hasImage()) clipboardImage = qvariant_cast<QImage>(data->imageData());
         }
     }
+    void sharedThemePreservesDocument_data() {
+        QTest::addColumn<bool>("blocks"); QTest::newRow("markdown")<<false; QTest::newRow("blocks")<<true;
+    }
+    void sharedThemePreservesDocument() {
+        QFETCH(bool,blocks);
+        const auto kind=blocks ? WebDocumentPage::Kind::Blocks : WebDocumentPage::Kind::Markdown;
+        WebDocumentPage page(kind);
+        const auto input=file(blocks ? "theme-block-source.md" : "theme-markdown.md");
+        QVERIFY(write(input,"# Theme review\n\nReadable document content.\n\n- Notes keep their own type size.\n- The surrounding UI follows the selected theme.\n"));
+        QString issue;
+        if (blocks) QVERIFY2(page.importMarkdown(input,&issue),qPrintable(issue));
+        else QVERIFY2(page.openFile(input,&issue),qPrintable(issue));
+        QVERIFY(ready(page));
+        if (blocks) QVERIFY(page.save(true,file("theme-blocks.zblock")));
+        paste(page,"Theme edit remains unsaved."); QTRY_VERIFY(page.dirty());
+        QString baseline; quint64 revision=0; QVERIFY(page.captureRecovery(&baseline,&revision));
+        for (auto mode:{ThemeMode::Light,ThemeMode::Dark,ThemeMode::CatppuccinLatte,ThemeMode::CatppuccinFrappe,ThemeMode::CatppuccinMacchiato,ThemeMode::CatppuccinMocha}) {
+            ApplicationThemeManager::instance().setMode(mode); page.setTheme(isDarkTheme(mode)); QTest::qWait(200);
+            const auto name=QString("shared-theme-%1-%2").arg(blocks ? "blocks" : "markdown").arg(int(mode));
+            capture(page,name);
+            QString content; quint64 current=0; QVERIFY(page.captureRecovery(&content,&current));
+            QCOMPARE(content,baseline); QCOMPARE(current,revision); QVERIFY(page.dirty());
+        }
+        ApplicationThemeManager::instance().setMode(ThemeMode::Light);
+        QVERIFY(page.save()); QVERIFY(!page.dirty()); const auto saved=read(page.fileName());
+        page.setTheme(true); QTest::qWait(150); QVERIFY(!page.dirty()); QCOMPARE(page.currentRevision(),revision); QCOMPARE(read(page.fileName()),saved);
+    }
     void sharedDocumentWorkerSurvivesOriginalView_data() {
         QTest::addColumn<QString>("kind"); QTest::newRow("markdown") << QString("markdown"); QTest::newRow("blocks") << QString("blocks");
     }
@@ -888,7 +915,12 @@ private slots:
         });
         picker.start(); QVERIFY2(first->save(),qPrintable(notice(*first))); QVERIFY(selected);
         QCOMPARE(first->fileName(),QFileInfo(path).absoluteFilePath()); QVERIFY(QFileInfo::exists(path)); QVERIFY(!first->dirty());
-        QCOMPARE(splits->groupForPage(first)->tabToolTip(splits->groupForPage(first)->indexOf(first)),first->fileName());
+        QVERIFY(splits->groupForPage(first)->tabToolTip(splits->groupForPage(first)->indexOf(first)).contains(QDir::toNativeSeparators(first->fileName())));
+        QCOMPARE(tabs->contextDocumentMetadata().documentId, first->documentId());
+        QCOMPARE(tabs->contextDocumentMetadata().fileName, first->fileName());
+        QVERIFY(!tabs->contextEditor());
+        QCOMPARE(UiControls::tabPresentation(first).documentId, first->documentId());
+        QVERIFY(!UiControls::tabPresentation(first).dirty);
         QVERIFY(tabs->closeAllTabs()); tabs->clearCrashRecoveryAfterNormalClose();
     }
     void mainWindowCreateDocumentsWithoutOverwrite() {

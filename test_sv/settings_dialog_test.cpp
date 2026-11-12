@@ -27,6 +27,8 @@
 #include <QTextBlock>
 #include <QToolBar>
 #include <QToolButton>
+#include <QTextEdit>
+#include <QDoubleSpinBox>
 
 namespace {
 bool writeFile(const QString& path,const QByteArray& bytes) {
@@ -125,6 +127,84 @@ private slots:
         record(host,"entries");
         QVERIFY(closeWithDecision(host,true,[&]{host->close();},true));
         QVERIFY(!host->isVisible());QVERIFY(panel->unappliedScopes().isEmpty());QVERIFY(window.close());
+    }
+    void applyCloseKeepsUnselectedWorkspace() {
+        const auto workspace = temporary->filePath("workspace"); QVERIFY(QDir().mkpath(workspace));
+        SettingsCenterService service(temporary->filePath("settings.ini"));
+        auto* panel = new SettingsCenterPanel(&service, workspace);
+        SettingsDialog host(panel,nullptr); host.showSettings();
+        panel->setScope(SettingsCenterScope::Workspace); QVERIFY(makeAnalysisDraft(panel));
+        panel->setScope(SettingsCenterScope::Global); QVERIFY(makeAnalysisDraft(panel));
+        QTimer timer; timer.setInterval(10); int phase = 0; bool selectionCorrect = false;
+        connect(&timer, &QTimer::timeout, &host, [&] {
+            auto* message = host.findChild<UiMessageDialog*>("settingsDiscardConfirmation"); if (!message) return;
+            if (phase == 0) {
+                auto* list = message->findChild<QListWidget*>("settingsPendingScopes");
+                auto* apply = message->findChild<QPushButton*>("settingsApplyOnClose");
+                if (!list || !apply) { message->reject(); timer.stop(); return; }
+                selectionCorrect = list->count() == 2 && list->item(0)->data(Qt::UserRole).toString() == "global"
+                    && list->item(0)->checkState() == Qt::Checked && list->item(1)->checkState() == Qt::Unchecked;
+                list->item(0)->setCheckState(Qt::Unchecked); selectionCorrect &= !apply->isEnabled();
+                list->item(0)->setCheckState(Qt::Checked); ++phase; apply->click();
+            } else { ++phase; timer.stop(); message->reject(); }
+        });
+        timer.start(); QVERIFY(!host.close()); QCOMPARE(phase,2); QVERIFY(selectionCorrect); QVERIFY(host.isVisible());
+        QVERIFY(!panel->isScopeDirty(SettingsCenterScope::Global)); QVERIFY(panel->isScopeDirty(SettingsCenterScope::Workspace));
+        QCOMPARE(service.load(workspace).globalValues.value("analysis.enabled").toBool(), false);
+        QVERIFY(service.load(workspace).workspaceValues.isEmpty());
+        QTimer::singleShot(0,&host,[&] {
+            auto* message=host.findChild<UiMessageDialog*>("settingsDiscardConfirmation");
+            if(message) message->findChild<QPushButton*>("settingsApplyOnClose")->click();
+        });
+        QVERIFY(host.close()); QVERIFY(panel->pendingScopes().isEmpty());
+        QCOMPARE(service.load(workspace).workspaceValues.value("analysis.enabled").toBool(), false);
+    }
+    void cachedDraftSaveAndConflictAreIndependent() {
+        const auto a = temporary->filePath("a"), b = temporary->filePath("b"); QVERIFY(QDir().mkpath(a)); QVERIFY(QDir().mkpath(b));
+        SettingsCenterService service(temporary->filePath("settings.ini")); SettingsCenterPanel panel(&service,a);
+        panel.setScope(SettingsCenterScope::Workspace); QVERIFY(makeAnalysisDraft(&panel));
+        const auto keyA=panel.pendingScopes().first().key;
+        panel.setWorkspaceRoot(b); QVERIFY(makeAnalysisDraft(&panel));
+        const auto keyB=panel.pendingScopes().first().key;
+        QVERIFY(service.saveWorkspace(b,{{"analysis.maxDiagnostics",777}}).saved);
+        QVERIFY(panel.applyDraft(keyA).saved); QCOMPARE(panel.workspaceRoot(),b);
+        QVERIFY(service.load(a).workspaceValues.contains("analysis.enabled"));
+        const auto failed=panel.applyDraft(keyB); QVERIFY(!failed.saved); QVERIFY(failed.conflict);
+        QVERIFY(panel.isScopeDirty(SettingsCenterScope::Workspace)); QCOMPARE(service.load(b).workspaceValues.value("analysis.maxDiagnostics").toInt(),777);
+        panel.setScope(SettingsCenterScope::Global); QVERIFY(makeAnalysisDraft(&panel)); QVERIFY(panel.applyDraft("global").saved);
+        QVERIFY(panel.isScopeDirty(SettingsCenterScope::Workspace)); QCOMPARE(panel.pendingScopes().size(),1);
+        panel.discardUnappliedChanges(); QVERIFY(panel.pendingScopes().isEmpty());
+        QCOMPARE(service.load(a).workspaceValues.value("analysis.enabled").toBool(),false);
+    }
+    void invalidRowsSurviveScopeAndWorkspaceSwitch() {
+        const auto a=temporary->filePath("a"), b=temporary->filePath("b"); QVERIFY(QDir().mkpath(a)); QVERIFY(QDir().mkpath(b));
+        SettingsCenterService service(temporary->filePath("settings.ini")); SettingsCenterPanel panel(&service,a);
+        panel.setScope(SettingsCenterScope::Workspace); panel.selectCategory("shortcut");
+        panel.findChild<QCheckBox*>(SettingsCenterPanel::fieldOverrideObjectName("shortcut.overrides"))->setChecked(true);
+        auto* model=qobject_cast<QStandardItemModel*>(panel.stringMapModel("shortcut.overrides")); QVERIFY(model);
+        model->appendRow({new QStandardItem("file.save"),new QStandardItem("Ctrl+S")});
+        model->appendRow({new QStandardItem("file.save"),new QStandardItem("Ctrl+Alt+S")});
+        const auto key=panel.pendingScopes().first().key; panel.setWorkspaceRoot(b);
+        const auto result=panel.applyDraft(key); QVERIFY(!result.saved); QVERIFY(!result.issues.isEmpty());
+        panel.setWorkspaceRoot(a); QCOMPARE(model->rowCount(),2); QCOMPARE(model->index(1,1).data().toString(),QString("Ctrl+Alt+S"));
+        panel.setScope(SettingsCenterScope::Global); panel.setScope(SettingsCenterScope::Workspace); QCOMPARE(model->rowCount(),2);
+        model->removeRow(1); QVERIFY(panel.applyDraft(key).saved);
+    }
+    void blockFontDraftPreviewAndReset() {
+        SettingsCenterService service(temporary->filePath("settings.ini")); SettingsCenterPanel panel(&service);
+        panel.selectCategory("font");
+        auto* size=qobject_cast<QSpinBox*>(panel.fieldEditor("blockNotes.sizePx"));
+        auto* spacing=qobject_cast<QDoubleSpinBox*>(panel.fieldEditor("blockNotes.lineHeight"));
+        auto* family=qobject_cast<QComboBox*>(panel.fieldEditor("blockNotes.fontFamily"));
+        auto* preview=panel.findChild<QTextEdit*>("settingsBlockNotesPreview"); QVERIFY(size && spacing && family && preview);
+        QCOMPARE(size->value(),15); QCOMPARE(spacing->value(),1.6);
+        family->setEditText("Unavailable Font For Fallback"); size->setValue(24); spacing->setValue(2.4);
+        QCOMPARE(preview->document()->defaultFont().pixelSize(),24);
+        QVERIFY(service.load().globalValues.isEmpty()); QVERIFY(panel.applyDraft("global").saved);
+        QCOMPARE(service.load().value("blockNotes.fontFamily").toString(),QString("Unavailable Font For Fallback"));
+        QCOMPARE(service.load().value("blockNotes.sizePx").toInt(),24);
+        panel.findChild<QPushButton*>("settingsResetBlockFont")->click(); QCOMPARE(size->value(),15); QCOMPARE(spacing->value(),1.6);
+        QVERIFY(panel.applyDraft("global").saved); QCOMPARE(service.load().value("blockNotes.sizePx").toInt(),15);
     }
     void closePaths_data() {
         QTest::addColumn<int>("path");QTest::newRow("gear")<<0;QTest::newRow("close-button")<<1;

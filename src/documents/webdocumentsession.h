@@ -33,6 +33,8 @@ public:
     QString title() const;
     Kind documentKind() const { return kind; }
     bool dirty() const { return revision != savedRevision || untitledDirty; }
+    bool hasExternalConflict() const { return externalConflict; }
+    bool isProtected() const { return protectedContent; }
     bool ready() const { return initialized; }
     bool busy() const { return operation; }
     quint64 currentRevision() const { return revision; }

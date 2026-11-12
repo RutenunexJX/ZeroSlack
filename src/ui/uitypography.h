@@ -10,8 +10,8 @@ enum class Role { PageTitle, PanelTitle, Section, Body, Metadata, Badge };
 inline QFont font(Role role = Role::Body)
 {
     static const QStringList families = [] {
-        QStringList preferred { QStringLiteral("Noto Sans"), QStringLiteral("Segoe UI"),
-            QStringLiteral("Noto Sans SC"), QStringLiteral("Microsoft YaHei UI"), QStringLiteral("Arial") };
+        QStringList preferred { QStringLiteral("Segoe UI"), QStringLiteral("Microsoft YaHei UI"),
+            QStringLiteral("Noto Sans"), QStringLiteral("Noto Sans SC"), QStringLiteral("Arial") };
 #ifdef Q_OS_WIN
         // Offscreen Qt has no native font database; use installed system fonts for previews.
         if (QGuiApplication::platformName() == QStringLiteral("offscreen")) {
@@ -32,7 +32,7 @@ inline QFont font(Role role = Role::Body)
         || role == Role::Section;
     result.setWeight(strong ? QFont::DemiBold : QFont::Normal);
     result.setPixelSize(role == Role::PageTitle ? 18 : role == Role::PanelTitle ? 14
-        : role == Role::Badge ? 11 : role == Role::Metadata || role == Role::Section ? 12 : 13);
+        : role == Role::Badge ? 11 : role == Role::Metadata || role == Role::Section ? 12 : 14);
     return result;
 }
 

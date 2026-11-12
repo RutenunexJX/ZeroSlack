@@ -86,6 +86,7 @@ public:
         const QList<OpenDocumentContent>& openDocuments = {});
     void startSemanticAnalysisAsync(const SemanticAnalysisRequest& request,
                                     std::function<bool()> externalCancellation = {});
+    void checkSemanticInputsAsync(const ProjectSnapshot& project);
     std::uint64_t nextCompatibilityRequestGeneration() { return ++compatibilityAnalysisGeneration; }
     void analyzeFile(const QString& filePath);
     void analyzeFileContent(
@@ -147,6 +148,7 @@ signals:
     void semanticAnalysisCommitted(const SemanticAnalysisRequest& request,
                                    const SemanticSnapshotToken& publication);
     void semanticInputWatchPathsChanged(const QString& root, const QStringList& files, const QStringList& directories);
+    void semanticInputsChecked(const ProjectSnapshot& project, bool changed);
     void fileAnalysisRejected(const QString& fileName, std::uint64_t documentRevision, const QString& reason);
     void semanticAnalysisDropped(
         const SemanticAnalysisRequest& request,
@@ -173,6 +175,12 @@ private:
     QHash<QString, std::shared_ptr<const PublishedWorkspaceSemanticState>> retainedWorkspaces;
     QStringList retainedWorkspaceLru;
     std::shared_ptr<const PublishedWorkspaceSemanticState> activeWorkspaceState;
+    // One coalesced input probe; the published state remains the sole baseline.
+    std::optional<ProjectSnapshot> pendingSemanticInputCheck;
+    QFutureWatcher<bool>* semanticInputCheckWatcher = nullptr;
+    std::shared_ptr<std::atomic_bool> semanticInputCheckCancelFlag;
+    void launchPendingSemanticInputCheck();
+    void cancelSemanticInputCheck();
     void rememberWorkspace(std::shared_ptr<const PublishedWorkspaceSemanticState> state);
     void forgetRetainedState(const QString& key);
     // Analysis state tracking

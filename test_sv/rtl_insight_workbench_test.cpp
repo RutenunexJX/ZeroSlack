@@ -1,6 +1,7 @@
 #include "contextworkspacecontroller.h"
 #include "contextfloatingwindow.h"
 #include "contextdockhost.h"
+#include "editorsplitcontroller.h"
 #include "testuistyle.h"
 #include "live_insight_test_utils.h"
 #include "contextrail.h"
@@ -29,6 +30,9 @@
 #include "semanticindexsnapshot.h"
 #include "slangmanager.h"
 #include "moduleblockdiagramservice.h"
+#include "moduleblockdiagramview.h"
+#include "designhierarchymodel.h"
+#include <QTreeView>
 #include "symbolrelationshipengine.h"
 #include "semantic_fixture_records.h"
 #include "workspacechrome.h"
@@ -112,6 +116,7 @@ private slots:
     void specializedModesSurviveRouting();
     void sidebarSectionTeardownReleasesFocusedControls();
     void moduleDiagramAdaptsAndNavigatesInstances();
+    void moduleTargetPersistsExactInstanceContext();
     void moduleDiagramIncludesDeepDescendantsAndTerminatesCycles();
     void ordinaryAndSpecializedModuleCanvases();
     void stateTargetPickerUsesRenderSession();
@@ -319,29 +324,43 @@ void RtlInsightWorkbenchTest::toolPagesRouteAllFourWorkbenchViews()
 
 void RtlInsightWorkbenchTest::moduleCanvasRendersSwitchesAndExports()
 {
+
     SignalTraceTestFixture fixture;
-    QVERIFY(fixture.build("module leaf(input wire a,output wire y);assign y=a;endmodule\nmodule top(input wire a,output wire y);leaf u(a,y);endmodule\n"));
+    QVERIFY(fixture.build("module leaf;endmodule\nmodule branch;leaf u();endmodule\nmodule top;branch left();branch right();endmodule\n"));
     auto* index=SemanticIndex::getInstance(); const auto previous=index->snapshot();
-    const auto restore=qScopeGuard([&]{index->setSnapshot(previous);});
-    index->setSnapshot(fixture.context.token.snapshot);
-    LiveInsightToolPage page(LiveInsightKind::Module); page.resize(1000,700); page.show();
-    LiveInsightToolContext context; context.workspaceId=fixture.directory.path(); context.fileName=context.documentId=fixture.file;
-    context.projectId="main"; context.moduleName="top"; context.documentText=fixture.source;
-    page.setContext(context);
-    auto* workbench=page.workbenchForTest(); QVERIFY(workbench); auto* canvas=workbench->canvas(); QVERIFY(canvas);
-    QTRY_COMPARE_WITH_TIMEOUT(canvas->nodeItemCountForTest(),2,10000);
-    QCOMPARE(canvas->edgeItemCountForTest(),1);
-    page.fitGraph(); const auto zoom=canvas->zoomFactor(); canvas->zoomIn(); QVERIFY(canvas->zoomFactor()>zoom);
-    const auto nodes=canvas->snapshot().nodes; QVERIFY(!nodes.isEmpty());
-    canvas->selectNodeIds({nodes.cbegin().key()}); QCOMPARE(canvas->selectedNodeIds().size(),1);
+    const auto restore=qScopeGuard([&]{index->setSnapshot(previous);}); index->setSnapshot(fixture.context.token.snapshot);
+    LiveInsightToolPage page(LiveInsightKind::Module); page.resize(1000,700);page.show();
+    LiveInsightToolContext context;context.workspaceId=fixture.directory.path();context.fileName=context.documentId=fixture.file;
+    context.projectId="main";context.moduleName="top";context.documentText=fixture.source;
+    QString navigated;
+    context.navigateModule=[&](const ModuleBlockDiagramNode& n,bool){navigated=n.instancePath;};
+    page.setContext(context);auto* workbench=page.workbenchForTest();auto* view=workbench->moduleView();QVERIFY(view);
+    QTRY_VERIFY_WITH_TIMEOUT(view->layoutReady(),10000);QVERIFY(workbench->canvas()->isHidden());
+    const auto report=ModuleBlockDiagramService(fixture.context.token).buildModuleBlockDiagram({{},"top",fixture.file});
+    QCOMPARE(report.nodes.size(),5);QHash<QString,QString> ids;for(const auto& n:report.nodes)ids[n.instancePath]=n.stableId;
+    const auto parent=view->nodeRect(ids["top"]),child=view->nodeRect(ids["top.left"]),leaf=view->nodeRect(ids["top.left.u"]);
+    QVERIFY(parent.contains(child));QVERIFY(child.contains(leaf));
+    auto* canvas=view->findChild<QWidget*>("moduleBlockCanvas");QVERIFY(canvas);
+    const auto point=view->nodeRect(ids["top.right.u"]).center().toPoint()-canvas->pos();
+    QTest::mouseClick(canvas,Qt::LeftButton,Qt::NoModifier,point);QVERIFY(navigated.isEmpty());QTRY_COMPARE(navigated,"top.right.u");
+    QTest::mouseDClick(canvas,Qt::LeftButton,Qt::NoModifier,point);QCOMPARE(view->focusId(),ids["top.right.u"]);
+    QVERIFY(view->up());QCOMPARE(view->focusId(),ids["top.right"]);QVERIFY(view->back());QCOMPARE(view->focusId(),ids["top.right.u"]);
+    QVERIFY(view->forward());QCOMPARE(view->focusId(),ids["top.right"]);QVERIFY(view->up());QCOMPARE(view->focusId(),ids["top"]);
+    const auto scale=view->saveViewState()["zoom"].toDouble();view->zoom(1.2);QVERIFY(view->saveViewState()["zoom"].toDouble()>scale);
+    const auto state=page.saveNativeState();view->enter(ids["top.left"]);page.restoreNativeState(state);QCOMPARE(view->focusId(),ids["top"]);
     QVERIFY(workbench->exportCurrentGraph(fixture.directory.filePath("module.svg")).success);
-    context.moduleName="missing"; page.setContext(context);
-    QCOMPARE(canvas->nodeItemCountForTest(),0);
+    context.moduleName="missing";page.setContext(context);
     QTRY_COMPARE_WITH_TIMEOUT(page.graphSession()->snapshot(LiveInsightKind::Module).phase,LiveInsightPhase::Ready,10000);
-    QVERIFY(!workbench->statusText().isEmpty()); QCOMPARE(canvas->nodeItemCountForTest(),0);
-    context.moduleName="leaf"; page.setContext(context);
-    QTRY_COMPARE_WITH_TIMEOUT(canvas->nodeItemCountForTest(),1,10000);
-    QCOMPARE(canvas->edgeItemCountForTest(),0);
+    QVERIFY(!workbench->statusText().isEmpty());QVERIFY(view->layoutReady());QCOMPARE(view->focusId(),ids["top"]);
+    context.moduleName="leaf";context.instancePath="top.left.u";page.setContext(context);
+    QTRY_COMPARE_WITH_TIMEOUT(view->focusId(),ids["top.left.u"],10000);QTRY_VERIFY(view->layoutReady());
+    const auto saved=page.saveNativeState();
+    auto other=report;other.root.stableId="other-root";other.nodes[0].stableId="other-root";other.initialFocusId="other-root";
+    view->setReport(other,"other-workspace");QTRY_VERIFY(view->layoutReady());QCOMPARE(view->focusId(),"other-root");
+    view->setReport(report,context.workspaceId);QTRY_VERIFY(view->layoutReady());QCOMPARE(view->focusId(),saved["focus"].toString());
+    view->enter(ids["top"]);
+    const auto output=qEnvironmentVariable("ZEROSLACK_UI_REVIEW_DIR");if(!output.isEmpty()){QDir().mkpath(output);page.grab().save(output+"/nested-module.png");}
+
 }
 
 void RtlInsightWorkbenchTest::specializedModesSurviveRouting()
@@ -378,8 +397,10 @@ void RtlInsightWorkbenchTest::sidebarSectionTeardownReleasesFocusedControls()
         QVERIFY(controller.unpinResource(resource.stableKey()));QVERIFY(controller.floatingWindow());QCOMPARE(controller.floatingWindow()->view(),view.data());
         QVERIFY(controller.pinFloatingResource(resource.stableKey(),true));QCOMPARE(controller.viewForResource(resource.stableKey()),view.data());QCOMPARE(panel->focusSearchText(),QString("assign"));
         QVERIFY(controller.unpinResource(resource.stableKey()));QVERIFY(controller.pinFloatingResource(resource.stableKey()));
-        QToolButton* close=nullptr;for(auto* button:controller.dockHost()->findChildren<QToolButton*>())if(button->toolTip()=="Close section")close=button;
-        QVERIFY(close);close->click();QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);QTRY_VERIFY(view.isNull());QCOMPARE(controller.dockHost()->resourceCount(),0);
+        auto* host=controller.dockHost(); auto* page=host->sectionWidget(resource.stableKey());
+        QVERIFY(page); QVERIFY(!page->findChild<QWidget*>("contextSectionHeader"));
+        QVERIFY(host->pageRegistry()->requestPageClose(page));
+        QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);QTRY_VERIFY(view.isNull());QCOMPARE(host->resourceCount(),0);
     }
 
 }
@@ -387,26 +408,42 @@ void RtlInsightWorkbenchTest::sidebarSectionTeardownReleasesFocusedControls()
 void RtlInsightWorkbenchTest::moduleDiagramAdaptsAndNavigatesInstances()
 {
 
-    SignalTraceTestFixture fixture;QVERIFY(fixture.build("module leaf;endmodule\nmodule branch;leaf u();endmodule\nmodule other;leaf inactive();endmodule\nmodule top;branch left();branch right();endmodule\n"));
-    const QList<DesignHierarchyRoot> roots{{"main","Main","top",fixture.file,true},{"other","Other","other",fixture.file,true}};
-    const auto report=HierarchyService(fixture.context.token).explicitDesignHierarchy(roots,"main",{fixture.file});
-    QVERIFY(report.nodes.size()>=7);NavigationWidget view;view.resize(600,720);view.updateDesignHierarchy(report);view.setActiveTab(NavigationWidget::DesignTab);view.show();
-    QVERIFY(view.selectDesignInstance("top.left.u",true));auto* tree=view.findChild<QTreeWidget*>("navigationDesignTree");QVERIFY(tree && tree->currentItem());
-    QVERIFY(tree->currentItem()->text(0).contains("u [leaf]"));QVERIFY(view.selectDesignInstance("top.right.u",true));
-    QVERIFY(!view.selectDesignInstance("other.inactive",true));QVERIFY(view.selectDesignModule("leaf",fixture.file));
-    DesignHierarchyNode navigated;connect(&view,&NavigationWidget::designNodeDoubleClicked,&view,[&](const DesignHierarchyNode& n){navigated=n;});
-    tree->itemDoubleClicked(tree->currentItem(),0);QCOMPARE(navigated.moduleType,QString("leaf"));QVERIFY(navigated.instanceLine>0 && navigated.definitionLine>0);
-    QVERIFY(navigated.instanceLine!=navigated.definitionLine);
-    int selectionEvents=0;connect(&view,&NavigationWidget::designInstanceSelected,&view,[&](const QString&){++selectionEvents;});
-    QVERIFY(view.selectDesignInstance("top.left.u"));QCOMPARE(selectionEvents,0);
-    for(QTreeWidgetItemIterator it(tree);*it;++it)QVERIFY((*it)->sizeHint(0).height()<=view.height());
+    SignalTraceTestFixture fixture;QVERIFY(fixture.build("module leaf;endmodule\nmodule branch #(parameter N=1);for(genvar i=0;i<N;i++)begin:g leaf u();end endmodule\nmodule top;branch #(.N(1)) left();branch #(.N(2)) right();endmodule\n"));
+    const auto tree=HierarchyService(fixture.context.token).automaticDesignHierarchy();
+    ModuleBlockDiagramQuery query;query.moduleName="branch";query.fileName=fixture.file;query.instancePath="top.right";
+    const auto report=ModuleBlockDiagramService(fixture.context.token).buildModuleBlockDiagram(query);QVERIFY(report.found);
+    QSet<QString> paths;
+    for(const auto& node:report.nodes){paths.insert(node.instancePath);QVERIFY(tree.nodeById.contains(node.stableId));
+        const auto& same=tree.nodes[tree.nodeById[node.stableId]];QCOMPARE(node.configurationIdentity,same.configurationId);QCOMPARE(node.definitionCodeLink.line,same.definitionLine);}
+    QVERIFY(paths.contains("top.left.g[0].u"));QVERIFY(paths.contains("top.right.g[1].u"));QVERIFY(!paths.contains("top.left.g[1].u"));
+    QCOMPARE(report.initialFocusId,tree.nodes[tree.nodesByPath["top.right"].first()].id);
+    query.configurationIdentity="stale-configuration";QVERIFY(!ModuleBlockDiagramService(fixture.context.token).buildModuleBlockDiagram(query).found);
+    query.configurationIdentity.clear();query.instancePath.clear();QVERIFY(!ModuleBlockDiagramService(fixture.context.token).buildModuleBlockDiagram(query).found);
 
-    QVERIFY(fixture.build("module leaf;endmodule\nmodule branch #(parameter N=1);for(genvar i=0;i<N;i++)begin:g leaf u();end endmodule\nmodule top;branch #(.N(1)) left();branch #(.N(2)) right();endmodule\n"));
-    const auto specialized=HierarchyService(fixture.context.token).explicitDesignHierarchy({{"main","Main","top",fixture.file,true}},"main",{fixture.file});
-    QSet<QString> paths;for(const auto& node:specialized.nodes)paths.insert(node.instancePath);
-    QVERIFY(paths.contains("top.left.g[0].u"));QVERIFY(paths.contains("top.right.g[0].u"));
-    QVERIFY(paths.contains("top.right.g[1].u"));QVERIFY(!paths.contains("top.left.g[1].u"));
+}
 
+void RtlInsightWorkbenchTest::moduleTargetPersistsExactInstanceContext()
+{
+    LiveInsightSession session;
+    LiveInsightToolContext source;source.workspaceId="workspace";source.fileName="hierarchy.sv";
+    source.moduleName="branch";source.instancePath="top.left";source.rootIdentity="root";source.configurationIdentity="left-config";
+    LiveInsightsContextView view(&session,LiveInsightKind::Module);
+    view.setToolContextSource([&]{return source;});
+    LiveInsightsContextView::TargetCandidate target;
+    target.label=target.moduleName="branch";target.fileName=source.fileName;
+    target.instancePath="top.right";target.rootIdentity="root";target.configurationIdentity="right-config";
+    QVERIFY(view.applyTargetCandidate(target));
+    const auto state=view.saveState();const auto stored=state["target"].toMap();
+    QCOMPARE(stored["instancePath"].toString(),QString("top.right"));
+    QCOMPARE(stored["configurationIdentity"].toString(),QString("right-config"));
+    LiveInsightsContextView restored(&session,LiveInsightKind::Module);
+    restored.setToolContextSource([&]{return source;});restored.restoreState(state);
+    QCOMPARE(restored.saveState()["target"].toMap(),stored);
+    const auto candidates=restored.candidateTargets();
+    QVERIFY(std::any_of(candidates.cbegin(),candidates.cend(),[](const auto& item){return item.instancePath=="top.left";}));
+    target.instancePath.clear();target.rootIdentity.clear();target.configurationIdentity.clear();
+    QVERIFY(restored.applyTargetCandidate(target));
+    QVERIFY(restored.saveState()["target"].toMap()["instancePath"].toString().isEmpty());
 }
 
 void RtlInsightWorkbenchTest::moduleDiagramIncludesDeepDescendantsAndTerminatesCycles()
@@ -415,11 +452,13 @@ void RtlInsightWorkbenchTest::moduleDiagramIncludesDeepDescendantsAndTerminatesC
     SignalTraceTestFixture fixture;QString source="module top;m0 u();endmodule\n";
     for(int i=0;i<13;++i)source+=QString("module m%1;m%2 u();endmodule\n").arg(i).arg(i+1);
     source+="module cycle;cycle again();endmodule\n";QVERIFY(fixture.build(source));
-    const QList<DesignHierarchyRoot> roots{{"main","Main","top",fixture.file,true},{"cycle","Cycle","cycle",fixture.file,true}};
-    const auto report=HierarchyService(fixture.context.token).explicitDesignHierarchy(roots,"main",{fixture.file});
-    QVERIFY(report.nodes.size()>=15);QVERIFY(report.nodes.size()<40);bool missing=false,recursive=false;
-    for(const auto& node:report.nodes){if(node.moduleType=="m13")missing|=node.unresolved;if(node.moduleType=="cycle" && !node.isTop)recursive|=node.unresolved;}
-    QVERIFY(missing);QVERIFY(recursive);
+    const auto report=ModuleBlockDiagramService(fixture.context.token).buildModuleBlockDiagram({{},"top",fixture.file});
+    QCOMPARE(report.nodes.size(),15);QVERIFY(report.nodes.last().unresolved);
+    ModuleBlockDiagramView view;view.resize(1000,720);view.show();view.setReport(report,"deep");QTRY_VERIFY(view.layoutReady());
+    for(int i=1;i<report.nodes.size();++i){QVERIFY(view.nodeRect(report.nodes[i-1].stableId).contains(view.nodeRect(report.nodes[i].stableId)));QVERIFY(view.enter(report.nodes[i].stableId));}
+    for(int i=report.nodes.size()-2;i>=0;--i){QVERIFY(view.up());QCOMPARE(view.focusId(),report.nodes[i].stableId);}
+    const auto cycle=ModuleBlockDiagramService(fixture.context.token).buildModuleBlockDiagram({{},"cycle",fixture.file});
+    QVERIFY(cycle.found);QVERIFY(cycle.nodes.size()<4);QVERIFY(cycle.nodes.last().unresolved);
 
 }
 
@@ -751,8 +790,9 @@ void RtlInsightWorkbenchTest::ordinaryAndSpecializedModuleCanvases()
         QVERIFY(workbench.setViewKind(InsightWorkbenchViewKind::Block));
         workbench.setContext(context);
         QVERIFY(workbench.canvas());
-        QTRY_COMPARE(workbench.canvas()->nodeItemCountForTest(),2);
-        QCOMPARE(workbench.canvas()->edgeItemCountForTest(),1);
+        QVERIFY(workbench.moduleView());
+        QTRY_VERIFY(workbench.moduleView()->layoutReady());
+        QVERIFY(workbench.canvas()->isHidden());
         QVERIFY(workbench.exportCurrentGraph(fixture.directory.filePath(specialized ? "specialized.svg" : "ordinary.svg")).success);
     }
     const auto result=ModuleBlockInsightViewPlugin().build(context);

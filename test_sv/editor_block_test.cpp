@@ -6,6 +6,7 @@
 #include "tabmanager.h"
 #include "tsdocument.h"
 #include "pinloompreviewimage.h"
+#include "blocknotestyle.h"
 #include <QPlainTextDocumentLayout>
 #include <QtTest>
 #include <QtWidgets>
@@ -16,15 +17,18 @@ class EditorBlockTest : public QObject {
     DocumentBlockModel* model() { return editor->blockModel(); }
     QString insert(int position = 0) {
         QTextCursor cursor(editor->document()); cursor.setPosition(position);
-        return model()->insert("text", cursor, "note");
+        EditorAssociatedBlock fixed; fixed.type = "text"; fixed.text = "note";
+        return model()->insert(fixed, cursor);
     }
 private slots:
     void init() {
         editor = std::make_unique<MyCodeEditor>(); editor->resize(800, 500);
         editor->setPlainText("alpha\nbeta\ngamma\n"); editor->document()->setModified(false);
         editor->show(); editor->setFocus(); QCoreApplication::processEvents();
+        const auto expected=qEnvironmentVariable("ZEROSLACK_EXPECTED_DPR");
+        if (!expected.isEmpty()) QCOMPARE(editor->devicePixelRatioF(),expected.toDouble());
     }
-    void cleanup() { editor.reset(); }
+    void cleanup() { editor.reset(); BlockNoteStyle::instance().apply({}); }
     void independentSourceAndSharedAuthority() {
         const auto source = editor->toPlainText(); const int count = editor->blockCount();
         const auto id = insert(3); QVERIFY(!id.isEmpty()); QVERIFY(model()->dirty());
@@ -63,7 +67,7 @@ private slots:
     }
     void shellFocusAndDelete() {
         const auto id = insert(3); editor->selectAssociatedBlock(id, true);
-        auto* text = editor->findChild<QPlainTextEdit*>("editorBlockText"); QVERIFY(text); QVERIFY(text->hasFocus());
+        auto* text = editor->findChild<QTextEdit*>("editorBlockText"); QVERIFY(text); QVERIFY(text->hasFocus());
         QTest::keyClicks(text, "more"); QVERIFY(model()->find(id)->text.contains("more"));
         QTest::keyClick(text, Qt::Key_Escape);
         auto* shell = editor->findChild<QFrame*>("editorBlockShell"); QVERIFY(shell && shell->hasFocus());
@@ -184,7 +188,7 @@ private slots:
         editor->setPlainText(source); editor->setLineWrapMode(QPlainTextEdit::WidgetWidth); editor->resize(360,640);
         QTextCursor selection(editor->document()); selection.setPosition(12); selection.setPosition(50,QTextCursor::KeepAnchor); editor->setTextCursor(selection);
         const auto id=model()->insert("text",selection,"selected range"); editor->selectAssociatedBlock(id,true);
-        auto* text=editor->findChild<QPlainTextEdit*>("editorBlockText"); QVERIFY(text);
+        auto* text=editor->findChild<QTextEdit*>("editorBlockText"); QVERIFY(text);
         QTest::keyClick(text,Qt::Key_Escape); auto* shell=editor->findChild<QFrame*>("editorBlockShell"); QVERIFY(shell);
         QTest::keyClick(shell,Qt::Key_Escape); QCOMPARE(editor->textCursor(),selection);
         for (int width : {360,900,360}) {
@@ -196,6 +200,64 @@ private slots:
         QCOMPARE(editor->toPlainText(),source);
     }
     void persistedPerformance_data() { geometryAndVirtualization_data(); }
+    void automaticNotesAreViewMetrics() {
+        const auto code = editor->toPlainText(); const auto codeFont = editor->font();
+        const auto id = model()->insert("text", QTextCursor(editor->document()), QString("A readable note with context. ").repeated(12));
+        QVERIFY(model()->find(id)->autoHeight); model()->markSaved();
+        editor->selectAssociatedBlock(id, true); QCoreApplication::processEvents();
+        auto* shell = editor->findChild<QFrame*>("editorBlockShell"); QVERIFY(shell);
+        const auto original = model()->serialize(); const auto generation = model()->revision();
+        const int wideHeight = shell->height();
+        editor->resize(340, 700); QCoreApplication::processEvents();
+        QVERIFY(shell->height() > wideHeight);
+        const int narrowHeight = shell->height();
+        BlockNoteStyle::instance().apply({{"blockNotes.sizePx", 22}, {"blockNotes.lineHeight", 2.2}});
+        QCoreApplication::processEvents(); QVERIFY(shell->height() > narrowHeight);
+        QCOMPARE(model()->serialize(), original); QCOMPARE(model()->revision(), generation); QVERIFY(!model()->dirty());
+        QCOMPARE(editor->font(), codeFont); QCOMPARE(editor->toPlainText(), code); QVERIFY(!editor->document()->isModified());
+        auto* text = shell->findChild<QTextEdit*>("editorBlockText"); QVERIFY(text);
+        QCOMPARE(text->document()->defaultFont().pixelSize(), 22);
+        QVERIFY(text->verticalScrollBar()->maximum() <= 1);
+        auto overridden = *model()->find(id); overridden.appearance = {{"style", "Outlined"}, {"background", "#fff4cc"}};
+        QVERIFY(model()->update(overridden)); QVERIFY(model()->dirty());
+        editor->undo(); QCOMPARE(model()->serialize(), original); QVERIFY(!model()->dirty());
+    }
+    void legacyHeightAndAppearanceValidation() {
+        const auto id = insert(); auto legacy = model()->serialize();
+        auto entries = legacy["blocks"].toArray(); auto item = entries[0].toObject();
+        item.remove("heightMode"); item.remove("appearance"); item.remove("detached"); entries[0] = item; legacy["blocks"] = entries;
+        QString error; QVERIFY(model()->restore(legacy, &error)); QVERIFY(!model()->find(id)->autoHeight);
+        QCOMPARE(model()->find(id)->height, 160);
+        editor->selectAssociatedBlock(id); QCoreApplication::processEvents();
+        auto* shell = editor->findChild<QFrame*>("editorBlockShell"); QVERIFY(shell); QCOMPARE(shell->height(),196);
+        BlockNoteStyle::instance().apply({{"blockNotes.sizePx", 32}}); QCoreApplication::processEvents(); QCOMPARE(shell->height(),196);
+        item["appearance"] = QJsonObject{{"background", "invalid-color"}}; entries[0] = item; legacy["blocks"] = entries;
+        QVERIFY(!model()->restore(legacy, &error)); QVERIFY(model()->find(id)); QCOMPARE(model()->find(id)->height,160);
+    }
+    void linkOnlyReferencesUseTextGeometryWithoutPreviewErrors() {
+        EditorAssociatedBlock link; link.type="reference"; link.autoHeight=true;
+        link.uri="https://example.invalid/reference/"+QString("long-path/").repeated(12);
+        const auto source=editor->toPlainText();
+        const auto id=model()->insert(link,editor->textCursor()); model()->markSaved();
+        editor->selectAssociatedBlock(id); QCoreApplication::processEvents();
+        auto* shell=editor->findChild<QFrame*>("editorBlockShell"); QVERIFY(shell);
+        auto* text=shell->findChild<QTextEdit*>("editorBlockReferenceText"); QVERIFY(text);
+        QTRY_VERIFY(text->isVisible()); QVERIFY(text->toPlainText().contains(link.uri));
+        QVERIFY(text->toPlainText().contains("Link only")); QVERIFY(text->isReadOnly());
+        const auto saved=model()->serialize(); const auto revision=model()->revision();
+        const int wide=shell->height();
+        editor->resize(340,700); QCoreApplication::processEvents(); QVERIFY(shell->height()>wide);
+        QVERIFY(text->verticalScrollBar()->maximum()<=1);
+        const int narrow=shell->height();
+        BlockNoteStyle::instance().apply({{"blockNotes.sizePx",22},{"blockNotes.lineHeight",2.0}});
+        QCoreApplication::processEvents(); QVERIFY(shell->height()>narrow);
+        qInfo()<<"LINK_GEOMETRY"<<editor->devicePixelRatioF()<<shell->size()<<text->size()<<text->viewport()->size()
+               <<text->document()->size()<<text->verticalScrollBar()->maximum()<<text->document()->defaultFont();
+        QVERIFY(text->verticalScrollBar()->maximum()<=1);
+        QVERIFY(text->document()->size().height()<=text->viewport()->height()+1);
+        QCOMPARE(model()->serialize(),saved); QCOMPARE(model()->revision(),revision); QVERIFY(!model()->dirty());
+        QCOMPARE(editor->toPlainText(),source); QVERIFY(!editor->document()->isModified());
+    }
     void foldedAnchorsKeepKeyboardOrder() {
         const QString source="module m;\ninitial begin\n    a = 1;\n    b = 2;\nend\nendmodule\n";
         editor->setPlainText(source); const auto first=insert(source.indexOf("a =")); const auto second=insert(source.indexOf("b ="));

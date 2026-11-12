@@ -29,6 +29,9 @@ QString DesignProjectService::setWorkspace(const QString& path)
         m_root.clear(); m_active.clear(); m_roots.clear(); m_store = {}; m_explicitTopMigrated = false;
         emit designProjectsChanged(); return {};
     }
+    // A broken compatibility record must not retain another workspace's view
+    // state or block automatic semantic browsing. Keep the file untouched.
+    m_root = root; m_active.clear(); m_roots.clear(); m_store = {}; m_explicitTopMigrated = false;
     simdock::WorkspaceStateFile store;
     QString error, active;
     QList<DesignHierarchyRoot> roots;
@@ -73,7 +76,8 @@ QString DesignProjectService::setWorkspace(const QString& path)
         migrated = settings.value(key + "/explicitTopMigrated", false).toBool();
         auto record = encode(root, roots, active, migrated);
         record.insert("migrationWarnings", QJsonArray::fromStringList(errors));
-        if (!store.save(record, &error)) return error;
+        // Legacy projects are compatibility input only. Browsing does not
+        // create or grow a persisted list of allowed roots.
     }
     m_root = root; m_roots = roots; m_active = active; m_explicitTopMigrated = migrated; m_store = std::move(store);
     emit designProjectsChanged();
@@ -83,7 +87,10 @@ QString DesignProjectService::commit(const QList<DesignHierarchyRoot>& roots, co
 {
     if (m_root.isEmpty()) return tr("Open a workspace before changing Design projects.");
     QString error;
-    if (!m_store.save(encode(m_root, roots, active, migrated), &error)) return error;
+    auto record = m_store.value();
+    const auto fields = encode(m_root, roots, active, migrated);
+    for (auto it = fields.begin(); it != fields.end(); ++it) record.insert(it.key(), it.value());
+    if (!m_store.save(record, &error)) return error;
     const auto previous = m_roots;
     bool structureChanged = previous.size() != roots.size() || m_active != active;
     for (int i = 0; !structureChanged && i < roots.size(); ++i) {
@@ -135,3 +142,26 @@ QString DesignProjectService::setDesignExpanded(const QString& id, bool expanded
 }
 QString DesignProjectService::markDesignMigrationCompleted()
 { return m_explicitTopMigrated ? QString() : commit(m_roots, m_active, true); }
+
+QString DesignProjectService::saveViewState(const QString& workspace, const QJsonObject& state)
+{
+    if (workspace.isEmpty() || state.value("version").toInt() != 1) return {};
+    simdock::WorkspaceStateFile store;
+    QString error;
+    if (!store.open(workspace, QStringLiteral("design"), QStringLiteral("zeroslack.design/v1"), &error)) return error;
+    auto record = store.value();
+    // A semantic publication restores the same view state. Rewriting that
+    // record would notify the workspace watcher and trigger another analysis.
+    if (store.exists() && record.value("viewState").toObject() == state) {
+        if (QFileInfo(workspace).canonicalFilePath() == m_root) m_store = std::move(store);
+        return {};
+    }
+    // Preserve all old fields, including roots/activeProject and fields written
+    // by newer versions. A malformed file is never silently replaced.
+    if (!record.contains("roots")) record.insert("roots", QJsonArray());
+    if (!record.contains("activeProject")) record.insert("activeProject", QString());
+    record.insert("viewState", state);
+    if (!store.save(record, &error)) return error;
+    if (QFileInfo(workspace).canonicalFilePath() == m_root) m_store = std::move(store);
+    return {};
+}

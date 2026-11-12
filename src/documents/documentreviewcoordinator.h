@@ -16,6 +16,7 @@ class QLabel;
 class QPushButton;
 class QVBoxLayout;
 class TabManager;
+class MyCodeEditor;
 class NotificationCenter;
 struct CrashRecoveryCandidate;
 struct ExternalDocumentConflictReview;
@@ -34,6 +35,7 @@ public:
     void setupExternalConflictReviewUi(QVBoxLayout* editorLayout, QWidget* parent);
     void openCrashRecoveryReview(const QString& workspaceRoot = QString());
 private:
+    void bindEditorConflictAction(MyCodeEditor* editor);
     QPointer<QWidget> hostWindow;
     QPointer<TabManager> tabManager;
     QPointer<NotificationCenter> notificationCenter;

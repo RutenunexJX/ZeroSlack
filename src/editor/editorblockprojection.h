@@ -1,5 +1,6 @@
 #pragma once
 #include <QList>
+#include <QHash>
 #include <QMap>
 #include <QRectF>
 #include <QString>
@@ -44,6 +45,9 @@ private:
     QList<Run> runs;
     QList<EditorBlockGap> gaps;
     QMap<int,Measured> heights;
+    struct NoteMeasure { quint64 revision = 0, style = 0; int width = 0; qreal dpr = 0, height = 0; };
+    QHash<QString, NoteMeasure> noteHeights;
+    quint64 styleRevision = 0;
     bool enabled = false, dirty = true;
     const QTextDocument* document = nullptr;
     quint64 modelRevision = 0, measured = 0;

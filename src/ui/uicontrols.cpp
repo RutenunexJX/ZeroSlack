@@ -56,8 +56,8 @@ public:
 protected:
     QSize tabSizeHint(int index) const override {
         if (currentLabels()) {
-            const auto text = index == this->currentIndex() ? this->tabText(index) : QString();
-            return QSize(iconWidth() + (text.isEmpty() ? 0 : textGap + labelMetrics().horizontalAdvance(text))
+            const auto text = index == this->currentIndex() ? presentationTitle(index) : QString();
+            return QSize(iconWidth(index) + (text.isEmpty() ? 0 : textGap + labelMetrics().horizontalAdvance(text))
                          + (index == this->currentIndex() ? buttonExtent(index) : 0), tabHeight());
         }
         auto hint = Base::tabSizeHint(index);
@@ -66,8 +66,8 @@ protected:
     }
     QSize minimumTabSizeHint(int index) const override {
         if (currentLabels()) {
-            if (index != this->currentIndex()) return QSize(iconWidth(), tabHeight());
-            const QString text = this->tabText(index);
+            if (index != this->currentIndex()) return QSize(iconWidth(index), tabHeight());
+            const QString text = presentationTitle(index);
             QTextBoundaryFinder boundary(QTextBoundaryFinder::Grapheme, text);
             int end = 0;
             for (int grapheme = 0; grapheme < 4; ++grapheme) {
@@ -78,7 +78,7 @@ protected:
             const auto metrics = labelMetrics();
             const int textWidth = text.isEmpty() ? 0 : textGap + qMin(metrics.horizontalAdvance(text),
                 metrics.horizontalAdvance(text.left(end) + QChar(0x2026)));
-            return QSize(iconWidth() + buttonExtent(index) + textWidth, tabHeight());
+            return QSize(iconWidth(index) + buttonExtent(index) + textWidth, tabHeight());
         }
         if (this->property("compactIconTabs").toBool()) return tabSizeHint(index);
         auto hint = Base::minimumTabSizeHint(index);
@@ -161,8 +161,18 @@ protected:
 private:
     static constexpr int textGap = 6;
     bool currentLabels() const { return this->property("currentLabelTabs").toBool(); }
-    QSize navigationIconSize() const { return QSize(16, 16); }
-    int iconWidth() const { return navigationIconSize().width() + 20; }
+    QSize navigationIconSize() const { return QSize(RoundedIcons::SidebarSize, RoundedIcons::SidebarSize); }
+    UiControls::TabPresentation presentation(int index) const {
+        auto* owner = qobject_cast<QTabWidget*>(this->property("elaHostedTabOwner").template value<QObject*>());
+        if (!owner) owner = qobject_cast<QTabWidget*>(this->parentWidget());
+        return UiControls::tabPresentation(owner ? owner->widget(index) : nullptr);
+    }
+    QString presentationTitle(int index) const {
+        const auto state = presentation(index);
+        return state.valid() ? state.title : this->tabText(index);
+    }
+    int statusWidth(int index) const { return presentation(index).valid() ? 18 : 0; }
+    int iconWidth(int index) const { return navigationIconSize().width() + 20 + statusWidth(index); }
     int tabHeight() const { return qMax(36, this->fontMetrics().height() + 14); }
     QFont labelFont() const {
         QFont font = this->font();
@@ -213,8 +223,8 @@ private:
         this->update();
     }
     QString displayText(int index, int width) const {
-        const QString text = this->tabText(index);
-        const int available = width - iconWidth() - textGap - buttonExtent(index);
+        const QString text = presentationTitle(index);
+        const int available = width - iconWidth(index) - textGap - buttonExtent(index);
         if (text.isEmpty() || available <= 0) return {};
         const auto metrics = labelMetrics();
         if (metrics.horizontalAdvance(text) <= available) return text;
@@ -232,11 +242,11 @@ private:
         for (const auto* scroll : this->template findChildren<QToolButton*>(QString(), Qt::FindDirectChildrenOnly))
             if (scroll->isVisible()) tabsClip -= scroll->geometry();
         painter.setClipRegion(tabsClip);
-        const bool dark = isDarkTheme(ApplicationThemeManager::instance().mode());
-        const QColor selected = dark ? QColor(58,58,57) : QColor(237,236,234);
-        const QColor hover = dark ? QColor(46,46,45) : QColor(242,241,239);
-        const QColor textColor = dark ? QColor(235,235,233) : QColor(55,53,47);
-        const QColor focus = dark ? QColor(184,184,184) : QColor(90,90,90);
+        const auto& tokens = InsightVisualStyle::theme();
+        const QColor selected = tokens.tab.tabBackgroundSelected;
+        const QColor hover = tokens.tab.tabBackgroundHover;
+        const QColor textColor = tokens.tab.textSelected;
+        const QColor focus = tokens.focus.ring;
         const QPoint pointer = this->mapFromGlobal(QCursor::pos());
         for (int i=0; i<this->count(); ++i) {
             if (!this->isTabVisible(i)) continue;
@@ -250,7 +260,8 @@ private:
             }
             const QString text = active ? displayText(i,rect.width()) : QString();
             const QSize icon = navigationIconSize();
-            const int x = active ? rect.left()+10+buttonExtent(i,QTabBar::LeftSide) : rect.left()+(rect.width()-icon.width())/2;
+            const int x = active ? rect.left()+10+buttonExtent(i,QTabBar::LeftSide)
+                : rect.left()+(rect.width()-icon.width()-statusWidth(i))/2;
             const QRect iconRect(QPoint(x,rect.top()+(rect.height()-icon.height())/2),icon);
             const auto tabIcon = this->tabIcon(i);
             auto glyph = (tabIcon.isNull() ? RoundedIcons::icon(RoundedIcons::File) : tabIcon).pixmap(
@@ -259,13 +270,45 @@ private:
                 QPainter tint(&glyph);
                 tint.setCompositionMode(QPainter::CompositionMode_SourceIn);
                 const QColor iconColor = !this->isTabEnabled(i) ? this->palette().color(QPalette::Disabled,QPalette::Text)
-                    : active ? textColor : dark ? QColor(151,151,149) : QColor(160,159,157);
+                    : active ? textColor : tokens.textMuted;
                 tint.fillRect(glyph.rect(),iconColor);
             }
             ElaTabBarMetrics::drawIcon(painter,iconRect,glyph);
+            const auto state = presentation(i);
+            if (state.valid()) {
+                const auto& theme = InsightVisualStyle::theme();
+                painter.save();
+                painter.translate(iconRect.right()+3, iconRect.top());
+                if (state.dirty) {
+                    painter.setPen(Qt::NoPen); painter.setBrush(theme.textPrimary);
+                    painter.drawEllipse(QRectF(0,0,5,5));
+                }
+                if (state.conflict || state.externalChange) {
+                    painter.setPen(QPen(state.conflict ? theme.warning : theme.textSecondary,1));
+                    painter.setBrush(Qt::NoBrush);
+                    if (state.conflict) {
+                        painter.drawPolygon(QPolygonF{QPointF(3.5,9),QPointF(7,16),QPointF(0,16)});
+                        painter.drawLine(QPointF(3.5,11),QPointF(3.5,13));
+                        painter.drawPoint(QPointF(3.5,15));
+                    } else {
+                        painter.drawArc(QRectF(0,9,6,6),40*16,280*16);
+                        painter.drawLine(QPointF(6,9),QPointF(6,12));
+                    }
+                }
+                painter.setPen(QPen(theme.textSecondary,1)); painter.setBrush(Qt::NoBrush);
+                if (state.readOnly) {
+                    painter.drawRect(QRectF(9,0,5,6));
+                    painter.drawLine(QPointF(8,7),QPointF(15,0));
+                }
+                if (state.locked) {
+                    painter.drawRoundedRect(QRectF(9,12,6,5),1,1);
+                    painter.drawArc(QRectF(10,8,4,7),0,180*16);
+                }
+                painter.restore();
+            }
             if (!text.isEmpty()) {
                 painter.setPen(this->isTabEnabled(i)?textColor:this->palette().color(QPalette::Disabled,QPalette::Text));
-                ElaTabBarMetrics::drawText(painter,iconRect.right()+1+textGap,QRectF(rect).center().y(),text);
+                ElaTabBarMetrics::drawText(painter,iconRect.right()+1+statusWidth(i)+textGap,QRectF(rect).center().y(),text);
             }
             if (active && keyboardFocus()) {
                 painter.setPen(QPen(focus,1)); painter.setBrush(Qt::NoBrush);
@@ -664,7 +707,7 @@ QToolButton* UiControls::railButton(QWidget* parent) {
     button->setProperty("zeroslackElaControl", false);
 #endif
     button->setToolButtonStyle(Qt::ToolButtonIconOnly);
-    button->setIconSize(QSize(20, 20));
+    button->setIconSize(QSize(RoundedIcons::SidebarSize, RoundedIcons::SidebarSize));
     button->setMinimumSize(36, 36);
     button->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     button->setFocusPolicy(Qt::StrongFocus);
@@ -687,6 +730,28 @@ QToolButton* UiControls::badgedToolButton(QWidget* parent) {
 void UiControls::setToolButtonBadge(QToolButton* button, const QString& text, const QString& tone) {
     if (auto* badge = dynamic_cast<ToolButtonBadge*>(button)) badge->setBadge(text, tone);
 }
+UiControls::TabPresentation UiControls::tabPresentation(const QWidget* page) {
+    return page ? page->property("documentTabPresentation").value<TabPresentation>() : TabPresentation{};
+}
+
+void UiControls::setTabPresentation(QTabWidget* group, QWidget* page, const TabPresentation& state) {
+    if (!group || !page || group->indexOf(page) < 0) return;
+    page->setProperty("documentTabPresentation", QVariant::fromValue(state));
+    QStringList status;
+    if (state.dirty) status << QStringLiteral("Unsaved changes");
+    if (state.conflict) status << QStringLiteral("External conflict");
+    else if (state.externalChange) status << QStringLiteral("Changed on disk");
+    if (state.readOnly) status << QStringLiteral("Read only");
+    if (state.locked) status << QStringLiteral("Tab locked");
+    const QString description = QStringList{state.title, state.path, status.join(QStringLiteral(", "))}.join(QLatin1Char('\n')).trimmed();
+    const int index = group->indexOf(page);
+    group->setTabToolTip(index, description);
+    group->tabBar()->setAccessibleTabName(index, description);
+    group->tabBar()->setElideMode(group->tabBar()->elideMode());
+    group->tabBar()->updateGeometry();
+    group->tabBar()->update();
+}
+
 QWidget* UiControls::pageStack(QStackedWidget*& stack, QWidget* parent) {
 #ifdef ZEROSLACK_ENABLE_ELA
     auto* surface = new ElaCentralStackedWidget(parent);

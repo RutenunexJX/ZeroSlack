@@ -11,24 +11,22 @@
 #include <cmath>
 
 namespace RoundedIcons {
-// New icon paths use this 24-unit grid and the [3,21] content box. Align the
-// leading outline at x=3; keep its natural width in [13,18] without stretching.
-// Use the shared round stroke and scale uniformly with the outer icon rect.
-// Folder/FolderOpen/File follow this convention; other legacy kinds are not
-// redrawn here and must be audited when they are next changed.
+// Shared sidebar geometry: a uniform 24-unit grid, 18-unit ink width and
+// round strokes. Selection changes color/background without changing ink size.
+inline constexpr int SidebarSize = 18;
 inline constexpr qreal GridSize = 24;
 inline constexpr qreal ContentLeading = 3;
 inline constexpr qreal ContentTrailing = 21;
-inline constexpr qreal MinimumContentWidth = 13;
+inline constexpr qreal MinimumContentWidth = 18;
 inline constexpr qreal NormalStroke = 1.75;
-inline constexpr qreal SelectedStroke = 2.1;
+inline constexpr qreal SelectedStroke = NormalStroke;
 enum Kind { Folder, File, Settings, Search, Replace, Filter, Refresh, Context,
     Module, Hierarchy, Signals, Wave, Connections, Bookmark, Pin, Warning,
     Activity, Error, Info, Success, Change, Left, Right, Down, Up,
     Expand, Collapse, Close, Minimize, Restore, Maximize, Grid, Sidebar,
     OpenProject, ZoomIn, ZoomOut, More,
     KernelGraph, ModuleGraph, HotspotGraph, StateGraph, IpCatalog, Clear, FolderOpen,
-    BuildInputs, Simulation, Subroutine, Parameter, Port, Type, Rename, CopyLink,
+    BuildInputs, Simulation, Subroutine, Parameter, Port, Type, Rename, CopyLink, Grip,
     Add = ZoomIn }; // Reuse the existing pure plus glyph with its action meaning.
 
 class Engine final : public QIconEngine {
@@ -70,7 +68,7 @@ public:
             folder.lineTo(18,20); folder.closeSubpath(); p->drawPath(folder); break;
         }
         case File: {
-            const qreal right = ContentLeading + MinimumContentWidth;
+            const qreal right = ContentTrailing;
             const qreal fold = right - 5;
             path({{ContentLeading,3},{fold,3},{right,8},{right,21},{ContentLeading,21}},true);
             path({{fold,3},{fold,8},{right,8}});
@@ -85,6 +83,7 @@ public:
         case ZoomIn: line(5,12,19,12); line(12,5,12,19); break;
         case ZoomOut: line(5,12,19,12); break;
         case More: circle(5,12,.65); circle(12,12,.65); circle(19,12,.65); break;
+        case Grip: for (int x : {8,16}) for (int y : {5,12,19}) circle(x,y,.7); break;
         case Clear: path({{3,14},{12,4},{21,12},{13,21},{9,21}},true);line(7,10,16,18);line(13,21,22,21);break;
         case Replace: path({{4,7},{20,7},{16,3}}); path({{20,17},{4,17},{8,21}}); break;
         case Filter: path({{3,4},{21,4},{14,12},{14,20},{10,18},{10,12}},true); break;

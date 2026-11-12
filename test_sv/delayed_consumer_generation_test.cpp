@@ -3,6 +3,7 @@
 #include "activitylogservice.h"
 #include "contextworkspacecontroller.h"
 #include "panellayoutcontroller.h"
+#include "panel_tab_test_utils.h"
 #include "semanticindex.h"
 #include "tabmanager.h"
 #include "editorsplitcontroller.h"
@@ -224,8 +225,9 @@ private slots:
         auto* layout = panels(*window); QVERIFY(layout);
         layout->setAnimationsEnabled(false);
         layout->setBottomCollapsed(true);
-        auto* button = layout->buttonForPanel("activity"); QVERIFY(button);
-        button->click();
+        QVERIFY(!PanelTabTest::group(layout, "activity"));
+        QVERIFY(PanelTabTest::reopen(layout, "activity"));
+        QVERIFY(PanelTabTest::visible(layout, "activity"));
         QPointer<QPlainTextEdit> output = window->findChild<QPlainTextEdit*>("activityOutputText");
         QVERIFY(output);
         QTRY_VERIFY(output->isVisible() && !output->visibleRegion().isEmpty());
@@ -255,7 +257,7 @@ private slots:
         QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
         if (transition == "hide") {
             QCOMPARE(service->unreadCount(), 1);
-            button->click();
+            QVERIFY(PanelTabTest::click(layout, "activity"));
             QTRY_VERIFY(output->isVisible());
             QCoreApplication::processEvents();
         }

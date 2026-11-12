@@ -2,6 +2,7 @@
 #include "contextrail.h"
 #include "insightvisualstyle.h"
 #include "panellayoutcontroller.h"
+#include "panel_tab_test_utils.h"
 #include "roundedicons.h"
 #include "testuistyle.h"
 #include "uicontrols.h"
@@ -119,33 +120,39 @@ private slots:
         host.addDockWidget(Qt::BottomDockWidgetArea, dock);
         QVERIFY(controller.registerBottomPanel("problems", dock)); controller.finalize();
         host.resize(700, 500); host.show(); settle();
-        auto* button = controller.buttonForPanel("problems"); QVERIFY(button);
-        QCOMPARE(button->inherits("ElaToolButton"), true);
+        auto* group=PanelTabTest::group(&controller,"problems");QVERIFY(group);
+        auto* bar=group->tabBar();QVERIFY(bar);
+        const int index=group->indexOf(PanelTabTest::page(&controller,"problems"));QVERIFY(index>=0);
+        QCOMPARE(bar->inherits("ElaTabBar"),true);
         for (const QString count : {QString("1"), QString("999+")}) {
             controller.setPanelBadge("problems", count, "error"); settle();
-            QVERIFY(button->width() >= button->sizeHint().width());
-            QVERIFY(button->height() >= button->sizeHint().height());
-            QVERIFY(button->parentWidget()->rect().contains(button->geometry()));
-            QVERIFY(button->accessibleDescription().contains(count));
+            const auto rect=bar->tabRect(index);
+            QVERIFY(rect.width()>=bar->fontMetrics().horizontalAdvance(bar->tabText(index))+bar->iconSize().width());
+            QVERIFY(rect.height()>=bar->fontMetrics().height());
+            QVERIFY(bar->rect().contains(rect));
+            QVERIFY(PanelTabTest::accessibleName(&controller,"problems").contains(count));
+            QVERIFY(bar->tabToolTip(index).contains(count));
         }
-        const auto baseFont = button->font();
-        auto largeFont = baseFont; largeFont.setPointSize(26); button->setFont(largeFont); settle();
-        QVERIFY(button->height() >= button->minimumSizeHint().height());
-        QVERIFY(button->parentWidget()->rect().contains(button->geometry()));
-        button->setFont(baseFont); settle();
-        button->clearFocus();
+        const auto baseFont = bar->font();
+        auto largeFont = baseFont; largeFont.setPointSize(26); bar->setFont(largeFont); settle();
+        QVERIFY(bar->height() >= bar->minimumSizeHint().height());
+        QVERIFY(bar->tabRect(index).height()>=bar->fontMetrics().height());
+        QVERIFY(bar->rect().contains(bar->tabRect(index)));
+        bar->setFont(baseFont); settle();
+        bar->clearFocus();
         QImage previous;
         for (auto mode : {ThemeMode::Light, ThemeMode::Dark, ThemeMode::CatppuccinLatte, ThemeMode::CatppuccinMocha}) {
             ApplicationThemeManager::instance().setMode(mode); settle();
-            const auto image = button->grab().toImage(); QVERIFY(!image.isNull());
+            const auto image = bar->grab().toImage(); QVERIFY(!image.isNull());
             if (!previous.isNull()) QVERIFY(image != previous);
             previous = image;
-            QVERIFY(button->parentWidget()->rect().contains(button->geometry()));
+            QVERIFY(bar->rect().contains(bar->tabRect(index)));
         }
         ApplicationThemeManager::instance().setMode(ThemeMode::Light);
         controller.setPanelBadge("problems", {}, {}); settle();
-        QVERIFY(!button->property("hasBadge").toBool());
-        QCOMPARE(button->property("badgeReserve").toInt(), 0);
+        QVERIFY(controller.panelBadgeText("problems").isEmpty());
+        QCOMPARE(bar->tabText(index),QStringLiteral("Problems"));
+        QCOMPARE(PanelTabTest::accessibleName(&controller,"problems"),QStringLiteral("Problems"));
     }
 };
 

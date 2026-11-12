@@ -358,6 +358,14 @@ set(ZEROSLACK_CORE_SOURCES
     src/documents/documentblockstore.cpp
     src/editor/editorblockprojection.cpp
     src/editor/editorblockhost.cpp
+    src/editor/editorblockcontent.cpp
+    src/editor/editorblockcontent.h
+    src/editor/associatedblockdragcontroller.cpp
+    src/editor/associatedblockdragcontroller.h
+    src/ui/blocknotestyle.cpp
+    src/ui/blocknotestyle.h
+    src/integrations/pinloom/pinloomreferencepicker.cpp
+    src/integrations/pinloom/pinloomreferencepicker.h
     src/editor/editorblockpreview.cpp
     src/editor/editoractioncontextservice.cpp
     src/editor/editorcontextmenumodel.cpp
@@ -398,6 +406,8 @@ set(ZEROSLACK_CORE_SOURCES
     src/insights/liveinsighttoolpage.cpp
     src/insights/rtlinsightviewplugins.cpp
     src/insights/rtlinsightworkbench.cpp
+    src/insights/moduleblockdiagramview.cpp
+    src/insights/moduleblockdiagramview.h
     src/commands/inlinecommandmode.cpp
     src/navigation/sourcenavigationservice.cpp
     src/ui/contextresource.cpp
@@ -446,6 +456,8 @@ set(ZEROSLACK_CORE_SOURCES
     src/ui/navigationwidgetpresentation.cpp
     src/ui/navigationwidgettrees.cpp
     src/ui/navigationwidgetdesign.cpp
+    src/ui/designhierarchymodel.h
+    src/ui/designhierarchymodel.cpp
     src/ui/navigationwidget.cpp
     src/ui/notificationcenter.cpp
     src/ui/problemspanelcoordinator.cpp
@@ -749,6 +761,9 @@ target_sources(zeroslack_core PRIVATE
     src/documents/webdocumentsession.cpp src/documents/webdocumentsession.h
     src/documents/pdfdocumentpage.cpp src/documents/pdfdocumentpage.h
     src/documents/tabmanagerpdf.cpp
+    src/documents/tabmanagerblocks.cpp
+    src/documents/associatedblockpage.cpp
+    src/documents/associatedblockpage.h
     src/documents/tabmanagerweb.cpp)
 set(ZEROSLACK_WEBVIEW2_SDK_DIR "" CACHE PATH "Pinned WebView2 SDK 1.0.4314.35 directory")
 set(ZEROSLACK_DOCUMENT_EDITORS_DIR "" CACHE PATH "Built offline Muya and BlockSuite resources")
@@ -1088,7 +1103,7 @@ if(BUILD_TESTING)
     add_test(NAME editor_block_test COMMAND ${editor_block_test_command})
     set_tests_properties(editor_block_test PROPERTIES TIMEOUT 120)
     add_executable(editor_block_store_test test_sv/editor_block_store_test.cpp)
-    target_link_libraries(editor_block_store_test PRIVATE zeroslack_core Qt6::Test)
+    target_link_libraries(editor_block_store_test PRIVATE zeroslack_core Qt6::Test Qt6::Network)
     zeroslack_qt_test_command(editor_block_store_test_command editor_block_store_test editor_block_store_test)
     add_test(NAME editor_block_store_test COMMAND ${editor_block_store_test_command})
     set_tests_properties(editor_block_store_test PROPERTIES TIMEOUT 120)

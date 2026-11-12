@@ -1,3 +1,5 @@
+Release 0.35.4 restores nested module diagrams and reorganizes Design roots, unifies dock tabs and sidebar icons, reduces the welcome page to recent workspaces, and improves Settings contrast. Inline blocks support shared editing, appearance settings, drag-out pages and gutter reattachment; Pinloom references validate capabilities before opening. Functional acceptance is retained with release-specific build and package checks. Suite SDK/Runtime remains 1.0.2, native xIPs 2.16.2 and the independent asset adapter 2.14.2.
+
 ZeroSlack v0.35.3 Windows package
 
 Release 0.35.3 aligns tab contents and smaller close marks, removes welcome animation resources, moves Run and simulation settings into the title row with the top selected in Design, creates untitled Markdown/block documents until first save, restores module block diagrams, removes redundant panel collapse controls, and gives floating windows visible borders. Scoped GUI and real Questa evidence is retained; the known baseline native drag-release failure remains recorded. Suite SDK/Runtime remains 1.0.2, native xIPs 2.16.2 and the independent asset adapter 2.14.2.

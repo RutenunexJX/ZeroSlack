@@ -37,6 +37,7 @@ private:
     void constrainPlacement();
     void savePlacement();
     void watchScreen(QScreen* screen);
+    void refreshSurfaces();
     SettingsCenterPanel* settingsPanel;
     QPointer<QWidget> lastEditor;
     bool confirming = false;

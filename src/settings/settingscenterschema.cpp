@@ -3,6 +3,7 @@
 #include "settingscenterkeys.h"
 
 #include <QHash>
+#include <QColor>
 #include <QKeySequence>
 #include <QMetaType>
 #include <QtGlobal>
@@ -106,6 +107,16 @@ QList<SettingsCenterCategoryDescriptor> makeCategories()
         Kind::Integer, 55, 0, 100, {}, true, false, true);
     editorOpacity.useSlider = true;
     result.last().fields.append(editorOpacity);
+    for (const auto& entry : QList<QStringList>{
+             {"background", "Block background", SettingsCenterKeys::BlockNotesBackground},
+             {"textColor", "Block text", SettingsCenterKeys::BlockNotesTextColor},
+             {"borderColor", "Block border", SettingsCenterKeys::BlockNotesBorderColor}})
+        result.last().fields.append(field(QStringLiteral("blockNotes.") + entry[0], entry[2], Category::Appearance,
+            entry[1], QStringLiteral("A color such as #F7F7F5. Leave empty to follow the theme."),
+            Kind::String, QString(), {}, {}, {}, true, false, true, false, true));
+    result.last().fields.append(field(QStringLiteral("blockNotes.style"), QString::fromLatin1(SettingsCenterKeys::BlockNotesStyle),
+        Category::Appearance, QStringLiteral("Block style"), QStringLiteral("Default appearance of associated blocks."),
+        Kind::String, QStringLiteral("Soft"), {}, {}, {"Plain", "Outlined", "Soft"}, true, false, true));
     result.append({
         Category::Font,
         QStringLiteral("font"),
@@ -148,6 +159,15 @@ QList<SettingsCenterCategoryDescriptor> makeCategories()
                   false),
         },
     });
+    result.last().fields.append(field(QStringLiteral("blockNotes.fontFamily"), QString::fromLatin1(SettingsCenterKeys::BlockNotesFontFamily),
+        Category::Font, QStringLiteral("Font family"), QStringLiteral("Leave empty for the UI font. Missing fonts use the UI fallback without changing the saved choice."),
+        Kind::String, QString(), {}, {}, {}, true, false, true, false, true));
+    result.last().fields.append(field(QStringLiteral("blockNotes.sizePx"), QString::fromLatin1(SettingsCenterKeys::BlockNotesSizePx),
+        Category::Font, QStringLiteral("Font size (px)"), QStringLiteral("Logical pixels for block notes only."),
+        Kind::Integer, 15, 8, 48, {}, true, false, true));
+    result.last().fields.append(field(QStringLiteral("blockNotes.lineHeight"), QString::fromLatin1(SettingsCenterKeys::BlockNotesLineHeight),
+        Category::Font, QStringLiteral("Line height"), QStringLiteral("Line spacing for block notes only."),
+        Kind::Real, 1.6, 1.0, 3.0, {}, true, false, true));
     result.append({
         Category::Shortcut,
         QStringLiteral("shortcut"),
@@ -482,6 +502,13 @@ QVariant normalizeString(
     QString normalized = value.toString().trimmed();
     if (normalized.isEmpty() && descriptor.allowEmpty)
         return QString();
+    if ((descriptor.id == QStringLiteral("blockNotes.background")
+         || descriptor.id == QStringLiteral("blockNotes.textColor")
+         || descriptor.id == QStringLiteral("blockNotes.borderColor")) && !QColor(normalized).isValid()) {
+        addIssue(issues, scope, SettingsCenterIssueKind::InvalidValue, descriptor.id,
+                 QStringLiteral("Enter a valid color, or leave empty to follow the theme."));
+        return descriptor.defaultValue;
+    }
     if (normalized.isEmpty()) {
         addIssue(issues,
                  scope,

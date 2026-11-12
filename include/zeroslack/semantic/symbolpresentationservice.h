@@ -9,6 +9,9 @@ struct HierarchyInstanceContext {
     QString workspacePath;
     QString activeTopModule;
     QString instancePath;
+    QString rootIdentity;
+    QString definitionIdentity;
+    QString configurationIdentity;
 
     bool isBound() const
     {
@@ -21,7 +24,10 @@ struct HierarchyInstanceContext {
     {
         return workspacePath == other.workspacePath
             && activeTopModule == other.activeTopModule
-            && instancePath == other.instancePath;
+            && instancePath == other.instancePath
+            && rootIdentity == other.rootIdentity
+            && definitionIdentity == other.definitionIdentity
+            && configurationIdentity == other.configurationIdentity;
     }
 };
 

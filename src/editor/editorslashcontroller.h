@@ -11,6 +11,7 @@ class QLineEdit;
 class QListWidget;
 class QLabel;
 class QKeyEvent;
+class QTimer;
 
 class EditorSlashController final : public QObject {
 public:
@@ -38,6 +39,10 @@ private:
     bool compositionCommit = false;
     QList<UserTemplateRecord> snapshot;
     QList<int> matches;
+    struct Eligibility { enum State { Available, Pending, Unavailable }; State state; QString reason; };
+    Eligibility eligibility(const UserTemplateRecord& record) const;
+    void showEligibility();
+    QTimer* pendingRefresh = nullptr;
     bool current() const;
     void ensurePopup();
     void filter();

@@ -12,6 +12,7 @@
 #include "Development/ElaCentralStackedWidget.h"
 #endif
 #include "panellayoutcontroller.h"
+#include "panel_tab_test_utils.h"
 #include "testuistyle.h"
 #include "mainwindow.h"
 #include "mycodeeditor.h"
@@ -503,9 +504,8 @@ private slots:
         {
         auto* motion = h.window.findChild<ElaDrawerArea*>("bottomPanelDrawer");
         QVERIFY(motion);
-        const auto bar = inWindow(h.drawer->buttonBar(), &h.window);
-        auto* button = h.drawer->buttonForPanel("problems");
-        QTest::mouseClick(button, Qt::LeftButton);
+        const auto bar = inWindow(h.drawer->tabStrip(), &h.window);
+        QVERIFY(PanelTabTest::click(h.drawer, "problems"));
         QVERIFY(motion->isDrawerAnimating());
         QCOMPARE(motion->drawerSnapshotBytes(), 0);
         QApplication::processEvents();
@@ -514,14 +514,14 @@ private slots:
         QTest::qWait(55);
         QVERIFY(h.editor->geometry().height() < editorGeometry.height());
         QVERIFY(h.editor->resizes > resizes);
-        QCOMPARE(inWindow(h.drawer->buttonBar(), &h.window), bar);
+        QCOMPARE(inWindow(h.drawer->tabStrip(), &h.window), bar);
         const auto progress = motion->drawerProgress();
-        QTest::mouseClick(button, Qt::LeftButton);
+        QVERIFY(PanelTabTest::click(h.drawer, "problems"));
         QVERIFY(motion->isDrawerAnimating());
         QVERIFY(qAbs(motion->drawerProgress() - progress) < .08);
         QVERIFY(h.drawer->isBottomCollapsed());
         QTRY_VERIFY(!motion->isDrawerAnimating());
-        QCOMPARE(inWindow(h.drawer->buttonBar(), &h.window), bar);
+        QCOMPARE(inWindow(h.drawer->tabStrip(), &h.window), bar);
         QCOMPARE(motion->drawerSnapshotBytes(), 0);
         h.drawer->restorePanel("activity");
         QVERIFY(motion->isDrawerAnimating());
@@ -541,13 +541,13 @@ private slots:
         return;
         }
 #endif
-        const auto bar = inWindow(h.drawer->buttonBar(), &h.window);
+        const auto bar = inWindow(h.drawer->tabStrip(), &h.window);
         h.drawer->restorePanel("problems");
         QVERIFY(!h.drawer->isBottomCollapsed());
-        QCOMPARE(inWindow(h.drawer->buttonBar(), &h.window), bar);
+        QCOMPARE(inWindow(h.drawer->tabStrip(), &h.window), bar);
         h.drawer->setBottomCollapsed(true);
         QVERIFY(h.drawer->isBottomCollapsed());
-        QCOMPARE(inWindow(h.drawer->buttonBar(), &h.window), bar);
+        QCOMPARE(inWindow(h.drawer->tabStrip(), &h.window), bar);
         h.drawer->restorePanel("activity");
         QTest::keyClicks(h.editor, "x");
         QVERIFY(h.editor->toPlainText().startsWith("xmodule"));

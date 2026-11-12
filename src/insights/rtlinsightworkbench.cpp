@@ -15,6 +15,7 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QSignalBlocker>
+#include "moduleblockdiagramview.h"
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <QTimer>
@@ -95,6 +96,19 @@ bool RtlInsightWorkbench::setViewKind(InsightWorkbenchViewKind kind)
     }
     if (canvasValue && currentKind != kind)
         saveCurrentViewState();
+    const bool moduleSurface = kind == InsightWorkbenchViewKind::Block;
+    if (moduleSurface && !blockView) {
+        blockView = new ModuleBlockDiagramView(this);
+        static_cast<QVBoxLayout*>(layout())->addWidget(blockView, 1);
+        blockView->setNavigationHandler([this](const ModuleBlockDiagramNode& node, bool instance) {
+            if (moduleNavigationHandler) moduleNavigationHandler(node, instance);
+            else if (navigationHandler) {
+                const auto& link = instance ? node.instanceCodeLink : node.definitionCodeLink;
+                if (!link.fileName.isEmpty()) navigationHandler(link.fileName, link.line, link.column);
+            }
+        });
+    }
+    if (blockView) blockView->setVisible(moduleSurface);
     const bool nativeSurface=kind!=InsightWorkbenchViewKind::Block && (specializedViews
         || (kind!=InsightWorkbenchViewKind::StateTransition && !buildOverrides.contains(static_cast<int>(kind))));
     if (nativeSurface && (!surface || currentKind != kind)) {
@@ -106,12 +120,12 @@ bool RtlInsightWorkbench::setViewKind(InsightWorkbenchViewKind kind)
         static_cast<QVBoxLayout*>(layout())->addWidget(surface->widget(), 1);
     }
     if(!nativeSurface)surface.reset();
-    if(canvasValue)canvasValue->setVisible(!nativeSurface);
+    if(canvasValue)canvasValue->setVisible(!nativeSurface && !moduleSurface);
     if(statusLabel)statusLabel->setVisible(!nativeSurface);
     for(auto* control:{static_cast<QWidget*>(searchEdit),static_cast<QWidget*>(panButton),static_cast<QWidget*>(minimapButton)})
-        if(control)control->setVisible(!nativeSurface);
-    for(auto* control:findChildren<QPushButton*>(QString(),Qt::FindDirectChildrenOnly))
-        if(control!=detachButton)control->setVisible(!nativeSurface);
+        if(control)control->setVisible(!nativeSurface && !moduleSurface);
+    for(auto* control:findChildren<QPushButton*>())
+        if(control->property("genericGraphControl").toBool())control->setVisible(!nativeSurface && !moduleSurface);
     currentKind = kind;
     if (titleLabel) {
         titleLabel->setText(
@@ -153,6 +167,9 @@ void RtlInsightWorkbench::setContext(const InsightViewContext& contextValue)
         if (contextValue.documentRevision == currentContext.documentRevision
             && contextValue.semanticRevision == currentContext.semanticRevision
             && contextValue.moduleName == currentContext.moduleName
+            && contextValue.instancePath == currentContext.instancePath
+            && contextValue.rootIdentity == currentContext.rootIdentity
+            && contextValue.configurationIdentity == currentContext.configurationIdentity
             && contextValue.signalName == currentContext.signalName
             && contextValue.signalAccessPath == currentContext.signalAccessPath) return;
     }
@@ -191,13 +208,19 @@ bool RtlInsightWorkbench::refresh()
         input.fileName = currentContext.fileName;
         input.moduleName = currentContext.moduleName;
         input.signalName = currentContext.signalName;
-        if (input.mode == LiveInsightGraphMode::Module) input.maxDepth = 2;
+        if (input.mode == LiveInsightGraphMode::Module) {
+            input.rootIdentity = currentContext.rootIdentity;
+            input.instancePath = currentContext.instancePath;
+            input.configurationIdentity = currentContext.configurationIdentity;
+        }
         const auto key = liveInsightGraphRequestKey(input, currentContext.workspaceId,
             currentContext.documentId, currentContext.documentRevision);
         if (reportKey != key) {
             appliedReportGeneration = 0;
-            currentUpdate = core.update(currentPluginId(), {});
-            canvasValue->applyUpdate(currentUpdate);
+            if (currentKind != InsightWorkbenchViewKind::Block) {
+                currentUpdate = core.update(currentPluginId(), {});
+                canvasValue->applyUpdate(currentUpdate);
+            }
             statusLabel->setText(QStringLiteral("Analyzing module…"));
             statusLabel->show();
         }
@@ -254,6 +277,8 @@ GraphExportResult RtlInsightWorkbench::exportCurrentGraph(
     const QString& outputPath,
     const GraphExportOptions& options) const
 {
+    if (currentKind == InsightWorkbenchViewKind::Block && blockView)
+        return GraphExportService::exportWidget(blockView->findChild<QWidget*>("moduleBlockCanvas"), outputPath, options);
     if (surface) return surface->exportGraph(outputPath, options);
     return canvasValue
         ? canvasValue->exportGraph(outputPath, options)
@@ -298,7 +323,8 @@ void RtlInsightWorkbench::setCompactChrome(bool compact)
 
 void RtlInsightWorkbench::fitGraph()
 {
-    if (surface) surface->fit();
+    if (currentKind == InsightWorkbenchViewKind::Block && blockView) blockView->fit();
+    else if (surface) surface->fit();
     else if (canvasValue) canvasValue->fit();
 }
 
@@ -344,6 +370,7 @@ void RtlInsightWorkbench::buildUi()
     minimapButton->setChecked(true);
     minimapButton->setObjectName(QStringLiteral("rtlInsightWorkbenchMinimap"));
     auto* exportButton = UiControls::pushButton(QStringLiteral("Export"), this);
+    for (auto* control : {zoomOut, fitButton, zoomIn, exportButton}) control->setProperty("genericGraphControl", true);
     exportButton->setObjectName(QStringLiteral("rtlInsightWorkbenchExport"));
     detachButton = UiControls::pushButton(QStringLiteral("Detach"), this);
     detachButton->setObjectName(QStringLiteral("rtlInsightWorkbenchDetach"));
@@ -483,6 +510,25 @@ void RtlInsightWorkbench::hideEvent(QHideEvent* event)
 void RtlInsightWorkbench::applyGraphSnapshot(const LiveInsightSnapshot& snapshot)
 {
     if (!reportKey.isValid() || snapshot.requestedKey != reportKey || !canvasValue) return;
+    if (currentKind == InsightWorkbenchViewKind::Block && blockView) {
+        const bool ready = snapshot.phase == LiveInsightPhase::Ready && !snapshot.stale && snapshot.publishedKey == reportKey;
+        blockView->setSourceNavigationEnabled(ready);
+        if (!ready) {
+            statusLabel->setText(snapshot.phase == LiveInsightPhase::Error ? snapshot.errorText : tr("Updating module…"));
+            statusLabel->show();
+            return;
+        }
+        if (snapshot.publishedGeneration == appliedReportGeneration) return;
+        const auto publication = snapshot.payload.value(QStringLiteral("graphReport")).value<LiveInsightGraphReportPtr>();
+        if (!publication || publication->mode != LiveInsightGraphMode::Module) return;
+        const auto& report = std::get<ModuleBlockDiagramReport>(publication->value);
+        appliedReportGeneration = snapshot.publishedGeneration;
+        if (!report.found) { statusLabel->setText(report.notFoundReasonDisplayName); statusLabel->show(); blockView->setSourceNavigationEnabled(false); return; }
+        blockView->setReport(report, currentContext.workspaceId);
+        statusLabel->clear(); statusLabel->hide();
+        setProperty("liveInsightReportBuildNs", publication->computationNs);
+        return;
+    }
     canvasValue->setEnabled(snapshot.phase == LiveInsightPhase::Ready && !snapshot.stale);
     if (snapshot.phase == LiveInsightPhase::Error) {
         currentUpdate = core.update(currentPluginId(), {});
@@ -506,6 +552,9 @@ void RtlInsightWorkbench::applyGraphSnapshot(const LiveInsightSnapshot& snapshot
     setProperty("liveInsightReportBuildNs", report->computationNs);
     setProperty("liveInsightApplyNs", timer.nsecsElapsed());
 }
+
+void RtlInsightWorkbench::setModuleNavigationHandler(std::function<void(const ModuleBlockDiagramNode&, bool)> handler)
+{ moduleNavigationHandler = std::move(handler); }
 
 void RtlInsightWorkbench::fitNewSurface()
 {

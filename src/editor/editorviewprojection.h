@@ -61,6 +61,7 @@ public:
                      const QTextCursor& cursor) const;
     void ensureCursorVisible(MyCodeEditor* editor, bool center) const;
     void paint(MyCodeEditor* editor, QPaintEvent* event);
+    void prepareVisibleGeometry(MyCodeEditor* editor) { if (associated.active()) associated.measureVisible(editor); }
 
     EditorViewProjectionMetrics metrics() const;
     QList<QPair<QString,QRectF>> visibleAssociatedBlocks(MyCodeEditor* editor, int prefetch = 0) const { return associated.visibleGaps(editor, prefetch); }

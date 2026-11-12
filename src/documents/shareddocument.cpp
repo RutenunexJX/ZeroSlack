@@ -605,12 +605,25 @@ bool SharedDocumentRegistry::renameDocument(
     return true;
 }
 
+void SharedDocument::retainConsumer(QObject* consumer)
+{
+    if (!consumer || consumers.contains(consumer)) return;
+    consumers.insert(consumer);
+    connect(consumer, &QObject::destroyed, this, [this,consumer] { consumers.remove(consumer); });
+}
+
+void SharedDocument::releaseConsumer(QObject* consumer)
+{
+    consumers.remove(consumer);
+    if (consumer) disconnect(consumer, &QObject::destroyed, this, nullptr);
+}
+
 bool SharedDocumentRegistry::releaseIfUnused(
     SharedDocument* sharedDocument)
 {
     if (!sharedDocument || sharedDocument->registryOwner != this
         || documentsById.value(sharedDocument->documentId()) != sharedDocument
-        || sharedDocument->viewCount() != 0)
+        || sharedDocument->viewCount() != 0 || sharedDocument->consumerCount() != 0)
         return false;
     documentsById.remove(sharedDocument->documentId());
     const auto identity = registeredFileKey(sharedDocument->documentId());

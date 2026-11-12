@@ -4,6 +4,7 @@
 #include "editorsplitcontroller.h"
 #include <QTabWidget>
 #include <QTabBar>
+#include <QAction>
 #include <QSignalBlocker>
 #include <QDynamicPropertyChangeEvent>
 #include "contextfloatingwindow.h"
@@ -71,15 +72,9 @@ QString displayTitle(const ContextResource& resource, QWidget* view)
 }
 struct ContextDockHost::Section {
     QWidget* frame;
-    QWidget* header;
     QWidget* view;
     QPointer<QWidget> resize;
-    QLabel* title;
-    QLabel* status;
-    QToolButton* scope;
-    QToolButton* fullView;
-    QToolButton* fit;
-    QToolButton* drag;
+    QAction* fullView;
     bool detachable = false;
     int height = 0;
     int retainedHeight = 0;
@@ -166,7 +161,6 @@ ContextDockHost::~ContextDockHost()
     for (auto* section : sections) {
         disconnect(section->frame,nullptr,this,nullptr);
         section->view->removeEventFilter(this);
-        section->header->removeEventFilter(this);
     }
     qDeleteAll(sections); sections.clear();
     if (ownsHosts) { delete bottomRoot; delete leftRoot; }
@@ -272,19 +266,6 @@ QWidget* ContextDockHost::viewForResource(const QString& key) const
 { auto* section = sections.value(key); return section ? section->view : nullptr; }
 QWidget* ContextDockHost::sectionWidget(const QString& key) const
 { auto* section = sections.value(key); return section ? section->frame : nullptr; }
-QLabel* ContextDockHost::sectionStatus(const QString& key) const
-{
-    auto* section = sections.value(key);
-    return section ? section->status : nullptr;
-}
-QAbstractButton* ContextDockHost::sectionScope(const QString& key) const
-{
-    auto* section = sections.value(key);
-    return section ? static_cast<QAbstractButton*>(section->scope) : nullptr;
-}
-QWidget* ContextDockHost::sectionHeader(const QString& key) const
-{ auto* section = sections.value(key); return section ? section->header : nullptr; }
-
 bool ContextDockHost::addResource(const ContextResource& resource, QWidget* view, bool fullViewAvailable)
 {
     const QString key = resource.stableKey();
@@ -296,77 +277,14 @@ bool ContextDockHost::addResource(const ContextResource& resource, QWidget* view
     section->frame->setProperty("contextResourceKey",key);
     section->frame->setProperty("toolPage",true);
     section->frame->setObjectName(QStringLiteral("contextDockSection"));
-    section->header = new QWidget(section->frame);
-    section->header->setObjectName(QStringLiteral("contextSectionHeader"));
-    section->header->setToolTip(resource.uri.toString());
-    section->header->setFocusPolicy(Qt::StrongFocus);
-    section->header->setProperty("contextResourceKey", key);
-    section->header->installEventFilter(this);
-    auto* row = new QHBoxLayout(section->header);
-    row->setContentsMargins(4, 0, 4, 0);
-    row->setSpacing(2);
-    section->drag = UiControls::toolButton(section->header);
-    section->drag->setObjectName(QStringLiteral("contextSectionDrag"));
-    section->drag->setIcon(style()->standardIcon(QStyle::SP_TitleBarNormalButton));
-    section->drag->setCursor(Qt::OpenHandCursor);
-    section->drag->setProperty("contextResourceKey", key);
-    section->drag->installEventFilter(this);
-    row->addWidget(section->drag);
-    section->title = UiControls::label(displayTitle(resource, view), section->header);
-    section->title->setObjectName(QStringLiteral("contextSectionTitle"));
-    section->title->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    section->title->setAttribute(Qt::WA_TransparentForMouseEvents);
-    row->addWidget(section->title, 1);
-    // Freshness belongs on the title bar so the body can stay content.
-    // A view publishes it through the contextStatus* properties; sections
-    // whose view publishes nothing keep the header as it was.
-    section->status = UiControls::label(section->header);
-    section->status->setObjectName(QStringLiteral("contextSectionStatus"));
-    section->status->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    section->status->setAttribute(Qt::WA_TransparentForMouseEvents);
-    section->status->hide();
-    row->addWidget(section->status);
-    // Same property channel as the status chip, one step further: a view that
-    // names its current scope gets a clickable chip for choosing another. The
-    // host stays generic — it just invokes the view's own slot.
-    section->scope = UiControls::toolButton(section->header);
-    section->scope->setObjectName(QStringLiteral("contextSectionScope"));
-    section->scope->setCursor(Qt::PointingHandCursor);
-    section->scope->hide();
-    connect(section->scope, &QToolButton::clicked, this, [this, key] {
-        auto* target = sections.value(key);
-        if (target && target->view)
-            QMetaObject::invokeMethod(target->view, "requestScopePick");
-    });
-    row->addWidget(section->scope);
-    section->fit = UiControls::toolButton(section->header);
-    section->fit->setObjectName(QStringLiteral("contextSectionFit"));
-    section->fit->setText(tr("Fit"));
-    section->fit->setToolTip(tr("Fit diagram to view"));
-    connect(section->fit, &QToolButton::clicked, this, [this, key] {
-        auto* target = sections.value(key);
-        if (target && target->view) QMetaObject::invokeMethod(target->view, "fitGraph");
-    });
-    row->addWidget(section->fit);
-    section->fullView = UiControls::toolButton(section->header);
-    section->fullView->setObjectName(QStringLiteral("contextDockFullView"));
-    section->fullView->setIcon(RoundedIcons::icon(RoundedIcons::Expand));
-    section->fullView->setToolTip(tr("Open in main area"));
-    section->fullView->setVisible(fullViewAvailable);
+    section->fullView = new QAction(tr("Open in main area"), section->frame);
+    section->fullView->setObjectName(QStringLiteral("contextOpenInMain"));
     section->fullView->setEnabled(fullViewAvailable);
-    row->addWidget(section->fullView);
-    auto* unpin = UiControls::toolButton(section->header);
-    unpin->setObjectName(QStringLiteral("contextDockUnpin"));
-    unpin->setIcon(RoundedIcons::icon(RoundedIcons::Pin));
-    unpin->setToolTip(tr("Move to preview"));
-    row->addWidget(unpin);
-    auto* close = UiControls::toolButton(section->header);
-    close->setIcon(style()->standardIcon(QStyle::SP_TitleBarCloseButton));
-    close->setToolTip(tr("Close section"));
-    row->addWidget(close);
-    connect(unpin, &QToolButton::clicked, this, [this, key] { emit unpinResourceRequested(key); });
-    connect(close, &QToolButton::clicked, this, [this, key] { emit closeResourceRequested(key); });
-    connect(section->fullView, &QToolButton::clicked, this, [this, key] { emit fullViewResourceRequested(resources.value(key)); });
+    section->fullView->setVisible(fullViewAvailable);
+    section->frame->addAction(section->fullView);
+    connect(section->fullView, &QAction::triggered, this, [this, key] {
+        emit fullViewResourceRequested(resources.value(key));
+    });
     view->setParent(section->frame);
     view->setProperty("contextResourceKey", key);
     view->installEventFilter(this);
@@ -375,8 +293,6 @@ bool ContextDockHost::addResource(const ContextResource& resource, QWidget* view
     column->setContentsMargins(0, 0, 0, 0);
     column->setSpacing(0);
     column->setSizeConstraint(QLayout::SetNoConstraint);
-    section->header->setFixedHeight(row->sizeHint().height());
-    column->addWidget(section->header);
     column->addWidget(view, 1);
     sections.insert(key, section);
     // A shared area can belong to an earlier-created dock and be destroyed
@@ -387,10 +303,6 @@ bool ContextDockHost::addResource(const ContextResource& resource, QWidget* view
         sections.remove(key);
         resources.remove(key);
         delete orphan;
-    });
-    connect(section->drag,&QToolButton::clicked,this,[this,key] {
-        if (auto* item=sections.value(key); item && item->detachable)
-            registry->floatPage(item->frame,item->frame->mapToGlobal(QPoint(24,24)));
     });
     setSectionDetachable(key, false);
     resources.insert(key, resource);
@@ -405,7 +317,6 @@ bool ContextDockHost::addResource(const ContextResource& resource, QWidget* view
     { const QSignalBlocker block(group); group->addTab(section->frame,RoundedIcons::icon(RoundedIcons::Info),displayTitle(resource,view)); }
     refreshSectionStatus(key);
     section->frame->show();
-    section->header->show();
     view->show();
     // Registering content must not open its dock during restoration or setup.
     // The workspace controller reveals the requested destination explicitly.
@@ -420,8 +331,6 @@ bool ContextDockHost::updateResource(const ContextResource& resource)
     auto* section = sections.value(resource.stableKey());
     if (!resource.isValid() || !section) return false;
     resources.insert(resource.stableKey(), resource);
-    section->title->setText(displayTitle(resource, section->view));
-    section->header->setToolTip(resource.uri.toString());
     refreshSectionStatus(resource.stableKey());
     return true;
 }
@@ -431,22 +340,18 @@ void ContextDockHost::refreshSectionStatus(const QString& key)
     auto* section = sections.value(key);
     if (!section || !section->view) return;
     const QString text = section->view->property("contextStatusText").toString().trimmed();
-    section->status->setText(text);
-    section->status->setToolTip(section->view->property("contextStatusTooltip").toString());
-    section->status->setVisible(!text.isEmpty());
-    const QString scope = section->view->property("contextScopeText").toString().trimmed();
-    section->scope->setText(scope);
-    section->scope->setToolTip(section->view->property("contextScopeTooltip").toString());
-    section->scope->setVisible(!scope.isEmpty());
-    section->fit->setVisible(section->view->property("contextFitAvailable").toBool());
     const QVariant fullView = section->view->property("contextFullViewActionVisible");
     section->fullView->setVisible(section->fullView->isEnabled()
         && (!fullView.isValid() || fullView.toBool()));
-    section->header->setFixedHeight(section->header->layout()->sizeHint().height());
     if (auto* group=groupForResource(key)) {
         const auto title=displayTitle(resources.value(key),section->view);
         group->setTabText(group->indexOf(section->frame),title);
-        group->setTabToolTip(group->indexOf(section->frame),text.isEmpty() ? title : title+QStringLiteral(": ")+text);
+        QStringList details{title};
+        if (!text.isEmpty()) details.append(text);
+        const QString statusTip = section->view->property("contextStatusTooltip").toString();
+        if (!statusTip.isEmpty() && statusTip != text) details.append(statusTip);
+        if (!resources.value(key).uri.isEmpty()) details.append(resources.value(key).uri.toString());
+        group->setTabToolTip(group->indexOf(section->frame), details.join(QLatin1Char('\n')));
     }
 }
 bool ContextDockHost::setFullViewAvailable(const QString& key, bool available)
@@ -498,7 +403,7 @@ bool ContextDockHost::setSectionCollapsed(const QString& key, bool collapsed, bo
 }
 
 int ContextDockHost::minimumSectionHeight(const Section* section) const
-{ return section->header->height() + resizeHeight
+{ return resizeHeight
     + qMax(48, qMax(section->view->minimumHeight(), section->view->minimumSizeHint().height())); }
 bool ContextDockHost::setSectionHeight(const QString& key, int height)
 {
@@ -546,7 +451,7 @@ void ContextDockHost::arrangeSections()
         auto* section=it.value(); auto* group=groupForResource(it.key()); if (!group) continue;
         const int minimum=minimumSectionHeight(section);
         section->frame->setMinimumWidth(resourceArea(it.key())==Qt::BottomDockWidgetArea
-            ? qMax(180,section->header->minimumSizeHint().width()) : 0);
+            ? qMax(180,qMax(section->view->minimumWidth(), section->view->minimumSizeHint().width())) : 0);
         section->frame->setMinimumHeight(minimum);
         section->frame->setMaximumHeight(QWIDGETSIZE_MAX);
         group->setMaximumHeight(QWIDGETSIZE_MAX);
@@ -569,7 +474,7 @@ void ContextDockHost::arrangeSections()
             if (!section) { allResources=false; break; }
             const int chrome=horizontal ? 2*group->style()->pixelMetric(QStyle::PM_DefaultFrameWidth,nullptr,group)
                 : group->minimumSizeHint().height()-qMax(section->frame->minimumHeight(),section->frame->minimumSizeHint().height());
-            const int minimum=horizontal ? qMax(180,section->header->minimumSizeHint().width())
+            const int minimum=horizontal ? qMax(180,qMax(section->view->minimumWidth(), section->view->minimumSizeHint().width()))
                 : minimumSectionHeight(section);
             const int requested=horizontal ? section->width : section->height;
             extents.append({minimum+qMax(0,chrome),requested>0 ? requested : 1});
@@ -596,13 +501,13 @@ QRect ContextDockHost::projectedSectionRect(bool bottom,int index,const QRect& v
 {
     if (viewport.isEmpty() || !incoming) return {};
     QList<SectionExtent> extents; int insertion=0; QPoint offset; QSize chrome; int handleWidth=4,minimumChrome=0;
-    int header=30,tabHeight=30;
+    int tabHeight=30;
     const auto keys=resourceKeys();
     for (int i=0;i<keys.size();++i) {
         if (isBottomResource(keys[i])!=bottom) continue;
         auto* section=sections.value(keys[i]); auto* group=groupForResource(keys[i]);
         if (!group) continue;
-        header=section->header->height(); tabHeight=group->tabBar()->height();
+        tabHeight=group->tabBar()->height();
         if (extents.isEmpty()) {
             offset=section->frame->mapTo(group,QPoint()); chrome=group->size()-section->frame->size();
             minimumChrome=bottom ? 2*group->style()->pixelMetric(QStyle::PM_DefaultFrameWidth,nullptr,group)
@@ -610,13 +515,13 @@ QRect ContextDockHost::projectedSectionRect(bool bottom,int index,const QRect& v
         }
         if (auto* splitter=qobject_cast<QSplitter*>(group->parentWidget())) handleWidth=splitter->handleWidth();
         if (i<index) ++insertion;
-        const int minimum=(bottom ? qMax(180,section->header->minimumSizeHint().width())
+        const int minimum=(bottom ? qMax(180,qMax(section->view->minimumWidth(), section->view->minimumSizeHint().width()))
             : minimumSectionHeight(section))+minimumChrome;
         const int request=bottom ? section->width : section->height;
         extents.append({minimum,request>0 ? request : 1});
     }
     const int incomingMinimum=bottom ? qMax(180,incoming->minimumWidth())+minimumChrome
-        : header+resizeHeight+qMax(48,qMax(incoming->minimumHeight(),incoming->minimumSizeHint().height()))+qMax(tabHeight,minimumChrome);
+        : resizeHeight+qMax(48,qMax(incoming->minimumHeight(),incoming->minimumSizeHint().height()))+qMax(tabHeight,minimumChrome);
     extents.insert(insertion,{incomingMinimum,1});
     const int extent=bottom ? viewport.width() : viewport.height();
     const auto lengths=distributeExtents(qMax(0,extent-(extents.size()-1)*handleWidth),extents);
@@ -709,7 +614,6 @@ bool ContextDockHost::eventFilter(QObject* watched,QEvent* event)
     const auto key=watched->property("contextResourceKey").toString();
     if (auto* section=sections.value(key)) {
         if (watched==section->view && event->type()==QEvent::DynamicPropertyChange) refreshSectionStatus(key);
-        if (watched==section->header && event->type()==QEvent::MouseButtonPress) focusSection(key);
     }
     return QWidget::eventFilter(watched,event);
 }
@@ -719,13 +623,9 @@ bool ContextDockHost::setSectionDetachable(const QString& key, bool detachable)
     auto* section = sections.value(key);
     if (!section) return false;
     section->detachable = detachable;
-    section->drag->setEnabled(detachable);
-    section->drag->setToolTip(detachable ? tr("Float this view")
-        : tr("Use the preview action for this view"));
+    section->frame->setProperty("hostedTabDetachable", detachable);
     return true;
 }
-QWidget* ContextDockHost::sectionDragHandle(const QString& key) const
-{ auto* section = sections.value(key); return section ? section->drag : nullptr; }
 bool ContextDockHost::validFloatingSource(QObject* source, const QMimeData* mime) const
 {
     auto* floating = qobject_cast<ContextFloatingWindow*>(source);

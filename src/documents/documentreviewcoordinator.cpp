@@ -2,12 +2,14 @@
 #include "actionregistry.h"
 #include "tabmanager.h"
 #include "mycodeeditor.h"
+#include "shareddocument.h"
 #include "notificationcenter.h"
 #include "crashrecoveryservice.h"
 #include "externaldocumentsynccontroller.h"
 #include "uicontrols.h"
 #include "uidialogs.h"
 #include <QAbstractItemView>
+#include <QAction>
 #include <QApplication>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -74,7 +76,35 @@ QString crashRecoveryDocumentLabel(
 }
 }
 DocumentReviewCoordinator::DocumentReviewCoordinator(TabManager* documents, QWidget* host)
-    : QObject(host), hostWindow(host), tabManager(documents) {}
+    : QObject(host), hostWindow(host), tabManager(documents)
+{
+    if (!documents) return;
+    connect(documents, &TabManager::tabCreated,
+            this, &DocumentReviewCoordinator::bindEditorConflictAction);
+    for (auto* editor : documents->openEditors())
+        bindEditorConflictAction(editor);
+}
+
+void DocumentReviewCoordinator::bindEditorConflictAction(MyCodeEditor* editor)
+{
+    if (!editor || !tabManager) return;
+    QPointer<SharedDocument> document = tabManager->sharedDocumentForEditor(editor);
+    if (!document) return;
+    auto* action = new QAction(QStringLiteral("Review External Changes..."), editor);
+    action->setObjectName(QStringLiteral("reviewExternalChanges"));
+    editor->addAction(action);
+    const auto update = [action, document] {
+        action->setVisible(document
+            && document->externalState() != SharedDocumentExternalState::Current);
+    };
+    connect(document, &SharedDocument::statusChanged, action, update);
+    connect(document, &QObject::destroyed, action, [action] { action->setVisible(false); });
+    connect(action, &QAction::triggered, this, [this, document] {
+        if (document && document->externalState() != SharedDocumentExternalState::Current)
+            openExternalConflictReview(document->fileName());
+    });
+    update();
+}
 DocumentReviewCoordinator::~DocumentReviewCoordinator()
 {
     delete crashRecoveryReviewDialog.data();

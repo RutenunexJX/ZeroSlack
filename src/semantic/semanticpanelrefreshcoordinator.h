@@ -168,6 +168,7 @@ private:
     QMetaObject::Connection editorCursorConnection;
     QMetaObject::Connection editorSelectionConnection;
     QMetaObject::Connection editorInstanceContextConnection;
+    QMetaObject::Connection documentContextConnection;
 };
 
 #endif // SEMANTICPANELREFRESHCOORDINATOR_H

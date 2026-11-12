@@ -123,6 +123,15 @@ void AnalysisScheduler::setSymbolAnalyzer(SymbolAnalyzer* analyzer)
     if (symbolAnalyzer) {
         connect(symbolAnalyzer, &SymbolAnalyzer::semanticInputWatchPathsChanged,
                 this, &AnalysisScheduler::semanticInputWatchPathsChanged);
+        connect(symbolAnalyzer, &SymbolAnalyzer::semanticInputsChecked, this,
+                [this](const ProjectSnapshot& project, bool changed) {
+            if (!changed || shuttingDown || !semanticRuntimePolicy.enabled
+                || !projectModel || !projectModel->isOpen()
+                || projectModel->snapshot().semanticIdentity() != project.semanticIdentity())
+                return;
+            requestSemanticAnalysis(SemanticAnalysisReason::ExternalFileChange,
+                                    SemanticChangeImpact::FullFallback, {}, {}, project);
+        });
         connect(symbolAnalyzer, &SymbolAnalyzer::semanticAnalysisCommitted, this,
                 [this](const SemanticAnalysisRequest& request, const SemanticSnapshotToken&) {
             if (request.compatibilityRequest && request.project.isOpen())

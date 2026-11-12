@@ -1332,10 +1332,10 @@ void appendNavigationContextActions(
          "Go to Module Definition",
          ActionCategory::Navigate},
         {ActionIds::NavigationDesignSetTop,
-         "Set Design Top",
-         "Use the selected module as the explicit design-hierarchy root.",
+         "Browse Design Module",
+         "Reveal the selected module in the automatic workspace hierarchy.",
          "navigation.design.setTop",
-         "Add as Design Project",
+         "Reveal in Design",
          ActionCategory::Workspace},
     };
 

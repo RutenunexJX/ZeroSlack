@@ -11,6 +11,7 @@
 #include <QMetaObject>
 #include <QObject>
 #include <QPointer>
+#include <QSet>
 #include <QByteArray>
 #include <QDateTime>
 #include <QString>
@@ -65,6 +66,9 @@ public:
     bool detachView(MyCodeEditor* editor,
                     bool preserveIndependentCopy = true);
     int viewCount() const;
+    void retainConsumer(QObject* consumer);
+    void releaseConsumer(QObject* consumer);
+    int consumerCount() const { return consumers.size(); }
     QList<MyCodeEditor*> views() const;
     SharedDocumentViewState viewState(MyCodeEditor* editor) const;
     void captureViewState(MyCodeEditor* editor);
@@ -83,6 +87,7 @@ private:
     };
 
     QHash<MyCodeEditor*, ViewBinding> viewBindings;
+    QSet<QObject*> consumers;
     SharedDocumentRegistry* registryOwner = nullptr;
 
     void applyViewState(MyCodeEditor* editor,

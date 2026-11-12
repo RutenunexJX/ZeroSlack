@@ -4,11 +4,20 @@
 #include "tabfileio.h"
 #include "tabmanager.h"
 #include "shareddocument.h"
+#include "pinloomreferencepicker.h"
+#include "pinloomcontextview.h"
+#include "associatedblockpage.h"
+#include "associatedblockdragcontroller.h"
+#include "tsdocument.h"
 #include <QtTest>
 #include <QtWidgets>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QLockFile>
+#include <QLocalServer>
+#include <QLocalSocket>
+#include <QScopeGuard>
+#include <QDesktopServices>
 
 namespace {
 bool write(const QString& path, const QByteArray& bytes) {
@@ -23,6 +32,8 @@ class EditorBlockStoreTest : public QObject {
     std::unique_ptr<QTemporaryDir> directory;
     std::unique_ptr<MyCodeEditor> editor;
     QString source, error;
+    QUrl originalUrl;
+    Q_INVOKABLE void captureOriginalUrl(const QUrl& url) { originalUrl=url; }
     DocumentBlockModel* model() { return editor->blockModel(); }
     DocumentBlockStore* store() { return DocumentBlockStore::get(model()); }
     QString note() { return model()->insert("text", editor->textCursor(), "note"); }
@@ -38,6 +49,264 @@ class EditorBlockStoreTest : public QObject {
         };
     }
 private slots:
+    void detachedPageRetainsOwnerAndSavesWithoutCodeView() {
+        QTabWidget tabs; tabs.resize(850,550); tabs.show(); TabManager manager(&tabs);
+        manager.setCrashRecoveryService(std::make_unique<CrashRecoveryService>(directory->filePath("page-recovery")));
+        manager.setWorkspaceScope({directory->path()},directory->path()); QVERIFY(manager.openFileInTab(source));
+        auto* code=manager.getCurrentEditor(); QPointer<SharedDocument> document=manager.sharedDocumentForEditor(code);
+        auto* blocks=code->blockModel(); const auto id=blocks->insert("text",code->textCursor(),"Shared note");
+        const auto original=read(source);
+        auto* page=manager.detachAssociatedBlock(document,id); QVERIFY(page); QCOMPARE(page->model(),blocks);
+        QCoreApplication::processEvents(); QVERIFY(blocks->find(id)->detached);
+        QCOMPARE(code->findChildren<QFrame*>("editorBlockShell").size(),0);
+        manager.closeTab(tabs.indexOf(code)); QVERIFY(document); QCOMPARE(document->viewCount(),0); QCOMPARE(document->consumerCount(),1);
+        auto* text=page->findChild<QTextEdit*>("editorBlockText"); QVERIFY(text);
+        text->setPlainText("Still editable without a code view"); page->finishEditing();
+        QCOMPARE(blocks->find(id)->text,text->toPlainText()); QVERIFY(manager.saveCurrentTab());
+        QCOMPARE(read(source),original); QVERIFY(!document->dirty());
+        text->setPlainText("Uncommitted note"); page->finishEditing();
+        manager.unsavedDocumentManagerForTesting()->setDecisionProvider([](const auto&,QWidget*) { return UnsavedDocumentBatchDecision::Cancel; });
+        manager.closeTab(tabs.indexOf(page)); QCOMPARE(manager.currentAssociatedBlock(),page); QVERIFY(document->dirty());
+        const auto sidecar=DocumentBlockStore::get(blocks)->storagePath(); QVERIFY(write(sidecar,"{external change"));
+        QVERIFY(!manager.saveCurrentTab()); QCOMPARE(manager.currentAssociatedBlock(),page); QCOMPARE(blocks->find(id)->text,QString("Uncommitted note"));
+        QCOMPARE(read(source),original);
+        manager.checkpointCrashRecovery(); manager.flushCrashRecovery();
+        QVERIFY(!manager.listCrashRecoveryCandidates(directory->path()).candidates.isEmpty());
+    }
+    void detachedCloseReopenSaveAsAndUndoPlacement() {
+        QWidget host; QVBoxLayout layout(&host); QTabWidget tabs; layout.addWidget(&tabs); host.resize(900,600); host.show();
+        TabManager manager(&tabs); manager.enableSplitLayout(&host); manager.setWorkspaceScope({directory->path()},directory->path());
+        QVERIFY(manager.openFileInTab(source)); auto* code=manager.getCurrentEditor(); auto* document=manager.sharedDocumentForEditor(code);
+        auto* blocks=code->blockModel(); const auto id=blocks->insert("text",code->textCursor(),"One association");
+        auto* page=manager.detachAssociatedBlock(document,id); QVERIFY(page);
+        auto* split=manager.editorSplitController()->movePageToSplit(page,EditorSplitDirection::Right); QVERIFY(split);
+        const auto groupId=manager.editorSplitController()->groupId(split);
+        manager.closeTab(split->indexOf(page)); QVERIFY(blocks->find(id)->detached); QVERIFY(manager.associatedBlockPages().isEmpty());
+        QVERIFY(manager.reopenClosedTab()); page=manager.currentAssociatedBlock(); QVERIFY(page);
+        QCOMPARE(page->blockId(),id); QCOMPARE(page->model(),blocks);
+        const auto renamed=directory->filePath("rtl/renamed.sv"); QVERIFY(manager.saveSharedDocument(document,true,renamed));
+        QCOMPARE(page->ownerDocument()->fileName(),renamed); QCOMPARE(read(renamed),read(source));
+        QTextCursor target(document->textDocument()->findBlockByNumber(1)); QVERIFY(blocks->move(id,target));
+        QTRY_VERIFY(manager.associatedBlockPages().isEmpty()); QVERIFY(!blocks->find(id)->detached);
+        code->undo(); QTRY_COMPARE(manager.associatedBlockPages().size(),1);
+        page=manager.associatedBlockPages().first(); QVERIFY(blocks->find(id)->detached);
+        QVERIFY(!manager.editorSplitController()->groupForPage(page)->property("pageGroupId").toString().isEmpty());
+        page->replay(true); QTRY_VERIFY(manager.associatedBlockPages().isEmpty()); QVERIFY(!blocks->find(id)->detached);
+        QCOMPARE(blocks->find(id)->start,target.block().position());
+        QVERIFY(manager.saveSharedDocument(document));
+    }
+    void detachedRegistrationFailurePreservesInlineAndExistingPage() {
+        QTabWidget tabs; TabManager manager(&tabs); QVERIFY(manager.openFileInTab(source));
+        auto* code=manager.getCurrentEditor(); auto* document=manager.sharedDocumentForEditor(code);
+        auto* blocks=code->blockModel(); const auto id=blocks->insert("text",code->textCursor(),"Keep this note");
+        const auto before=blocks->serialize(); const auto revision=blocks->revision();
+        QVERIFY(!manager.detachAssociatedBlock(document,id,nullptr,[](auto*) { return false; }));
+        QCOMPARE(blocks->serialize(),before); QCOMPARE(blocks->revision(),revision);
+        QVERIFY(manager.associatedBlockPages().isEmpty()); QCOMPARE(document->consumerCount(),0);
+        auto* page=manager.detachAssociatedBlock(document,id); QVERIFY(page);
+        QVERIFY(!manager.detachAssociatedBlock(document,id,nullptr,[](auto*) { return false; }));
+        QCOMPARE(manager.associatedBlockPages(),QList<AssociatedBlockPage*>{page}); QVERIFY(blocks->find(id)->detached);
+    }
+    void detachedPathMutationRejectsLateBlockEditsAndClosesConsumers() {
+        QTabWidget tabs; TabManager manager(&tabs); QVERIFY(manager.openFileInTab(source));
+        auto* code=manager.getCurrentEditor(); auto* document=manager.sharedDocumentForEditor(code);
+        auto* blocks=code->blockModel(); const auto id=blocks->insert("text",code->textCursor(),"Before rename");
+        auto* page=manager.detachAssociatedBlock(document,id); QVERIFY(page); QVERIFY(manager.saveSharedDocument(document));
+        manager.closeTab(tabs.indexOf(code)); QCOMPARE(document->viewCount(),0);
+        WorkspacePathMutation mutation; QString issue;
+        QVERIFY(manager.prepareWorkspacePathMutation(source,false,&mutation,nullptr,&issue));
+        blocks->editText(id,"Late edit"); blocks->endTextSession(); QVERIFY(!manager.validateWorkspacePathMutation(mutation,&issue));
+        QVERIFY(manager.saveSharedDocument(document));
+        QVERIFY(manager.prepareWorkspacePathMutation(source,false,&mutation,nullptr,&issue));
+        QVERIFY(manager.finalizeWorkspacePathMutation(mutation,&issue)); QVERIFY(manager.associatedBlockPages().isEmpty());
+    }
+    void gutterDropUsesOwnerRevisionAndOrder() {
+        QTabWidget tabs; tabs.resize(850,650); tabs.show(); TabManager manager(&tabs);
+        QVERIFY(manager.openFileInTab(source)); auto* code=manager.getCurrentEditor(); auto* document=manager.sharedDocumentForEditor(code);
+        auto* blocks=code->blockModel(); const auto moving=blocks->insert("text",code->textCursor(),"moving");
+        const auto first=blocks->insert("text",QTextCursor(code->document()->findBlockByNumber(1)),"first");
+        const auto second=blocks->insert("text",QTextCursor(code->document()->findBlockByNumber(1)),"second");
+        auto* page=manager.detachAssociatedBlock(document,moving); QVERIFY(page);
+        tabs.setCurrentWidget(code); QCoreApplication::processEvents();
+        auto* drag=manager.findChild<AssociatedBlockDragController*>(); QVERIFY(drag);
+        auto* gutter=code->findChild<QWidget*>("editorLineNumberGutter"); QVERIFY(gutter && gutter->acceptDrops());
+        auto send=[&](QMimeData* mime, QPoint point, bool commit) {
+            QDragEnterEvent enter(point,Qt::MoveAction,mime,Qt::LeftButton,Qt::NoModifier); QApplication::sendEvent(gutter,&enter);
+            if(!enter.isAccepted()) return false;
+            QDragMoveEvent move(point,Qt::MoveAction,mime,Qt::LeftButton,Qt::NoModifier); QApplication::sendEvent(gutter,&move);
+            if(!move.isAccepted() || !commit) return move.isAccepted();
+            QDropEvent drop(QPointF(point),Qt::MoveAction,mime,Qt::LeftButton,Qt::NoModifier); QApplication::sendEvent(gutter,&drop); return drop.isAccepted();
+        };
+        const auto sourceBytes=code->toPlainText(); const auto before=blocks->serialize();
+        auto mime=std::unique_ptr<QMimeData>(drag->createMimeData(document,moving));
+        const int lineY=qRound(code->blockGeometry(1).top+4);
+        QPoint point=gutter->mapFromGlobal(code->viewport()->mapToGlobal(QPoint(0,lineY))); point.setX(gutter->width()/2);
+        QVERIFY(send(mime.get(),point,false)); QCOMPARE(blocks->serialize(),before);
+        auto* marker=code->findChild<QLabel*>("associatedBlockDropMarker"); QVERIFY(marker); QCOMPARE(marker->property("sourceLine").toInt(),1);
+        QDragLeaveEvent leave; QApplication::sendEvent(gutter,&leave); QCOMPARE(blocks->serialize(),before);
+        document->setReadOnly(true); QVERIFY(!send(mime.get(),point,true)); document->setReadOnly(false);
+        QTextCursor change(document->textDocument()); change.insertText("x"); QVERIFY(!send(mime.get(),point,true));
+        code->undo(); mime.reset(drag->createMimeData(document,moving));
+        QVERIFY(send(mime.get(),point,true)); QTRY_VERIFY(manager.associatedBlockPages().isEmpty());
+        QVERIFY(!blocks->find(moving)->detached); QCOMPARE(code->toPlainText(),sourceBytes);
+        QCOMPARE(blocks->find(moving)->start,code->document()->findBlockByNumber(1).position());
+        QVERIFY(blocks->find(moving)->order < blocks->find(first)->order);
+        QVERIFY(blocks->find(first)->order < blocks->find(second)->order);
+    }
+    void releasedGripUsesTheNormalDropTransaction_data() {
+        QTest::addColumn<QString>("target");
+        QTest::newRow("owner-gutter")<<QString("gutter");
+        QTest::newRow("tab-bar")<<QString("tab");
+        QTest::newRow("other-owner-gutter")<<QString("other");
+    }
+    void releasedGripUsesTheNormalDropTransaction() {
+#ifndef Q_OS_WIN
+        QSKIP("Windows native drag startup regression");
+#else
+        if(QGuiApplication::platformName()!="windows") QSKIP("Requires native Windows hit testing");
+        QFETCH(QString,target);
+        QTabWidget tabs; tabs.resize(850,650); tabs.show(); tabs.raise(); tabs.activateWindow();
+        TabManager manager(&tabs); QVERIFY(manager.openFileInTab(source));
+        auto* code=manager.getCurrentEditor(); auto* document=manager.sharedDocumentForEditor(code);
+        auto* blocks=code->blockModel(); const auto id=blocks->insert("text",code->textCursor(),"Fast grip");
+        QPointer<QToolButton> handle;
+        QTRY_VERIFY((handle=code->findChild<QToolButton*>("editorBlockDragHandle")));
+        auto* drag=manager.findChild<AssociatedBlockDragController*>(); QVERIFY(drag);
+        auto* destination=code;
+        if(target=="other") {
+            manager.createNewTab(); destination=manager.getCurrentEditor(); destination->setPlainText("other\nowner\n");
+            // Hiding an inline editor removes its transient block shell.
+            // Keep a source handle owned directly by the source editor.
+            handle=new QToolButton(code); handle->setObjectName("editorBlockDragHandle"); handle->setProperty("blockId",id);
+        }
+        QCoreApplication::processEvents();
+        auto* gutter=destination->findChild<QWidget*>("editorLineNumberGutter"); QVERIFY(gutter);
+        const auto global=target=="tab" ? tabs.tabBar()->mapToGlobal(tabs.tabBar()->rect().center())
+            : gutter->mapToGlobal(QPoint(gutter->width()/2,qRound(destination->blockGeometry(1).top+4)));
+        const auto before=blocks->serialize(); const auto sourceText=code->toPlainText();
+        const auto pressedGlobal=handle->mapToGlobal(handle->rect().center());
+        QMouseEvent press(QEvent::MouseButtonPress,handle->rect().center(),pressedGlobal,Qt::LeftButton,Qt::LeftButton,Qt::NoModifier);
+        QApplication::sendEvent(handle,&press);
+        QCursor::setPos(global);
+        QCOMPARE(QCursor::pos(),global);
+        QTRY_VERIFY(QApplication::widgetAt(global));
+        qInfo()<<"RELEASED_GRIP_TARGET"<<target<<global<<QApplication::widgetAt(global)->objectName()<<QApplication::widgetAt(global)->metaObject()->className();
+        QSignalSpy finished(drag,&AssociatedBlockDragController::gestureFinished);
+        // The queued move still says LeftButton, although the native button is up.
+        QMouseEvent move(QEvent::MouseMove,handle->mapFromGlobal(global),global,Qt::NoButton,Qt::LeftButton,Qt::NoModifier);
+        QApplication::sendEvent(handle,&move);
+        QCOMPARE(finished.count(),1); QVERIFY(!drag->dragInProgress());
+        QCOMPARE(code->toPlainText(),sourceText);
+        if(target=="other") QCOMPARE(blocks->serialize(),before);
+        else if(target=="tab") {
+            QTRY_COMPARE(manager.associatedBlockPages().size(),1); QVERIFY(blocks->find(id)->detached);
+        } else {
+            QCOMPARE(blocks->find(id)->start,code->document()->findBlockByNumber(1).position());
+            QVERIFY(!blocks->find(id)->detached); QVERIFY(manager.associatedBlockPages().isEmpty());
+            QTRY_VERIFY(QApplication::focusWidget() && QApplication::focusWidget()->property("blockId").toString()==id);
+        }
+        QVERIFY(!code->findChild<QLabel*>("associatedBlockDropMarker"));
+#endif
+    }
+    void gutterDropPreservesWrappedAndFoldedAnchors_data() {
+        QTest::addColumn<bool>("folded"); QTest::newRow("wrapped-range")<<false; QTest::newRow("folded-range")<<true;
+    }
+    void gutterDropPreservesWrappedAndFoldedAnchors() {
+        QFETCH(bool,folded);
+        QTabWidget tabs; tabs.resize(380,800); tabs.show(); TabManager manager(&tabs); manager.createNewTab();
+        auto* code=manager.getCurrentEditor(); code->setLineWrapMode(QPlainTextEdit::WidgetWidth);
+        const QString sourceText="module m;\ninitial begin\n  value = "+QString("long_name + ").repeated(18)+"0;\n  ready = 1;\nend\nendmodule\n";
+        code->setPlainText(sourceText); auto* document=manager.sharedDocumentForEditor(code); auto* blocks=code->blockModel();
+        const auto moving=blocks->insert("text",QTextCursor(code->document()),"moving");
+        QTextCursor range(code->document()); range.setPosition(sourceText.indexOf("value")); range.setPosition(range.position()+5,QTextCursor::KeepAnchor);
+        const auto target=blocks->insert("text",range,"Existing ranged note");
+        QVERIFY(manager.detachAssociatedBlock(document,moving)); tabs.setCurrentWidget(code);
+        QTRY_VERIFY(!code->syntaxDocument()->hasPendingEdits());
+        if(folded) QVERIFY(code->toggleFoldAtLineForTest(1));
+        QCoreApplication::processEvents();
+        QFrame* shell=nullptr;
+        QTRY_VERIFY(([&] {
+            for(auto* frame:code->findChildren<QFrame*>("editorBlockShell")) if(frame->property("blockId")==target) shell=frame;
+            return shell && shell->isVisible();
+        })());
+        if (folded) {
+            auto* body=shell->findChild<QTextEdit*>("editorBlockText"); QVERIFY(body);
+            QTRY_VERIFY(!body->isVisible());
+        }
+        auto* gutter=code->findChild<QWidget*>("editorLineNumberGutter"); QVERIFY(gutter);
+        auto* drag=manager.findChild<AssociatedBlockDragController*>(); QVERIFY(drag);
+        auto mime=std::unique_ptr<QMimeData>(drag->createMimeData(document,moving));
+        auto point=gutter->mapFromGlobal(shell->mapToGlobal(QPoint(0,2))); point.setX(gutter->width()/2);
+        qInfo()<<"DROP_PROJECTION"<<folded<<code->devicePixelRatioF()<<shell->geometry()<<point;
+        const auto before=blocks->serialize();
+        QDragEnterEvent enter(point,Qt::MoveAction,mime.get(),Qt::LeftButton,Qt::NoModifier); QApplication::sendEvent(gutter,&enter); QVERIFY(enter.isAccepted());
+        auto* marker=code->findChild<QLabel*>("associatedBlockDropMarker"); QVERIFY(marker);
+        QCOMPARE(marker->property("sourceLine").toInt(),2); QCOMPARE(marker->property("beforeBlockId").toString(),target);
+        QCOMPARE(blocks->serialize(),before);
+        QDropEvent drop(QPointF(point),Qt::MoveAction,mime.get(),Qt::LeftButton,Qt::NoModifier); QApplication::sendEvent(gutter,&drop); QVERIFY(drop.isAccepted());
+        QTRY_VERIFY(manager.associatedBlockPages().isEmpty()); QCOMPARE(code->toPlainText(),sourceText);
+        QCOMPARE(blocks->find(moving)->start,code->document()->findBlockByNumber(2).position());
+        QVERIFY(blocks->find(moving)->order<blocks->find(target)->order);
+        code->undo(); QTRY_COMPARE(manager.associatedBlockPages().size(),1); QVERIFY(blocks->find(moving)->detached);
+        manager.createNewTab(); auto* other=manager.getCurrentEditor(); other->setPlainText("other owner\n");
+        QVERIFY(other!=code); QVERIFY(manager.sharedDocumentForEditor(other)!=document);
+        auto* otherGutter=other->findChild<QWidget*>("editorLineNumberGutter"); QVERIFY(otherGutter);
+        QTRY_VERIFY(otherGutter->isVisible());
+        mime.reset(drag->createMimeData(document,moving));
+        QDragEnterEvent wrongOwner(QPoint(5,5),Qt::MoveAction,mime.get(),Qt::LeftButton,Qt::NoModifier); QApplication::sendEvent(otherGutter,&wrongOwner);
+        QVERIFY(!wrongOwner.isAccepted()); QVERIFY(blocks->find(moving)->detached);
+    }
+    void gutterAutoScrollDoesNotCommitOnHoverOrLeave() {
+        QTabWidget tabs; tabs.resize(500,350); tabs.show(); TabManager manager(&tabs); manager.createNewTab();
+        auto* code=manager.getCurrentEditor(); code->setPlainText(QString("logic value;\n").repeated(200));
+        auto* document=manager.sharedDocumentForEditor(code); auto* blocks=code->blockModel();
+        const auto id=blocks->insert("text",code->textCursor(),"scroll me"); QVERIFY(manager.detachAssociatedBlock(document,id));
+        tabs.setCurrentWidget(code); QCoreApplication::processEvents();
+        auto* drag=manager.findChild<AssociatedBlockDragController*>(); auto* gutter=code->findChild<QWidget*>("editorLineNumberGutter");
+        QVERIFY(drag && gutter); auto mime=std::unique_ptr<QMimeData>(drag->createMimeData(document,id));
+        const auto before=blocks->serialize(); const int scroll=code->verticalScrollBar()->value();
+        auto point=gutter->mapFromGlobal(code->viewport()->mapToGlobal(QPoint(0,code->viewport()->height()-5))); point.setX(gutter->width()/2);
+        QDragEnterEvent enter(point,Qt::MoveAction,mime.get(),Qt::LeftButton,Qt::NoModifier); QApplication::sendEvent(gutter,&enter); QVERIFY(enter.isAccepted());
+        QTRY_VERIFY(code->verticalScrollBar()->value()>scroll); QCOMPARE(blocks->serialize(),before);
+        QDragLeaveEvent leave; QApplication::sendEvent(gutter,&leave); const int stopped=code->verticalScrollBar()->value();
+        QTest::qWait(100); QCOMPARE(code->verticalScrollBar()->value(),stopped); QCOMPARE(blocks->serialize(),before);
+    }
+    void detachedSessionAndUntitledRecoveryKeepIdentity() {
+        QTabWidget tabs; TabManager manager(&tabs); manager.setWorkspaceScope({directory->path()},directory->path());
+        manager.setCrashRecoveryService(std::make_unique<CrashRecoveryService>(directory->filePath("session-recovery")));
+        manager.createNewTab(); auto* code=manager.getCurrentEditor(); code->setPlainText("module untitled;\nendmodule\n");
+        auto* document=manager.sharedDocumentForEditor(code); const auto documentId=document->documentId();
+        auto* blocks=code->blockModel(); const auto id=blocks->insert("text",code->textCursor(),"Unsaved association");
+        auto value=*blocks->find(id); value.appearance={{"style","Outlined"},{"textColor","#784321"}}; QVERIFY(blocks->update(value));
+        QVERIFY(manager.detachAssociatedBlock(document,id)); manager.closeTab(tabs.indexOf(code)); QCOMPARE(document->viewCount(),0);
+        WorkspaceSessionState state; state.workspaceRoot=directory->path(); state.tabs=manager.workspaceSessionTabs(directory->path());
+        QCOMPARE(state.tabs.size(),1); QCOMPARE(state.tabs.first().kind,QString("associatedBlock")); QVERIFY(state.tabs.first().filePath.isEmpty());
+        WorkspaceSessionStateService service(directory->filePath("sessions.ini")); QVERIFY(service.save(state).saved);
+        const auto restored=service.load(directory->path()); QVERIFY(restored.loaded); QCOMPARE(restored.state.tabs.size(),1);
+        QTabWidget otherTabs; TabManager other(&otherTabs); other.setWorkspaceScope({directory->path()},directory->path());
+        QStringList skipped; other.restoreWorkspaceSessionTabs(directory->path(),restored.state.tabs,&skipped); QVERIFY(skipped.isEmpty());
+        auto* page=other.currentAssociatedBlock(); QVERIFY(page); QCOMPARE(page->ownerDocument()->documentId(),documentId);
+        QCOMPARE(page->ownerDocument()->viewCount(),0); QCOMPARE(page->blockId(),id);
+        QCOMPARE(page->model()->find(id)->text,QString("Unsaved association")); QCOMPARE(page->model()->find(id)->appearance,value.appearance);
+        QCOMPARE(page->ownerDocument()->textDocument()->toPlainText(),QString("module untitled;\nendmodule\n"));
+        other.unsavedDocumentManagerForTesting()->setDecisionProvider([](const auto&,QWidget*) { return UnsavedDocumentBatchDecision::DiscardAll; });
+        other.closeTab(otherTabs.indexOf(page)); QVERIFY(other.associatedBlockPages().isEmpty());
+        QVERIFY(other.reopenClosedTab()); QCOMPARE(other.currentAssociatedBlock()->blockId(),id);
+    }
+    void missingOwnerSessionIsRetainedForRetry() {
+        QTabWidget tabs; TabManager manager(&tabs); manager.setWorkspaceScope({directory->path()},directory->path());
+        QVERIFY(manager.openFileInTab(source)); auto* code=manager.getCurrentEditor(); auto* document=manager.sharedDocumentForEditor(code);
+        const auto id=code->blockModel()->insert("text",code->textCursor(),"Recover me"); QVERIFY(manager.detachAssociatedBlock(document,id));
+        QVERIFY(manager.saveCurrentTab()); const auto states=manager.workspaceSessionTabs(directory->path());
+        const auto retained=read(source); QVERIFY(QFile::remove(source));
+        QTabWidget otherTabs; TabManager other(&otherTabs); other.setWorkspaceScope({directory->path()},directory->path());
+        QStringList skipped; other.restoreWorkspaceSessionTabs(directory->path(),states,&skipped); QVERIFY(!skipped.isEmpty());
+        QVERIFY(other.associatedBlockPages().isEmpty());
+        const auto retry=other.workspaceSessionTabs(directory->path()); QCOMPARE(retry.size(),1); QCOMPARE(retry.first().viewState.value("blockId").toString(),id);
+        QVERIFY(write(source,retained)); skipped.clear(); other.restoreWorkspaceSessionTabs(directory->path(),retry,&skipped);
+        QVERIFY(skipped.isEmpty()); QVERIFY(other.currentAssociatedBlock()); QCOMPARE(other.currentAssociatedBlock()->blockId(),id);
+    }
+
     void initTestCase() { QStandardPaths::setTestModeEnabled(true); }
     void init() {
         directory = std::make_unique<QTemporaryDir>(); QVERIFY(directory->isValid());
@@ -46,6 +315,59 @@ private slots:
         error.clear(); QVERIFY(store()->bind(source,directory->path(),&error));
     }
     void cleanup() { editor.reset(); directory.reset(); }
+    void referencePickerReportsCapabilityAndRejectsStaleReply() {
+        QList<PinloomHostClient::RawReplyHandler> replies;
+        PinloomHostClient client([&](const QJsonObject& request,const auto& reply) {
+            if(request["method"]=="search") reply({{"entries",QJsonArray{}}},{});
+            else replies.append(reply);
+        });
+        PinloomReferencePicker picker(&client,"pinloom://entry/delayed",editor.get());
+        auto* link=picker.findChild<QLineEdit*>("referencePickerLink");
+        auto* insert=picker.findChild<QPushButton*>("referencePickerInsert");
+        auto* capability=picker.findChild<QLabel*>("referencePickerCapability"); QVERIFY(link && insert && capability);
+        QVERIFY(!insert->isEnabled()); QCOMPARE(replies.size(),1);
+        link->setText("https://example.invalid/reference"); QVERIFY(insert->isEnabled());
+        QVERIFY(capability->text().contains("Link only")); QCOMPARE(picker.selectedUri(),link->text());
+        replies.takeFirst()({{"entry",QJsonObject{{"identity",QJsonObject{{"entryId","delayed"}}},{"type","code"},{"title","old"},{"uri","pinloom://entry/delayed"}}},{"content","old preview"}},{});
+        QCoreApplication::processEvents(); QCOMPARE(picker.selectedUri(),link->text()); QVERIFY(capability->text().contains("Link only"));
+        const auto code=editor->toPlainText(); const auto revision=model()->revision(); picker.reject();
+        QCOMPARE(editor->toPlainText(),code); QCOMPARE(model()->revision(),revision); QVERIFY(model()->items().isEmpty());
+    }
+    void referencePickerUsesExistingSearchAndStableIdentity() {
+        const QJsonObject identity{{"entryId","entry"},{"anchorId","anchor"}};
+        const QJsonObject entry{{"identity",identity},{"type","code"},{"title","Code location"},{"uri","pinloom://entry/entry?anchor=anchor"}};
+        QStringList methods;
+        PinloomHostClient client([&](const QJsonObject& request,const auto& reply) {
+            methods.append(request["method"].toString());
+            if(request["method"]=="search") reply({{"entries",QJsonArray{entry}}},{});
+            else if(request["method"]=="resolve") reply({{"entry",entry},{"content","logic value;"},{"contentType","text/plain"}},{});
+        });
+        PinloomReferencePicker picker(&client,{},editor.get()); picker.show(); QCoreApplication::processEvents();
+        auto* view=picker.findChild<PinloomContextView*>(); QVERIFY(view);
+        QTRY_COMPARE(view->previewState(),QString("preview"));
+        auto* insert=picker.findChild<QPushButton*>("referencePickerInsert"); QVERIFY(insert->isEnabled());
+        QCOMPARE(PinloomHostIdentity::fromUri(QUrl(picker.selectedUri())).toJson(),PinloomHostIdentity::fromJson(identity).toJson());
+        QVERIFY(methods.contains("search") && methods.contains("resolve")); QVERIFY(!methods.contains("open"));
+        insert->click(); QCOMPARE(picker.result(),int(QDialog::Accepted));
+    }
+    void referencePickerUnavailableAndSourceChangeAreSafe() {
+        PinloomHostClient offline([](const QJsonObject&,const auto& reply){reply({},"offline");});
+        {
+            PinloomReferencePicker picker(&offline,"pinloom://entry/missing",editor.get());
+            QVERIFY(!picker.findChild<QPushButton*>("referencePickerInsert")->isEnabled());
+            QVERIFY(picker.findChild<QLabel*>("referencePickerCapability")->text().contains("unavailable"));
+        }
+        editor->show(); bool handled=false;
+        QTimer::singleShot(0,editor.get(),[&] {
+            auto* dialog=editor->findChild<PinloomReferencePicker*>(); if(!dialog)return;
+            dialog->findChild<QTabWidget*>("referencePickerMode")->setCurrentIndex(1);
+            dialog->findChild<QLineEdit*>("referencePickerLink")->setText("https://example.invalid/reference");
+            QTextCursor change(editor->document()); change.insertText("changed ");
+            handled=true; dialog->findChild<QPushButton*>("referencePickerInsert")->click();
+        });
+        editor->editorBlockInsertRequested({{"blockType","reference"}},editor->textCursor());
+        QVERIFY(handled); QVERIFY(model()->items().isEmpty()); QVERIFY(editor->toPlainText().startsWith("changed "));
+    }
     void blockOnlyPreservesSource() {
         const auto before = read(source); const auto modified = QFileInfo(source).lastModified(); const auto id = note();
         QVERIFY2(save(),qPrintable(error)); QCOMPARE(read(source),before); QCOMPARE(QFileInfo(source).lastModified(),modified); QVERIFY(!model()->dirty());
@@ -142,7 +464,7 @@ private slots:
         QVERIFY(model()->remove(id)); replies.takeFirst()({},"missing reference"); QTest::qWait(10); QCOMPARE(completed,0);
         EditorAssociatedBlock other; other.type="reference"; other.uri="https://example.invalid/object";
         const auto unsupported=model()->insert(other,editor->textCursor());
-        preview.request(unsupported,[&](const auto& result){if(!result.loading){QVERIFY(result.status.contains("not supported"));++completed;}}); QCOMPARE(completed,1);
+        preview.request(unsupported,[&](const auto& result){if(!result.loading){QVERIFY(result.status.isEmpty()); QVERIFY(result.text.contains(other.uri)); QVERIFY(result.text.contains("Link only")); QVERIFY(result.image.isNull()); ++completed;}}); QCOMPARE(completed,1);
     }
     void pageSaveBlockOnlyAndSaveAs() {
         QTabWidget tabs; TabManager manager(&tabs); manager.setWorkspaceScope({directory->path()},directory->path()); QVERIFY(manager.openFileInTab(source));
@@ -157,7 +479,8 @@ private slots:
         const auto png=directory->filePath("page.png"); QImage page(90,120,QImage::Format_RGB32); page.fill(Qt::white); QVERIFY(page.save(png));
         QJsonObject entry{{"identity",QJsonObject{{"entryId","preview-entry"}}},{"uri","pinloom://entry/preview-entry"},{"type","code"},{"title","isolated fixture"}};
         QJsonObject response{{"entry",entry},{"content","module preview; endmodule"},{"contentType","text/x-systemverilog"}};
-        QObject owner; PinloomHostClient client([&](const auto&,const auto& reply){reply(response,{});},&owner);
+        QString providerError;
+        QObject owner; PinloomHostClient client([&](const auto&,const auto& reply){reply(response,providerError);},&owner);
         EditorAssociatedBlock block; block.type="reference"; block.uri="pinloom://entry/preview-entry"; const auto id=model()->insert(block,editor->textCursor());
         EditorBlockPreview preview(model(),&client,&owner); EditorBlockPreviewResult result; bool done=false;
         auto receive=[&](const auto& value){if(!value.loading){result=value;done=true;}};
@@ -167,8 +490,135 @@ private slots:
         QElapsedTimer timer; timer.start(); preview.request(id,receive); QTRY_VERIFY(done); const auto previewNs=timer.nsecsElapsed();
         QVERIFY2(result.status.isEmpty(),qPrintable(result.status)); QCOMPARE(result.image.size(),QSize(90,120));
         qInfo()<<"PREVIEW_PERF provider_png_ns="<<previewNs;
+        response.remove("preview"); response["content"]=" \n "; done=false;
+        preview.request(id,receive); QTRY_VERIFY(done); QVERIFY(result.text.isEmpty()); QVERIFY(result.image.isNull()); QVERIFY(result.status.startsWith("Link only"));
+        providerError="provider offline"; done=false; preview.request(id,receive); QTRY_VERIFY(done);
+        QCOMPARE(result.status,providerError); QVERIFY(!result.status.contains("Link only")); providerError.clear();
         entry["deleted"]=true; response["entry"]=entry; done=false; preview.request(id,receive); QTRY_VERIFY(done); QVERIFY(result.status.contains("deleted"));
         const auto before=read(source); const auto modified=QFileInfo(source).lastModified(); QVERIFY(save()); QCOMPARE(read(source),before); QCOMPARE(QFileInfo(source).lastModified(),modified);
+    }
+    void referenceOpenUsesActualLocatorAndRejectsStaleReply() {
+        QJsonObject entry{{"identity",QJsonObject{{"entryId","open-entry"}}},{"uri","pinloom://entry/open-entry"},{"type","file"},{"title","Original target"}};
+        QJsonObject document{{"entry",entry}};
+        QJsonObject opened{{"message","Opened target"},{"state","open_requested"},{"positionVerified",false}};
+        QString openError; int openCount=0; bool delay=false;
+        PinloomHostClient::RawReplyHandler pending;
+        QObject owner;
+        PinloomHostClient client([&](const QJsonObject& request,const auto& reply) {
+            if (request.value("method")=="resolve") { if(delay) pending=reply; else reply(document,{}); }
+            else if (request.value("method")=="open") { ++openCount; reply(opened,openError); }
+        },&owner);
+        EditorAssociatedBlock block; block.type="reference"; block.uri="pinloom://entry/open-entry";
+        const auto id=model()->insert(block,editor->textCursor());
+        bool done=false,ok=false; QString message;
+        auto request=[&] { done=false; EditorBlockPreview::openReference(model(),&client,id,&owner,[&](bool value,const QString& text) { done=true;ok=value;message=text; }); };
+        request(); QTRY_VERIFY(done); QVERIFY(ok); QCOMPARE(message,QString("Opened target")); QCOMPARE(openCount,1);
+        document["details"]=QJsonObject{{"locatorType","file.line"}};
+        request(); QTRY_VERIFY(done); QVERIFY(ok); QCOMPARE(openCount,2);
+        document["details"]=QJsonObject{{"locatorType","sumatrapdf.rect"}};
+        request(); QTRY_VERIFY(done); QVERIFY(!ok); QVERIFY(message.contains("did not confirm")); QCOMPARE(openCount,3);
+        opened["positionVerified"]=true; opened["state"]="located";
+        request(); QTRY_VERIFY(done); QVERIFY(ok); QCOMPARE(openCount,4);
+        openError="No valid foreground insertion target";
+        request(); QTRY_VERIFY(done); QVERIFY(!ok); QCOMPARE(message,openError); QCOMPARE(openCount,5);
+        openError.clear(); entry["deleted"]=true; document["entry"]=entry;
+        request(); QTRY_VERIFY(done); QVERIFY(!ok); QVERIFY(message.contains("deleted")); QCOMPARE(openCount,5);
+        entry["deleted"]=false; document["entry"]=entry; delay=true;
+        request(); QTRY_VERIFY(bool(pending)); QVERIFY(model()->remove(id)); pending(document,{});
+        QCoreApplication::processEvents(); QVERIFY(!done); QCOMPARE(openCount,5);
+    }
+    void clipOriginalNeverUsesInsertionAction() {
+        QJsonObject entry{{"identity",QJsonObject{{"entryId","clip:original-clip"},{"clipId","original-clip"}}},
+            {"uri","pinloom://entry/clip:original-clip?clip=original-clip"},{"type","clip"},{"title","Read-only clip"}};
+        QJsonObject document{{"entry",entry},{"content","Clip preview"},{"details",QJsonObject{{"sourceUri",""}}}};
+        QString providerError; int openCount=0; bool delay=false;
+        PinloomHostClient::RawReplyHandler pending;
+        QObject owner;
+        PinloomHostClient client([&](const QJsonObject& request,const auto& reply) {
+            if(request.value("method")=="resolve") { if(delay) pending=reply; else reply(document,providerError); }
+            else if(request.value("method")=="open") { ++openCount; reply({},{}); }
+        },&owner);
+        EditorAssociatedBlock block; block.type="reference"; block.uri=entry.value("uri").toString();
+        const auto id=model()->insert(block,editor->textCursor());
+        bool done=false,ok=false; QString message;
+        auto request=[&] { done=false; EditorBlockPreview::openReference(model(),&client,id,&owner,[&](bool value,const QString& text) { done=true;ok=value;message=text; }); };
+        QDesktopServices::setUrlHandler("https",this,"captureOriginalUrl");
+        QDesktopServices::setUrlHandler("file",this,"captureOriginalUrl");
+        const auto restore=qScopeGuard([] { QDesktopServices::unsetUrlHandler("https"); QDesktopServices::unsetUrlHandler("file"); });
+        originalUrl.clear(); request(); QTRY_VERIFY(done); QVERIFY(!ok); QVERIFY(message.contains("no available original"));
+        QCOMPARE(openCount,0); QVERIFY(originalUrl.isEmpty());
+        for(const auto& url:{QUrl("https://example.invalid/original#section"),QUrl::fromLocalFile(source)}) {
+            document["details"]=QJsonObject{{"sourceUri",url.toString()}};
+            request(); QTRY_VERIFY(done); QVERIFY2(ok,qPrintable(message)); QCOMPARE(originalUrl,url); QCOMPARE(openCount,0);
+        }
+        for(const auto& unavailable:{QString(),QString("pinloom://entry/clip:other?clip=other"),QString("javascript:void(0)"),QString("https:///missing-host"),QString("relative.txt")}) {
+            document["details"]=QJsonObject{{"sourceUri",unavailable}}; originalUrl.clear();
+            request(); QTRY_VERIFY(done); QVERIFY(!ok); QVERIFY(originalUrl.isEmpty()); QCOMPARE(openCount,0);
+        }
+        providerError="provider offline"; request(); QTRY_VERIFY(done); QVERIFY(!ok); QCOMPARE(message,providerError); providerError.clear();
+        entry["deleted"]=true; document["entry"]=entry; request(); QTRY_VERIFY(done); QVERIFY(!ok); QVERIFY(message.contains("deleted"));
+        entry["deleted"]=false; document["entry"]=entry; delay=true;
+        request(); QTRY_VERIFY(bool(pending)); QVERIFY(model()->remove(id)); pending(document,{});
+        QCoreApplication::processEvents(); QVERIFY(!done); QCOMPARE(openCount,0); QVERIFY(originalUrl.isEmpty());
+    }
+    void inlineAndDetachedOriginalRespectClipCapability() {
+        originalUrl.clear(); QDesktopServices::setUrlHandler("https",this,"captureOriginalUrl");
+        const auto restoreUrl=qScopeGuard([] { QDesktopServices::unsetUrlHandler("https"); });
+        const auto previous=qgetenv("ZEROSLACK_PINLOOM_HOST_SERVER");
+        const auto endpoint="zs-clip-original-"+QUuid::createUuid().toString(QUuid::WithoutBraces);
+        qputenv("ZEROSLACK_PINLOOM_HOST_SERVER",endpoint.toUtf8());
+        const auto restore=qScopeGuard([previous] { if(previous.isNull()) qunsetenv("ZEROSLACK_PINLOOM_HOST_SERVER"); else qputenv("ZEROSLACK_PINLOOM_HOST_SERVER",previous); });
+        QLocalServer server; QVERIFY(server.listen(endpoint));
+        QJsonObject entry{{"identity",QJsonObject{{"entryId","clip:guarded-clip"},{"clipId","guarded-clip"}}},
+            {"uri","pinloom://entry/clip:guarded-clip?clip=guarded-clip"},{"type","clip"},{"title","Guarded clip"}};
+        QJsonObject document{{"entry",entry},{"content","Read-only clip content"},{"details",QJsonObject{{"sourceUri",""}}}};
+        int opens=0, resolves=0;
+        connect(&server,&QLocalServer::newConnection,&server,[&] {
+            while(auto* socket=server.nextPendingConnection()) {
+                connect(socket,&QLocalSocket::disconnected,socket,&QObject::deleteLater);
+                const auto respond=[&,socket] {
+                    if(!socket->canReadLine()) return;
+                    const auto request=QJsonDocument::fromJson(socket->readLine()).object();
+                    const auto method=request.value("method").toString();
+                    if(method=="open") ++opens;
+                    if(method=="resolve") ++resolves;
+                    const QJsonObject response{{"protocol",PinloomHostClient::protocolName()},{"requestId",request.value("requestId")},
+                        {"ok",true},{"result",method=="resolve" ? document : QJsonObject{}}};
+                    socket->write(QJsonDocument(response).toJson(QJsonDocument::Compact)+'\n'); socket->flush(); socket->disconnectFromServer();
+                };
+                connect(socket,&QLocalSocket::readyRead,socket,respond); respond();
+            }
+        });
+        QTabWidget tabs; tabs.resize(850,650); tabs.show(); TabManager manager(&tabs);
+        QVERIFY(manager.openFileInTab(source)); auto* code=manager.getCurrentEditor(); auto* shared=manager.sharedDocumentForEditor(code);
+        EditorAssociatedBlock block; block.type="reference"; block.uri=entry.value("uri").toString();
+        const auto id=code->blockModel()->insert(block,code->textCursor());
+        QFrame* frame=nullptr; QTRY_VERIFY((frame=code->findChild<QFrame*>("editorBlockShell")));
+        auto* original=frame->findChild<QAction*>("editorBlockOpenOriginal"); QVERIFY(original);
+        auto* menu=qobject_cast<QMenu*>(original->parent()); QVERIFY(menu); QVERIFY(!original->isEnabled());
+        QMetaObject::invokeMethod(menu,"aboutToShow",Qt::DirectConnection);
+        QTRY_VERIFY(original->toolTip().contains("no available original")); QVERIFY(!original->isEnabled());
+        auto* preview=frame->findChild<QTextEdit*>("editorBlockReferenceText"); QVERIFY(preview); QVERIFY(preview->isReadOnly());
+        QTRY_COMPARE(preview->toPlainText(),QString("Read-only clip content"));
+        QSignalSpy status(code,&MyCodeEditor::editorStatusMessageRequested);
+        QKeyEvent enter(QEvent::KeyPress,Qt::Key_Return,Qt::NoModifier); QApplication::sendEvent(frame,&enter);
+        QTRY_VERIFY(!status.isEmpty()); QVERIFY(status.last().first().toString().contains("no available original")); QCOMPARE(opens,0);
+        document["details"]=QJsonObject{{"sourceUri","https://example.invalid/original"}};
+        QMetaObject::invokeMethod(menu,"aboutToShow",Qt::DirectConnection); QTRY_VERIFY(original->isEnabled());
+        document["details"]=QJsonObject{{"sourceUri",""}}; const auto before=status.count(); original->trigger();
+        QTRY_COMPARE(status.count(),before+1); QVERIFY(status.last().first().toString().contains("no available original")); QCOMPARE(opens,0);
+        auto* page=manager.detachAssociatedBlock(shared,id); QVERIFY(page);
+        original=page->findChild<QAction*>("editorBlockOpenOriginal"); QVERIFY(original);
+        menu=qobject_cast<QMenu*>(original->parent()); QVERIFY(menu);
+        QMetaObject::invokeMethod(menu,"aboutToShow",Qt::DirectConnection);
+        QTRY_VERIFY(original->toolTip().contains("no available original")); QVERIFY(!original->isEnabled());
+        preview=page->findChild<QTextEdit*>("editorBlockReferenceText"); QVERIFY(preview); QVERIFY(preview->isReadOnly());
+        QTRY_COMPARE(preview->toPlainText(),QString("Read-only clip content"));
+        document["details"]=QJsonObject{{"sourceUri","https://example.invalid/original"}};
+        QMetaObject::invokeMethod(menu,"aboutToShow",Qt::DirectConnection); QTRY_VERIFY(original->isEnabled());
+        document["details"]=QJsonObject{{"sourceUri",""}}; original->trigger();
+        const auto reasonVisible=[page] { for(auto* label:page->findChildren<QLabel*>()) if(label->isVisible() && label->text().contains("no available original")) return true; return false; };
+        QTRY_VERIFY(reasonVisible()); QCOMPARE(opens,0); QVERIFY(originalUrl.isEmpty()); QVERIFY(resolves>=6); QCOMPARE(read(source),QByteArray("alpha\nbeta\n"));
     }
     void pageCloseDecisions() {
         QTabWidget tabs; TabManager manager(&tabs); manager.setWorkspaceScope({directory->path()},directory->path()); QVERIFY(manager.openFileInTab(source));

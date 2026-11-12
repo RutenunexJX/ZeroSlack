@@ -150,6 +150,7 @@ ElaTabWidgetHost::ElaTabWidgetHost(ElaTabWidget* widget, QObject* owner,
       returnTarget(std::move(returnResolver))
 {
     group->tabBar()->setAcceptDrops(true);
+    group->tabBar()->setProperty("elaHostedTabOwner", QVariant::fromValue(static_cast<QObject*>(group)));
     qApp->installEventFilter(this);
 }
 
@@ -239,7 +240,8 @@ bool ElaTabWidgetHost::transfer(QWidget* page, ElaTabWidget* target, int index)
 
 ElaTabWidget* ElaTabWidgetHost::detach(QWidget* page, const QPoint& position)
 {
-    if (!scope || !group || group->indexOf(page) < 0)
+    if (!scope || !group || group->indexOf(page) < 0
+        || (page->property("hostedTabDetachable").isValid() && !page->property("hostedTabDetachable").toBool()))
         return nullptr;
     if (floatingWindow && group->count() == 1) {
         floatingWindow->move(position);
@@ -279,6 +281,7 @@ bool ElaTabWidgetHost::belongsToGroup(QObject* object) const
 {
     auto* widget = qobject_cast<QWidget*>(object);
     while (widget) {
+        if (widget == group->tabBar()) return true;
         if (auto* tabs = qobject_cast<ElaTabWidget*>(widget))
             return tabs == group;
         widget = widget->parentWidget();
@@ -289,7 +292,8 @@ bool ElaTabWidgetHost::belongsToGroup(QObject* object) const
 ElaTabWidget::DropArea ElaTabWidgetHost::areaAt(const QPoint& position) const
 {
     using Area = ElaTabWidget::DropArea;
-    if (group->tabBar()->geometry().contains(position) || floatingWindow)
+    if (group->count() == 0 || floatingWindow
+        || group->tabBar()->rect().contains(group->tabBar()->mapFromGlobal(group->mapToGlobal(position))))
         return Area::Center;
     const qreal x = qreal(position.x()) / qMax(1, group->width());
     const qreal y = qreal(position.y()) / qMax(1, group->height());
@@ -399,15 +403,19 @@ void ElaTabWidgetHost::startDrag(QMimeData* gesture)
             const QPointer<QWindow> input = origin->window()->windowHandle();
             if (input) {
                 const HWND hwnd = reinterpret_cast<HWND>(input->winId());
-                SetFocus(hwnd); input->setMouseGrabEnabled(true);
-                const auto releaseCapture = qScopeGuard([input] { if (input) input->setMouseGrabEnabled(false); });
                 if (!(GetAsyncKeyState(VK_LBUTTON) & 0x8000)) {
                     // The user may release while WebView2 is being reparented.
                     // Commit through the same drop transaction without starting
                     // a new native loop after that gesture has already ended.
                     if (!(GetAsyncKeyState(VK_ESCAPE) & 0x8000)) {
+                        // Qt's widgetAt still sees the transparent Ela title bar.
+                        // The gesture has ended: remove its live preview from hit
+                        // testing, then resolve the actual window below it.
+                        for (const auto& preview : data->floatingWindows)
+                            if (preview) preview->hide();
                         for (QWidget* target = QApplication::widgetAt(QCursor::pos()); target; target = target->parentWidget()) {
                             auto* tabs = qobject_cast<ElaTabWidget*>(target);
+                            if (!tabs) tabs = qobject_cast<ElaTabWidget*>(target->property("elaHostedTabOwner").value<QObject*>());
                             if (tabs && tabs != data->source && tabs->_host && tabs->_host->acceptsDrag(data)) {
                                 if (tabs->_host->commitDrop(data, tabs->mapFromGlobal(QCursor::pos()))) result = Qt::MoveAction;
                                 break;
@@ -415,6 +423,9 @@ void ElaTabWidgetHost::startDrag(QMimeData* gesture)
                         }
                     } else cancelled = true;
                 } else {
+                    SetFocus(hwnd);
+                    if (input->isVisible()) input->setMouseGrabEnabled(true);
+                    const auto releaseCapture = qScopeGuard([input] { if (input && input->isVisible()) input->setMouseGrabEnabled(false); });
                     POINT cursor{};
                     GetCursorPos(&cursor);
                     ScreenToClient(hwnd, &cursor);
@@ -435,6 +446,7 @@ void ElaTabWidgetHost::startDrag(QMimeData* gesture)
     for (const auto& window : data->floatingWindows)
         if (window && window->windowHandle())
             window->windowHandle()->setFlag(Qt::WindowTransparentForInput, false);
+    if (data->source) data->source->syncFloatingVisibility();
     if (!guard)
         return;
     clearIndicator();

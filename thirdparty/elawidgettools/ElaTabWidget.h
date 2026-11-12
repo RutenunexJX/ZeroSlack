@@ -3,6 +3,7 @@
 
 #include <QTabWidget>
 #include <QDrag>
+#include <QPointer>
 #include <functional>
 
 #include "ElaPropertyMacro.h"
@@ -33,6 +34,9 @@ public:
     bool isHostedTabDragging() const;
     bool isFloatingTabWidget() const;
     void setHostedTabBar(class ElaTabBar* bar);
+    void setHostedTabBarContainer(QWidget* container);
+    QSize sizeHint() const override;
+    QSize minimumSizeHint() const override;
     bool transferHostedTab(QWidget* page, ElaTabWidget* target, int index = -1);
     ElaTabWidget* floatHostedTab(QWidget* page, const QPoint& globalPosition);
     void syncFloatingVisibility();
@@ -46,10 +50,13 @@ Q_SIGNALS:
     Q_SIGNAL void hostedTabDragFinished();
 
 protected:
+    bool event(QEvent* event) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
     void dragEnterEvent(QDragEnterEvent* event) override;
     void dropEvent(QDropEvent* event) override;
     void tabInserted(int index) override;
+    void tabRemoved(int index) override;
 
 private:
     friend class ElaCustomTabWidget;
@@ -57,6 +64,11 @@ private:
     friend class ElaTabWidgetPrivate;
     friend class ElaHostedTabWindow;
     ElaTabWidgetHost* _host{nullptr};
+    QPointer<QWidget> _tabContainer;
+    bool _syncingHostedLayout{false};
+    bool _hostedLayoutPending{false};
+    void syncHostedLayout();
+    void scheduleHostedLayout();
 };
 
 #endif // ELAWORKSPACE_ELAWIDGETTOOLS_ELATABWIDGET_H_

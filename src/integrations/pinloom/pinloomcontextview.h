@@ -48,6 +48,8 @@ public:
     QToolButton* openButton() const;
     QToolButton* copyLinkButton() const;
     QString statusText() const;
+    QString previewState() const { return selectedPreviewState; }
+    QString previewReason() const { return selectedPreviewReason; }
     void setLinkHandler(LinkHandler handler);
     void setCreateLinkHandler(CreateLinkHandler handler);
     void setLinkSource(const QVariantMap& source);
@@ -56,6 +58,7 @@ public:
 
 signals:
     void currentEntryChanged(const PinloomHostEntry& entry);
+    void previewStateChanged();
 
 protected:
     void hideEvent(QHideEvent* event) override;
@@ -83,6 +86,8 @@ private:
     QToolButton* attachEntryButton = nullptr;
     QToolButton* createAnchorButton = nullptr;
     PinloomHostEntry selectedEntry;
+    QString selectedPreviewState = QStringLiteral("pending"), selectedPreviewReason;
+    void setPreviewState(const QString& state, const QString& reason = {});
     PinloomHostIdentity preferredIdentity;
     quint64 searchGeneration = 0;
     quint64 resolveGeneration = 0;
@@ -95,7 +100,7 @@ private:
     quint64 linkSourceGeneration = 0;
 
     void buildUi();
-    void startSearch();
+    void startSearch(bool preserveSelection = false);
     void applyBoundEntries(const QVariantList& entries,
                            const PinloomHostIdentity& preferred = {});
     void applySearchResults(const QList<PinloomHostEntry>& entries,

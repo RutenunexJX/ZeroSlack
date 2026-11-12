@@ -22,6 +22,7 @@ public:
     explicit ProblemsPanelCoordinator(QWidget* parent);
 
     void setCurrentFileProvider(std::function<QString()> provider);
+    void setCurrentFileStatusProvider(std::function<QString()> provider);
     void setWorkspaceFilesProvider(std::function<QStringList()> provider);
     void setWorkspaceRootProvider(std::function<QString()> provider);
     void setNavigationHandler(std::function<bool(const QString&, int, int)> handler);
@@ -58,6 +59,7 @@ private:
     std::shared_ptr<const DiagnosticPanelReport> displayedReport;
 
     std::function<QString()> currentFileProvider;
+    std::function<QString()> currentFileStatusProvider;
     std::function<QStringList()> workspaceFilesProvider;
     std::function<QString()> workspaceRootProvider;
     std::function<bool(const QString&, int, int)> navigationHandler;

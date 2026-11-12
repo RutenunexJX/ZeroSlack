@@ -414,6 +414,8 @@ LiveInsightToolContext MainWindow::activeLiveInsightToolContext(bool includeDocu
     if (!editor)
         return context;
     context.instancePath=editor->hierarchyInstanceContext().instancePath;
+    context.rootIdentity=editor->hierarchyInstanceContext().rootIdentity;
+    context.configurationIdentity=editor->hierarchyInstanceContext().configurationIdentity;
     const DocumentSnapshot document =
         tabManager->contextDocumentMetadata();
     context.documentId = document.documentId.trimmed();
@@ -433,6 +435,21 @@ LiveInsightToolContext MainWindow::activeLiveInsightToolContext(bool includeDocu
     }
     context.semanticRevision =
         SemanticIndex::getInstance()->snapshotToken().revision;
+    context.navigateModule = [owner=QPointer<MainWindow>(const_cast<MainWindow*>(this)), workspace=context.workspaceRoot,
+                              revision=context.semanticRevision](const ModuleBlockDiagramNode& node, bool instance) {
+        if (!owner || !owner->navigationCommandCoordinator) return;
+        const auto currentWorkspace = owner->workspaceManager->getWorkspacePath();
+        if (currentWorkspace != workspace || SemanticIndex::getInstance()->snapshotRevision() != revision) {
+            owner->postActivityMessage(QStringLiteral("Module analysis is updating. Try again when it completes."), 4000); return;
+        }
+        const auto& link = instance ? node.instanceCodeLink : node.definitionCodeLink;
+        if (link.fileName.isEmpty()) return;
+        HierarchyInstanceContext target;
+        target.workspacePath=workspace;target.activeTopModule=node.rootModule;target.instancePath=node.instancePath;
+        target.rootIdentity=node.rootIdentity;target.definitionIdentity=node.definitionIdentity;target.configurationIdentity=node.configurationIdentity;
+        owner->workspaceManager->getProjectModel()->setActiveDesignProject(node.rootIdentity,node.rootModule,node.rootDefinitionFile);
+        owner->navigationCommandCoordinator->navigateToFileAndLineWithContext(link.fileName,link.line,link.column,target);
+    };
 
     QTextCursor symbolCursor = editor->textCursor();
     if (!symbolCursor.hasSelection())
@@ -817,6 +834,9 @@ bool MainWindow::openLiveInsightFromSourceAction(
     target.moduleName = context.moduleName;
     target.signalName = context.signalName;
     target.signalAccessPath = context.signalAccessPath;
+    target.instancePath = context.instancePath;
+    target.rootIdentity = context.rootIdentity;
+    target.configurationIdentity = context.configurationIdentity;
     target.label = target.signalName.trimmed().isEmpty()
         ? target.moduleName
         : target.signalName;

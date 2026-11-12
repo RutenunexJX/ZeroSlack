@@ -2,6 +2,7 @@
 #include "applicationthememanager.h"
 #include "insightvisualstyle.h"
 #include "panellayoutcontroller.h"
+#include "editorsplitcontroller.h"
 #include "deferredpanel.h"
 #include "testuistyle.h"
 
@@ -13,6 +14,9 @@
 #include <QScrollBar>
 #include <QStackedWidget>
 #include <QTabWidget>
+#include <QTabBar>
+#include <QMenu>
+#include <QDir>
 #include <QTest>
 #include <QTextCursor>
 #include <QToolButton>
@@ -117,7 +121,8 @@ public:
                   QStringLiteral("connections")),
               "multi-signal alias registers");
         controller->finalize();
-        window.show();
+        window.show(); window.raise(); window.activateWindow();
+        check(QTest::qWaitForWindowActive(&window), "native drawer host is active before keyboard input");
         QApplication::processEvents();
     }
 
@@ -140,7 +145,7 @@ void verifyIndependentSideColumns(DrawerHarness& harness)
     harness.controller->setBottomCollapsed(false);
     QApplication::processEvents();
     const QRect expandedSide = side->geometry();
-    auto* drawer = harness.controller->buttonBar()->parentWidget();
+    auto* drawer = harness.controller->tabStrip()->parentWidget();
     const int drawerLeft = drawer->mapTo(&harness.window, QPoint()).x();
     check(drawerLeft >= navigation->geometry().right(),
           "bottom drawer starts after the independent file column");
@@ -159,78 +164,57 @@ void verifyIndependentSideColumns(DrawerHarness& harness)
     QApplication::processEvents();
 }
 
+QTabWidget* panelGroup(DrawerHarness& harness, const QString& id)
+{
+    return harness.controller->tabHostController()->groupForPage(harness.fixtures.value(id).root);
+}
+bool selected(DrawerHarness& harness, const QString& id)
+{
+    auto* group=panelGroup(harness,id);
+    return group && group->currentWidget()==harness.fixtures.value(id).root && !harness.controller->isBottomCollapsed();
+}
+void clickPanel(DrawerHarness& harness, const QString& id)
+{
+    auto* group=panelGroup(harness,id);
+    check(group != nullptr,"the clicked panel has a real registered tab");
+    if (!group) return;
+    auto* bar=group->tabBar(); const int index=group->indexOf(harness.fixtures.value(id).root);
+    QTest::mouseClick(bar,Qt::LeftButton,Qt::NoModifier,bar->tabRect(index).center());
+}
 void verifyButtonContract(DrawerHarness& harness)
 {
-    const QStringList ids = {
-        QStringLiteral("problems"),
-        QStringLiteral("scopedSearch"),
-        QStringLiteral("activity"),
-        QStringLiteral("rtlHighRiskEdit"),
-        QStringLiteral("connections"),
-    };
-    const QStringList labels = {
-        QStringLiteral("Problems"),
-        QStringLiteral("Search"),
-        QStringLiteral("Activity"),
-        QStringLiteral("Change Preview"),
-        QStringLiteral("Connections"),
-    };
-    check(harness.controller->bottomPanelIds() == ids,
-          "five bottom buttons keep the fixed product order");
-    for (int index = 0; index < ids.size(); ++index) {
-        QToolButton* button =
-            harness.controller->buttonForPanel(ids.at(index));
-        check(button
-                  && button->text() == labels.at(index)
-                  && button->accessibleName() == labels.at(index)
-                  && !button->icon().isNull()
-                  && button->toolTip().contains(QStringLiteral("Ctrl+J")),
-              "bottom button exposes icon text accessible name and shortcut tooltip");
+    const QStringList ids={"problems","scopedSearch","activity","rtlHighRiskEdit","connections"};
+    const QStringList labels={"Problems","Search","Activity","Change Preview","Connections"};
+    check(harness.controller->bottomPanelIds()==ids,"real bottom tabs keep the product order");
+    for(int i=0;i<ids.size();++i) {
+        auto* group=panelGroup(harness,ids[i]); auto* page=harness.fixtures.value(ids[i]).root;
+        const int index=group ? group->indexOf(page) : -1;
+        check(group && group->tabText(index)==labels[i] && !group->tabIcon(index).isNull()
+                  && group->tabToolTip(index).contains("Ctrl+J")
+                  && harness.controller->tabStrip()->isAncestorOf(group->tabBar())
+                  && group->tabPosition()==QTabWidget::South,
+              "the actual page tab carries its label icon tooltip and bottom position");
+        check(!harness.window.findChild<QToolButton*>("bottomPanelButton_"+ids[i]),
+              "no parallel simulated page button remains");
     }
-    check(harness.controller->resizeHandle()
-              && harness.controller->resizeHandle()->height() >= 6,
+    check(harness.controller->resizeHandle() && harness.controller->resizeHandle()->height()>=6,
           "drawer exposes an accessible resize hit target");
 }
 
 void verifyClickAndShortcutBehavior(DrawerHarness& harness)
 {
-    QToolButton* problems =
-        harness.controller->buttonForPanel(QStringLiteral("problems"));
-    QToolButton* search =
-        harness.controller->buttonForPanel(QStringLiteral("scopedSearch"));
-    QToolButton* activity =
-        harness.controller->buttonForPanel(QStringLiteral("activity"));
-    check(problems && problems->isChecked()
-              && harness.controller->activeBottomPanelId()
-                     == QStringLiteral("problems"),
+    check(selected(harness,"problems") && harness.controller->activeBottomPanelId()=="problems",
           "first panel starts selected");
-
-    QTest::mouseClick(problems, Qt::LeftButton);
-    QApplication::processEvents();
-    check(harness.controller->isBottomCollapsed()
-              && harness.controller->buttonBar()->isVisibleTo(&harness.window)
-              && !problems->isChecked(),
-          "clicking the active button fully closes content but keeps the bar");
-    QTest::mouseClick(problems, Qt::LeftButton);
-    QApplication::processEvents();
-    check(!harness.controller->isBottomCollapsed()
-              && problems->isChecked(),
-          "clicking the last button restores its panel");
-
-    QTest::mouseClick(search, Qt::LeftButton);
-    QApplication::processEvents();
-    check(harness.controller->activeBottomPanelId()
-                  == QStringLiteral("scopedSearch")
-              && search->isChecked()
-              && !problems->isChecked()
-              && harness.controller->isPanelOpen(
-                  QStringLiteral("scopedSearch"))
-              && !harness.controller->isPanelOpen(
-                  QStringLiteral("problems")),
-          "switching buttons keeps exactly one content panel visible");
-
-    QTest::mouseClick(activity, Qt::LeftButton);
-    QApplication::processEvents();
+    clickPanel(harness,"problems"); QApplication::processEvents();
+    check(harness.controller->isBottomCollapsed() && harness.controller->tabStrip()->isVisibleTo(&harness.window)
+              && !selected(harness,"problems"),"clicking the active real tab closes content and retains the strip");
+    clickPanel(harness,"problems"); QApplication::processEvents();
+    check(selected(harness,"problems"),"clicking a collapsed tab restores its panel");
+    clickPanel(harness,"scopedSearch"); QApplication::processEvents();
+    check(harness.controller->activeBottomPanelId()=="scopedSearch" && selected(harness,"scopedSearch")
+              && !selected(harness,"problems") && harness.controller->isPanelOpen("scopedSearch")
+              && !harness.controller->isPanelOpen("problems"),"switching real tabs keeps one page selected within its group");
+    clickPanel(harness,"activity"); QApplication::processEvents();
     const ActionDescriptor* ctrlJ = findActionById(
         QString::fromLatin1(ActionIds::ViewBottomPanelCollapsed));
     check(ctrlJ
@@ -278,19 +262,15 @@ void verifyClickGeometryStability(DrawerHarness& harness)
     harness.controller->resetPanelHeight(QStringLiteral("problems"));
     QApplication::processEvents();
 
-    QToolButton* problems =
-        harness.controller->buttonForPanel(QStringLiteral("problems"));
-    QWidget* content = harness.controller->drawerContent();
-    QWidget* buttonBar = harness.controller->buttonBar();
-    check(problems && content && buttonBar,
-          "click stability fixtures are available");
-    if (!problems || !content || !buttonBar)
-        return;
+    QWidget* content=harness.controller->drawerContent();
+    QWidget* buttonBar=harness.controller->tabStrip();
+    check(panelGroup(harness,"problems") && content && buttonBar,"click stability fixtures are available");
+    if (!content || !buttonBar) return;
 
     const QRect windowGeometry = harness.window.geometry();
     const int buttonBarBottom =
         buttonBar->mapToGlobal(buttonBar->rect().bottomLeft()).y();
-    QTest::mouseClick(problems, Qt::LeftButton);
+    clickPanel(harness,"problems");
     QApplication::processEvents();
     check(harness.controller->isBottomCollapsed()
               && harness.window.geometry() == windowGeometry
@@ -299,7 +279,7 @@ void verifyClickGeometryStability(DrawerHarness& harness)
                      == buttonBarBottom,
           "collapse click keeps the window and button bar stationary");
 
-    QTest::mouseClick(problems, Qt::LeftButton);
+    clickPanel(harness,"problems");
     QApplication::processEvents();
     check(!harness.controller->isBottomCollapsed()
               && content->height()
@@ -310,11 +290,11 @@ void verifyClickGeometryStability(DrawerHarness& harness)
                      == buttonBarBottom,
           "expand click restores height without moving the window or buttons");
 
-    QTest::mouseClick(problems, Qt::LeftButton);
-    QTest::mouseClick(problems, Qt::LeftButton);
+    clickPanel(harness,"problems");
+    clickPanel(harness,"problems");
     QApplication::processEvents();
     check(!harness.controller->isBottomCollapsed()
-              && problems->isChecked()
+              && selected(harness,"problems")
               && content->height()
                      == PanelLayoutController::kDefaultContentHeight
               && harness.window.geometry() == windowGeometry,
@@ -528,6 +508,53 @@ void verifyDeferredPersistence()
           "destroyed coordinator cancels an unopened panel factory");
 }
 
+void verifySharedBottomStrip(DrawerHarness& harness)
+{
+    auto* registry=harness.controller->tabHostController();
+    harness.controller->setAnimationsEnabled(false);
+    harness.controller->restorePanel("activity");
+    auto* activity=harness.fixtures.value("activity").root;
+    auto* original=registry->groupForPage(activity);
+    const QString identity=registry->pageId(activity);
+    auto* second=registry->createSplit(original,EditorSplitDirection::Below);
+    check(second && registry->movePage(activity,second),"bottom pages retain split content groups");
+    QApplication::processEvents();
+    auto* strip=harness.controller->tabStrip();
+    check(original->tabBar()->parentWidget()==second->tabBar()->parentWidget()
+              && strip->isAncestorOf(original->tabBar()) && strip->isAncestorOf(second->tabBar())
+              && original->tabBar()->mapToGlobal(QPoint()).y()==second->tabBar()->mapToGlobal(QPoint()).y(),
+          "split groups expose their own authoritative tabs in one bottom row");
+    for(auto* group:{original,second}) {
+        auto* stack=group->findChild<QStackedWidget*>(QString(),Qt::FindDirectChildrenOnly);
+        check(stack && stack->geometry()==group->rect(),"external tab strips leave no hidden header or footer gap in content");
+    }
+    const auto saved=registry->savePageLayout();
+    check(harness.controller->closePanel("activity") && registry->pageById(identity)==activity,
+          "closing parks the same tool page and retains its identity");
+    auto* reopen=strip->findChild<QToolButton*>("bottomRestorePanels");
+    check(reopen && reopen->isEnabled() && reopen->menu(),"closed pages have a reachable menu in the same strip");
+    if(reopen && reopen->menu()) {
+        QMetaObject::invokeMethod(reopen->menu(),"aboutToShow");
+        QAction* action=nullptr; for(auto* candidate:reopen->menu()->actions()) if(candidate->data().toString()=="activity") action=candidate;
+        check(action!=nullptr,"the reopen menu derives its entries from parked pages");
+        if(action) action->trigger();
+    }
+    check(registry->groupForPage(activity) && registry->pageId(activity)==identity,"reopening reuses the parked page without a duplicate");
+    check(registry->restorePageLayout(saved).isEmpty(),"split page layout restores without warnings");
+    QApplication::processEvents();
+    check(registry->groups("bottom").size()==2 && registry->pageId(activity)==identity,
+          "session restore keeps split groups and their page identities");
+    harness.window.resize(640,760); QApplication::processEvents();
+    for(auto* group:registry->groups("bottom"))
+        check(strip->rect().contains(QRect(group->tabBar()->mapTo(strip,QPoint()),group->tabBar()->size())),
+              "real tab bars stay inside the single strip at narrow width");
+    const auto evidence=qEnvironmentVariable("ZEROSLACK_UI_REVIEW_DIR");
+    if(!evidence.isEmpty()) {QDir().mkpath(evidence);harness.window.grab().save(evidence+"/bottom-split-tabs.png");}
+    harness.window.resize(1080,760);
+    auto groups=registry->groups("bottom");
+    if(groups.size()>1) check(registry->mergeGroup(groups.last(),groups.first()),"split groups merge through the same page registry");
+}
+
 void verifyBadgesAndTheme(DrawerHarness& harness)
 {
     harness.controller->restorePanel(QStringLiteral("problems"));
@@ -544,10 +571,7 @@ void verifyBadgesAndTheme(DrawerHarness& harness)
                   QStringLiteral("problems")) == QStringLiteral("3")
               && harness.controller->panelBadgeTone(
                      QStringLiteral("problems")) == QStringLiteral("error")
-              && harness.controller->buttonForPanel(
-                     QStringLiteral("problems"))
-                     ->accessibleDescription()
-                     .contains(QStringLiteral("3")),
+              && panelGroup(harness,"problems")->tabToolTip(panelGroup(harness,"problems")->indexOf(harness.fixtures.value("problems").root)).contains("3"),
           "Problems exposes a compact count and severity badge");
     problemsDock->setProperty(
         "bottomBadgeTone", QStringLiteral("warning"));
@@ -563,36 +587,24 @@ void verifyBadgesAndTheme(DrawerHarness& harness)
         QStringLiteral("Running background analysis"),
         QStringLiteral("info"));
     QApplication::processEvents();
-    QToolButton* activityButton = harness.controller->buttonForPanel(
-        QStringLiteral("activity"));
-    const int reserve = activityButton->property(
-        "badgeReserve").toInt();
-    check(harness.controller->activeBottomPanelId() == activeBefore
-              && QApplication::focusWidget() == focusBeforeBadge
-              && reserve
-                     >= activityButton->fontMetrics().horizontalAdvance(
-                            QStringLiteral("Running background analysis"))
-                            + 22
-              && activityButton->sizeHint().width()
-                     >= activityButton->fontMetrics().horizontalAdvance(
-                            activityButton->text()) + reserve,
-          "background Activity status reserves its full badge width without opening the panel or stealing focus");
-    harness.controller->setPanelBadge(
-        QStringLiteral("activity"), QString(), QString());
-    check(harness.controller->panelBadgeText(
-              QStringLiteral("activity")).isEmpty()
-              && activityButton->property("badgeReserve").toInt() == 0,
-          "empty Activity status produces no badge noise");
+    auto* activityGroup=panelGroup(harness,"activity");
+    const int activityIndex=activityGroup->indexOf(harness.fixtures.value("activity").root);
+    check(harness.controller->activeBottomPanelId()==activeBefore && QApplication::focusWidget()==focusBeforeBadge
+              && activityGroup->tabText(activityIndex).contains("Running background analysis")
+              && activityGroup->tabToolTip(activityIndex).contains("Running background analysis"),
+          "background status remains available in the real tab without stealing focus or opening its page");
+    harness.controller->setPanelBadge("activity",QString(),QString());
+    check(harness.controller->panelBadgeText("activity").isEmpty() && activityGroup->tabText(activityIndex)=="Activity",
+          "empty status removes badge noise from the real tab");
 
     ApplicationThemeManager& themeManager =
         ApplicationThemeManager::instance();
     const ThemeMode originalMode = themeManager.mode();
     themeManager.setMode(ThemeMode::Dark);
     QApplication::processEvents();
-    QWidget* drawerRoot = harness.controller->buttonBar()->parentWidget();
-    check(harness.controller->buttonBar()->isVisible()
-              && harness.controller->buttonForPanel(
-                     QStringLiteral("problems"))->devicePixelRatioF() > 0.0
+    QWidget* drawerRoot = harness.controller->tabStrip()->parentWidget();
+    check(harness.controller->tabStrip()->isVisible()
+              && panelGroup(harness,"problems")->tabBar()->devicePixelRatioF() > 0.0
               && drawerRoot->styleSheet().contains(
                      cssColor(InsightVisualStyle::theme(
                          ThemeMode::Dark).surface.panel)),
@@ -623,6 +635,7 @@ int main(int argc, char* argv[])
     verifyPersistence(harness);
     verifyDeferredPersistence();
     verifyBadgesAndTheme(harness);
+    verifySharedBottomStrip(harness);
 
     std::cout << (checks - failures) << "/" << checks
               << " bottom tool drawer checks passed\n";

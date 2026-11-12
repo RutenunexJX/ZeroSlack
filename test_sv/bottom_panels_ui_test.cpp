@@ -7,6 +7,7 @@
 #include "liveinsightscontextprovider.h"
 #include "mycodeeditor.h"
 #include "panellayoutcontroller.h"
+#include "panel_tab_test_utils.h"
 #include "semanticdockcoordinator.h"
 #include "semanticpanelrefreshcoordinator.h"
 #include "signaltracepanel.h"
@@ -104,13 +105,9 @@ private slots:
             && !SemanticIndex::getInstance()->snapshotToken().snapshot->getSymbolRecordsByName("sig",file).isEmpty(),20000);
         QVERIFY(window.navigationManager->setDesignTop("scope_mod",file).isEmpty());
         QVERIFY(layout->bottomPanelIds().contains("hotspot"));
-        auto* hotspotButton=layout->buttonForPanel("hotspot");
-        if (!hotspotButton->isVisible()) {
-            auto* more=window.findChild<QToolButton*>("bottomPanelMore"); QVERIFY(more && more->isVisible());
-            more->menu()->popup(more->mapToGlobal(QPoint(0,more->height())));
-            QTRY_VERIFY(hotspotButton->isVisible());
-            more->menu()->close();
-        }
+        auto* hotspotGroup=PanelTabTest::group(layout,"hotspot");QVERIFY(hotspotGroup);
+        QVERIFY(PanelTabTest::visible(layout,"hotspot"));
+        QCOMPARE(hotspotGroup->tabText(hotspotGroup->indexOf(hotspot)),QStringLiteral("Signal Trace"));
         // Use the real source-action adapter, service snapshot and editor.
         auto* refresh = window.semanticDocks->refreshCoordinator(); QVERIFY(refresh);
         refresh->showSignalUsageHotspotForSymbol("sig", file, "scope_mod");
@@ -184,35 +181,27 @@ private slots:
         QCOMPARE(markerCount(window.tabManager->getCurrentEditor()),0);
         QVERIFY(window.tabManager->activateOpenFile(file));
 
-        auto* clear = window.findChild<QToolButton*>("activityPanelActionButton"); QVERIFY(clear);
+        auto* clear = window.findChild<QToolButton*>("bottomActivePanelAction"); QVERIFY(clear);
         QVERIFY(!clear->isVisible());
         QVERIFY(layout->restorePanel("activity"));
         QApplication::processEvents();
-        QMenu* clearMenu=nullptr;
-        if (!clear->isVisible()) {
-            auto* more=window.findChild<QToolButton*>("bottomPanelMore"); QVERIFY(more && more->isVisible());
-            clearMenu=more->menu(); QVERIFY(clearMenu);
-            clearMenu->popup(more->mapToGlobal(QPoint(0,more->height())));
-        }
         QTRY_VERIFY(clear->isVisible());
-        if (clearMenu) QVERIFY(clearMenu->rect().contains(QRect(clear->mapTo(clearMenu,QPoint()),clear->size())));
-        else QVERIFY(clear->mapTo(layout->buttonBar(), QPoint()).x() > layout->buttonBar()->width() - 90);
+        auto* strip=layout->tabStrip();QVERIFY(strip);
+        QVERIFY(strip->rect().contains(QRect(clear->mapTo(strip,QPoint()),clear->size())));
+        QVERIFY(clear->mapTo(strip,QPoint()).x()>strip->width()-90);
         auto* output = window.findChild<QPlainTextEdit*>("activityOutputText"); QVERIFY(output);
         ActivityLogService::getInstance()->append("UI test", ActivityLogLevel::Info, "pending clear contract");
         clear->click(); QApplication::processEvents();
-        if (clearMenu) clearMenu->close();
         QVERIFY(!output->toPlainText().contains("pending clear contract"));
         for (const auto& entry : ActivityLogService::getInstance()->events()) QVERIFY(entry.message != "pending clear contract");
         ActivityLogService::getInstance()->append("UI test", ActivityLogLevel::Info, "after clear contract");
         QTRY_VERIFY(output->toPlainText().contains("after clear contract"));
-        auto* logButton=layout->buttonForPanel("simulationLog");
-        auto* hotspotOrderButton=layout->buttonForPanel("hotspot");
-        if (logButton->parentWidget()==hotspotOrderButton->parentWidget()) {
-            auto* order=qobject_cast<QBoxLayout*>(logButton->parentWidget()->layout()); QVERIFY(order);
-            if (order->direction()==QBoxLayout::LeftToRight)
-                QVERIFY(logButton->geometry().right()<hotspotOrderButton->geometry().left());
-            else QVERIFY(logButton->geometry().bottom()<hotspotOrderButton->geometry().top());
-        } else QVERIFY(logButton->isVisible() && !hotspotOrderButton->isVisible());
+        auto* logPage=PanelTabTest::page(layout,"simulationLog");QVERIFY(logPage);
+        auto* order=PanelTabTest::group(layout,"simulationLog");QVERIFY(order);
+        QCOMPARE(PanelTabTest::group(layout,"hotspot"),order);
+        const int logIndex=order->indexOf(logPage),hotspotIndex=order->indexOf(hotspot);
+        QVERIFY(logIndex>=0 && hotspotIndex>logIndex);
+        QVERIFY(order->tabBar()->tabRect(logIndex).right()<order->tabBar()->tabRect(hotspotIndex).left());
         capture(window, prefix + "-activity");
         layout->setBottomCollapsed(true); QVERIFY(!clear->isVisible());
         QVERIFY(layout->restorePanel("problems")); QVERIFY(!clear->isVisible());

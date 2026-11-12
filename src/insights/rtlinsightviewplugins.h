@@ -27,6 +27,8 @@ struct ZEROSLACK_API InsightViewContext {
     QString signalAccessPath;
     QString projectId;
     QString instancePath;
+    QString rootIdentity;
+    QString configurationIdentity;
     SemanticSnapshotToken semantic;
 };
 

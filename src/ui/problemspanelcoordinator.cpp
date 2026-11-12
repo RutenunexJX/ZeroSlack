@@ -125,6 +125,7 @@ ProblemsPanelCoordinator::ProblemsPanelCoordinator(QWidget* parent) : QObject(pa
 }
 
 void ProblemsPanelCoordinator::setCurrentFileProvider(std::function<QString()> provider) { currentFileProvider = std::move(provider); }
+void ProblemsPanelCoordinator::setCurrentFileStatusProvider(std::function<QString()> provider) { currentFileStatusProvider = std::move(provider); }
 void ProblemsPanelCoordinator::setWorkspaceFilesProvider(std::function<QStringList()> provider) { workspaceFilesProvider = std::move(provider); }
 void ProblemsPanelCoordinator::setWorkspaceRootProvider(std::function<QString()> provider) { workspaceRootProvider = std::move(provider); }
 void ProblemsPanelCoordinator::setNavigationHandler(std::function<bool(const QString&, int, int)> handler) { navigationHandler = std::move(handler); }
@@ -156,7 +157,8 @@ void ProblemsPanelCoordinator::updateStatus(const DiagnosticPanelReport& report)
     diagnosticStateLabel->setVisible(!status.isEmpty());
     int total = 0;
     for (int count : report.scopeSeverityCounts) total += count;
-    emptyStateLabel->setText(noFile ? QStringLiteral("No file open")
+    const QString contextStatus = currentFileStatusProvider ? currentFileStatusProvider() : QString();
+    emptyStateLabel->setText(noFile ? (contextStatus.isEmpty() ? QStringLiteral("No file open") : contextStatus)
         : analyzing ? QStringLiteral("Analyzing…")
         : failed ? QStringLiteral("Analysis failed")
         : total > 0 ? QStringLiteral("No issues match the selected filter") : QStringLiteral("No issues found"));

@@ -12,6 +12,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <atomic>
 #include <QThreadPool>
 #include <QFutureWatcher>
 #include "actionregistry.h"
@@ -219,6 +220,7 @@ private:
         QByteArray previousFingerprint;
         QByteArray previousAnchorFingerprint;
         bool force = false;
+        std::shared_ptr<std::atomic_bool> cancelled;
     };
     struct DesignWorkResult {
         DesignHierarchyReport hierarchy;
@@ -227,6 +229,8 @@ private:
         bool reusedStructure = false;
         QList<DesignFileCandidate> candidates;
         QStringList likelyTops;
+        qint64 workerMs = 0;
+        bool cancelled = false;
     };
     QThreadPool designThreadPool;
     QFutureWatcher<DesignWorkResult>* designWatcher = nullptr;
@@ -234,6 +238,8 @@ private:
     std::optional<DesignWorkRequest> activeDesignRequest;
     std::uint64_t designRequestGeneration = 0;
     bool designShuttingDown = false;
+    QString pendingNavigationNode;
+    bool pendingNavigationInstantiation = false;
     void launchPendingDesignWork();
     QList<DesignHierarchyRoot> currentDesignRoots() const;
     void synchronizeDesignProjects();

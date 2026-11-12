@@ -9,3 +9,6 @@ html.dark{color-scheme:dark;--affine-text-primary-color:#d7e0ed;--affine-text-se
 html.dark,html.dark body{color:#d7e0ed;background:#20242c}
 :root{--affine-placeholder-color:#8492a5}
 html.dark{--affine-placeholder-color:#94a3b8}
+:root{--ui-text:#37352f;--ui-panel:#fff}html.dark{--ui-text:#e7e7e5;--ui-panel:#202020}
+html,body,html.dark,html.dark body{color:var(--ui-text);background:var(--ui-panel)}
+affine-slash-menu,affine-format-bar,affine-toolbar-widget{font-family:var(--ui-font,system-ui,sans-serif);font-size:14px}

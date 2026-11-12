@@ -5,6 +5,7 @@
 #include "signaltracepanel.h"
 #include "semanticindex.h"
 #include "editorfileidentity.h"
+#include "moduleblockdiagramview.h"
 #include <QFile>
 
 #include <QDockWidget>
@@ -126,6 +127,7 @@ void LiveInsightToolPage::refreshTargetContext(const LiveInsightToolContext& edi
     auto refreshed = currentContext;
     refreshed.projectId=editorContext.projectId;
     refreshed.configureTrace=editorContext.configureTrace;
+    refreshed.navigateModule=editorContext.navigateModule;
     refreshed.semanticRevision = qMax(refreshed.semanticRevision, editorContext.semanticRevision);
     if (refreshed.fileName == editorContext.fileName) {
         refreshed.documentId = editorContext.documentId;
@@ -247,6 +249,8 @@ void LiveInsightToolPage::renderContext()
         context.workspaceId = currentContext.workspaceId;
         context.projectId = currentContext.projectId;
         context.instancePath = currentContext.instancePath;
+        context.rootIdentity = currentContext.rootIdentity;
+        context.configurationIdentity = currentContext.configurationIdentity;
         context.semantic = SemanticIndex::getInstance()->snapshotToken();
         context.documentId = currentContext.documentId;
         context.documentRevision = currentContext.documentRevision;
@@ -255,7 +259,11 @@ void LiveInsightToolPage::renderContext()
         context.moduleName = currentContext.moduleName;
         context.signalName = currentContext.signalName;
         context.signalAccessPath = currentContext.signalAccessPath;
+        workbench->setModuleNavigationHandler(currentContext.navigateModule);
         workbench->setContext(context);
+        if (workbench->moduleView() && !pendingNativeState.isEmpty()) {
+            workbench->moduleView()->restoreViewState(pendingNativeState); pendingNativeState.clear();
+        }
     }
 }
 
@@ -269,8 +277,8 @@ LiveInsightSession* LiveInsightToolPage::graphSession() const
 {
     return workbench ? workbench->graphSession() : nullptr;
 }
-QVariantMap LiveInsightToolPage::saveNativeState()const{return trace ? trace->saveViewState() : pendingNativeState;}
-void LiveInsightToolPage::restoreNativeState(const QVariantMap& state){if(state.isEmpty())return;if(trace && !currentContext.workspaceId.isEmpty())trace->restoreViewState(state);else pendingNativeState=state;}
+QVariantMap LiveInsightToolPage::saveNativeState()const{return trace ? trace->saveViewState() : workbench && workbench->moduleView() ? workbench->moduleView()->saveViewState() : pendingNativeState;}
+void LiveInsightToolPage::restoreNativeState(const QVariantMap& state){if(state.isEmpty())return;if(trace && !currentContext.workspaceId.isEmpty())trace->restoreViewState(state);else if(workbench && workbench->moduleView())workbench->moduleView()->restoreViewState(state);else pendingNativeState=state;}
 void LiveInsightToolPage::setDesignHandler(std::function<void()> handler){
     designHandler=std::move(handler);
 }

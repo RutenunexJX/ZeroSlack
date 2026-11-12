@@ -4,6 +4,7 @@
 #include <QString>
 #include <Qt>
 #include <QTabWidget>
+#include <QMetaType>
 
 class QWidget;
 class QPushButton;
@@ -40,6 +41,13 @@ public:
 // Backend choice is fixed before widget creation. Consumers keep Qt contracts;
 // specialized editors, graph canvases and native window chrome do not use this factory.
 namespace UiControls {
+struct TabPresentation {
+    QString documentId, viewId, title, path;
+    bool dirty = false, externalChange = false, conflict = false, readOnly = false, locked = false;
+    bool valid() const { return !viewId.isEmpty(); }
+};
+ZEROSLACK_API void setTabPresentation(QTabWidget* group, QWidget* page, const TabPresentation& state);
+ZEROSLACK_API TabPresentation tabPresentation(const QWidget* page);
 ZEROSLACK_API QWidget* pageStack(QStackedWidget*& stack, QWidget* parent = nullptr);
 ZEROSLACK_API void selectPage(QStackedWidget* stack, int index, bool animate = true);
 ZEROSLACK_API QLabel* label(QWidget* parent = nullptr);
@@ -81,3 +89,4 @@ ZEROSLACK_API void enableSmoothScrolling(QAbstractScrollArea* area);
 ZEROSLACK_API void enableTreeTransitions(QTreeView* tree);
 ZEROSLACK_API void refreshRole(QWidget* widget);
 }
+Q_DECLARE_METATYPE(UiControls::TabPresentation)

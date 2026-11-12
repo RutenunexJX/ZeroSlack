@@ -113,8 +113,7 @@ public:
     QDockWidget* drawerDock() const;
     QWidget* drawerContent() const;
     QWidget* resizeHandle() const;
-    QWidget* buttonBar() const;
-    QToolButton* buttonForPanel(const QString& panelId) const;
+    QWidget* tabStrip() const;
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -126,8 +125,7 @@ private:
         QString initialTitle;
         QPointer<QDockWidget> dock;
         QPointer<QWidget> content;
-        QPointer<QToolButton> button;
-        QPointer<QToolButton> actionButton;
+        QPointer<QAction> action;
         int height = kDefaultContentHeight;
         QVariantMap viewState;
         std::function<QVariantMap()> captureState;
@@ -151,7 +149,13 @@ private:
     bool ownsPageRegistry = false;
     void selectPanelPage(QWidget* page, bool activate = false);
     QPointer<QWidget> bottomContentSurface;
-    QPointer<QFrame> bottomButtonBar;
+    QPointer<QFrame> bottomTabStrip;
+    QPointer<QToolButton> panelActionButton;
+    QPointer<QToolButton> reopenButton;
+    QPointer<QWidget> tabPressPage;
+    QPointer<QWidget> tabPressBar;
+    QPoint tabPressPosition;
+    bool tabPressWasActive = false;
 #ifdef ZEROSLACK_ENABLE_ELA
     QPointer<ElaDrawerArea> contentDrawer;
     void applyDrawerProgress(qreal progress);
@@ -181,11 +185,11 @@ private:
     int boundedContentHeight(int height) const;
     int visibleContentHeight() const;
     void buildDrawer();
-    void buildButton(PanelEntry& entry);
+    void refreshTabPresentation(PanelEntry& entry);
     void activatePanel(PanelEntry& entry, bool moveFocus);
     void applyDrawerState(bool animate);
     void applyContentHeight(int height, bool settleDock = true);
-    void updateButtons();
+    void updateTabs();
     void updateDrawerStyle();
     void capturePanelViewState(PanelEntry& entry) const;
     void restorePanelViewState(PanelEntry& entry);

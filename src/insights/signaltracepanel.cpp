@@ -156,6 +156,20 @@ struct SignalTracePanel::Private {
     void arrangeControls() {
         if(arranging || !content || !moreButton || !compactRole || !moreReferences)return;
         const QScopedValueRollback guard(arranging,true);
+        int verticalMargin=6;
+        if(mode->currentIndex()==2 && !detailsButton->isChecked()){
+            // Reserve a readable graph after zoom adds a scrollbar. Compact only
+            // outer whitespace; controls retain their normal hit areas.
+            int required=toolbar->minimumSize().height()+q->layout()->spacing()
+                +4*cycleView->fontMetrics().height()+2*cycleView->frameWidth()
+                +cycleView->horizontalScrollBar()->sizeHint().height();
+            if(!cycles->isHidden())required+=cycles->minimumSizeHint().height()+cycles->parentWidget()->layout()->spacing();
+            for(QWidget* row:{static_cast<QWidget*>(instance),static_cast<QWidget*>(status)})
+                if(!row->isHidden())required+=row->minimumSizeHint().height()+q->layout()->spacing();
+            verticalMargin=qBound(0,(q->height()-required)/2,6);
+        }
+        const QMargins desiredMargins(6,verticalMargin,6,verticalMargin);
+        if(q->layout()->contentsMargins()!=desiredMargins)q->layout()->setContentsMargins(desiredMargins);
         const auto margins=q->layout()->contentsMargins();
         const int available=qMax(0,q->contentsRect().width()-margins.left()-margins.right());
         const int gap=toolbar->spacing();

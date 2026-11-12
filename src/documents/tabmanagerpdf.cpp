@@ -2,6 +2,8 @@
 #include "editorfileidentity.h"
 #include "roundedicons.h"
 #include "uidialogs.h"
+#include "uicontrols.h"
+#include <QDir>
 #include <QFileInfo>
 
 QList<PdfDocumentPage*> TabManager::pdfDocuments() const {
@@ -27,11 +29,24 @@ PdfDocumentPage* TabManager::openPdfDocument(const QString& fileName, QTabWidget
     });
     connect(page, &PdfDocumentPage::statusChanged, this, [this, page] {
         if (auto* owner = splitController->groupForPage(page)) {
-            const int index = owner->indexOf(page); if (index >= 0) { owner->setTabText(index, page->title()); owner->setTabToolTip(index, page->fileName()); }
+            const int index = owner->indexOf(page);
+            if (index >= 0) {
+                owner->setTabText(index, page->title());
+                UiControls::TabPresentation state;
+                state.documentId = QStringLiteral("pdf:") + EditorFileIdentity::lookupKey(page->fileName());
+                state.viewId = page->viewIdentity(); state.title = page->title();
+                state.path = QDir::toNativeSeparators(page->fileName()); state.readOnly = true;
+                UiControls::setTabPresentation(owner, page, state);
+            }
         }
     });
     splitController->registerPage(page, {}, QStringLiteral("pdf"));
     group->addTab(page, RoundedIcons::icon(RoundedIcons::File), page->title()); group->setCurrentWidget(page); splitController->setActiveGroup(group);
+    UiControls::TabPresentation state;
+    state.documentId = QStringLiteral("pdf:") + EditorFileIdentity::lookupKey(page->fileName());
+    state.viewId = page->viewIdentity(); state.title = page->title();
+    state.path = QDir::toNativeSeparators(page->fileName()); state.readOnly = true;
+    UiControls::setTabPresentation(group, page, state);
     applyWorkspaceScope(); emit workspaceSessionStateChanged(); return page;
 }
 bool TabManager::closePdfDocument(PdfDocumentPage* page, bool remember) {
@@ -42,6 +57,6 @@ bool TabManager::closePdfDocument(PdfDocumentPage* page, bool remember) {
         recentlyClosedTabs.append(state); while (recentlyClosedTabs.size() > 32) recentlyClosedTabs.removeFirst();
     }
     splitController->unregisterPage(page);
-    group->removeTab(group->indexOf(page)); page->releaseView(); page->deleteLater();
+    group->removeTab(group->indexOf(page)); repairContextPage(); page->releaseView(); page->deleteLater();
     if (!closingBatch) splitController->removeEmptyGroups(); emit tabClosed(name); emit workspaceSessionStateChanged(); return true;
 }

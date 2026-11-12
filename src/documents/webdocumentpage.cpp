@@ -1,4 +1,5 @@
 #include "webdocumentpage.h"
+#include "insightvisualstyle.h"
 #include <QApplication>
 #include <QBuffer>
 #include <QClipboard>
@@ -113,7 +114,7 @@ void WebDocumentPage::showNotice(const QString& text) {
     notice->setText(text); notice->parentWidget()->setVisible(!text.isEmpty() || document->externalConflict);
     reloadButton->setVisible(document->externalConflict); keepButton->setVisible(document->externalConflict);
 }
-void WebDocumentPage::setTheme(bool dark) { if (initialized) web->postMessage({{"type", "theme"}, {"session", document->session}, {"document", documentId()}, {"dark", dark}}); }
+void WebDocumentPage::setTheme(bool dark) { if (initialized) web->postMessage({{"type", "theme"}, {"session", document->session}, {"document", documentId()}, {"dark", dark}, {"uiTheme", InsightVisualStyle::webThemeTokens(dark)}}); }
 void WebDocumentPage::setZoom(double factor) { web->setZoomFactor(factor); }
 void WebDocumentPage::setAppearance(const QString& family, int sizePt, double lineHeight) {
     appearance = {{"family", family}, {"size", qBound(8, sizePt, 48) * 4.0 / 3.0}, {"lineHeight", qBound(1.0, lineHeight, 3.0)}};

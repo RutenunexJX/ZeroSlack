@@ -24,6 +24,12 @@
 #include "workspaceconfigurationservice.h"
 #include "designcandidates.h"
 #include <functional>
+#include <QTreeView>
+#include <QJsonObject>
+#include <QFutureWatcher>
+#include <atomic>
+#include <memory>
+class DesignHierarchyModel;
 
 class EditorSplitController;
 
@@ -84,6 +90,8 @@ public:
     void finishDesignProjectSelection(const QString& issue, const QString& file, const QString& module);
     void setSimulationTargetProvider(std::function<QPair<QString,QString>()> provider);
     void refreshSimulationTop();
+    QJsonObject designViewState() const;
+    void restoreDesignViewState(const QJsonObject& state);
 
     void highlightFile(const QString& filePath);
 
@@ -105,7 +113,7 @@ signals:
     void designInstanceSelected(const QString& instancePath);
     void designProjectActivated(const QString& projectId);
     void designExpansionChanged(const QString& projectId, bool expanded);
-    void addDesignProjectRequested();
+    void designViewStateChanged(const QString& workspace, const QJsonObject& state);
     void designModuleChosen(const QString& file, const QString& module);
     void viewChanged(int newTabIndex);
     void searchFilterChanged(int tabIndex, const QString& filter);
@@ -118,7 +126,7 @@ private slots:
     void onSearchTextChanged(int index, const QString& text);
     void processFileTreePopulationChunk();
     void onFileTreeDoubleClicked(QTreeWidgetItem* item, int column);
-    void onDesignTreeDoubleClicked(QTreeWidgetItem* item, int column);
+    void onDesignTreeDoubleClicked(const QModelIndex& index);
     void onFileTreeContextMenuRequested(const QPoint& pos);
     void onDesignTreeContextMenuRequested(const QPoint& pos);
 private:
@@ -135,30 +143,30 @@ private:
     QVBoxLayout* fileTabLayout = nullptr;
 
     QWidget* designTab = nullptr;
-    QTreeWidget* designTreeWidget = nullptr;
+    QTreeView* designTreeWidget = nullptr;
     QVBoxLayout* designTabLayout = nullptr;
-    QTreeWidget* designCandidateTree = nullptr;
+    DesignHierarchyModel* designModel = nullptr;
+    DesignHierarchyModel* designSearchModel = nullptr;
     QLabel* designStateLabel = nullptr;
-    QLabel* designSelectionError = nullptr;
-    QAbstractButton* designBackButton = nullptr;
-    QAbstractButton* designClearSearchButton = nullptr;
-    QList<DesignFileCandidate> designCandidates;
-    QStringList designLikelyTops;
-    QString designAddSearchFilter;
+    bool designScanning = false, designAnalysisPending = false;
     QString pendingDesignFile, pendingDesignModule;
-    bool designAdding = true;
-    bool designSelectionExplicit = false;
-    bool designHasProjects = false;
-    bool designScanning = false;
-    bool designAnalysisPending = false;
-    int savedDesignScroll = 0;
     int lastActiveNavigationTab = FileTab;
-    QString savedDesignSelection;
+    QTimer* designSearchTimer = nullptr;
+    QTimer* designStateTimer = nullptr;
+    QFutureWatcher<QList<QString>>* designSearchWatcher = nullptr;
+    std::shared_ptr<std::atomic_bool> designSearchCancellation;
+    quint64 designSearchGeneration = 0;
+    QSet<QString> designExpandedIds;
+    QJsonObject savedDesignState;
+    QHash<QString, QJsonObject> workspaceDesignStates;
+    bool restoringDesignState = false;
+    void startDesignSearch();
+    void setDesignTreeModel(DesignHierarchyModel* model);
+    void saveDesignViewState();
+    void revealPendingDesignProject();
 
     QStringList currentFileList;
     DesignHierarchyReport currentDesignHierarchy;
-    QHash<int, DesignHierarchyNode> designItemPayloads;
-    int nextDesignItemPayloadId = 1;
     bool populatingDesignTree = false;
 
     QString fileSearchFilter;
@@ -199,20 +207,13 @@ private:
         const QString& directoryPath,
         QHash<QString, QTreeWidgetItem*>* dirItems);
     void populateDesignTree();
-    void setupDesignSelector();
-    void populateDesignCandidates();
     void updateDesignPresentation();
-    void cancelDesignProjectSelection();
-    void activateDesignCandidate(QTreeWidgetItem* item);
-    void revealPendingDesignProject();
     QTreeWidgetItem* createFileItem(const QString& filePath);
-    QTreeWidgetItem* createDesignItem(const DesignHierarchyNode& node);
     QIcon getFileIcon(const QString& filePath);
     QIcon getDirectoryIcon(bool virtualGroup = false);
     QIcon getSymbolIcon(SymbolOutlineIconKind iconKind);
     void refreshFileTreeIcons();
     void refreshDesignTreeIcons();
-    void applyDesignItemDimming(QTreeWidgetItem* item, bool dimmed);
     QString normalizedFileItemPath(const QString& filePath) const;
     QString searchFilterForIndex(int index) const;
     void setStoredSearchFilter(int index, const QString& filter);

@@ -6,12 +6,15 @@
 #include <QHash>
 #include <QJsonObject>
 #include <QTextCursor>
+#include <QVariantMap>
 
 struct EditorAssociatedBlock {
     QString id, type, text, uri, asset, caption;
     int start = 0, end = 0, returnPosition = 0, returnAnchor = 0;
     int order = 0, width = 480, height = 160;
     bool missing = false, collapsed = false;
+    bool autoHeight = false, detached = false;
+    QVariantMap appearance;
     quint64 revision = 1;
 };
 
@@ -32,6 +35,7 @@ public:
     bool remove(const QString& id);
     bool reorder(const QString& id, int direction);
     bool reattach(const QString& id, const QTextCursor& source);
+    bool move(const QString& id, const QTextCursor& source, const QString& beforeId = {});
     void beginTextSession(const QString& id);
     void editText(const QString& id, const QString& text);
     void endTextSession();

@@ -60,14 +60,15 @@ bool mouseButton(bool down) {
 #endif
 }
 bool drag(QWidget* handle, const QPoint& destination, const std::function<void()>& held = {},
-          const std::function<QPoint()>& currentDestination = {}) {
+          const std::function<QPoint()>& currentDestination = {}, const QPoint& localStart = {}) {
     if (!handle || !handle->isVisible()) {
         qWarning() << "Unavailable drag handle:" << handle;
         return false;
     }
     auto* top = handle->window(); top->raise(); top->activateWindow();
     QTest::qWait(50);
-    const QPoint start = handle->mapToGlobal(QPoint(qMin(24, handle->width() / 2), handle->height() / 2));
+    const QPoint start = handle->mapToGlobal(localStart.isNull()
+        ? QPoint(qMin(24, handle->width() / 2), handle->height() / 2) : localStart);
     QCursor::setPos(start); QTest::qWait(40);
     if (!mouseButton(true)) return false;
     const auto release = qScopeGuard([] { mouseButton(false); });
@@ -166,10 +167,14 @@ private slots:
         settle(window);
         capture(&window, prefix + "-start");
         const auto detach = [&](const QString& key) {
-            auto* grip = host->sectionDragHandle(key);
-            if (!grip || !grip->isVisible()) return false;
-            QCursor::setPos(grip->mapToGlobal(grip->rect().center()));
-            const bool sent = mouseButton(true); QTest::qWait(30); mouseButton(false);
+            auto* page=host->sectionWidget(key);
+            auto* sourceGroup=registry->groupForPage(page);
+            if (!sourceGroup || !sourceGroup->tabBar()->isVisible()) return false;
+            auto* bar=sourceGroup->tabBar();
+            const auto tab=bar->tabRect(sourceGroup->indexOf(page));
+            if (!bar->rect().contains(tab.center())) return false;
+            // The title area is outside every registered tab drop target.
+            const bool sent=drag(bar,window.mapToGlobal(QPoint(window.width()/2,15)),{},{},tab.center());
             settle(window);
             auto* group = qobject_cast<ElaTabWidget*>(registry->groupForPage(host->sectionWidget(key)));
             const bool floated = group && group->isFloatingTabWidget() && group->window()->isVisible();

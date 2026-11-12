@@ -324,14 +324,17 @@ public:
         setSizePolicy(QSizePolicy::Ignored,QSizePolicy::Preferred);
     }
     QSize minimumSizeHint() const override { return QSize(0,QLabel::minimumSizeHint().height()); }
+    void setElideMode(Qt::TextElideMode mode) { elideMode = mode; update(); }
 protected:
     void paintEvent(QPaintEvent*) override {
         QPainter painter(this);
         QStyleOption option; option.initFrom(this);
         style()->drawPrimitive(QStyle::PE_Widget,&option,&painter,this);
         const QRect area=contentsRect();
-        const QString shown=fontMetrics().elidedText(text(),Qt::ElideRight,area.width());
+        const QString shown=fontMetrics().elidedText(text(),elideMode,area.width());
         setToolTip(text());
         style()->drawItemText(&painter,area,alignment(),palette(),isEnabled(),shown,foregroundRole());
     }
+private:
+    Qt::TextElideMode elideMode = Qt::ElideRight;
 };

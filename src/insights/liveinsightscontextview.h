@@ -16,6 +16,7 @@ class LiveInsightSession;
 class QHideEvent;
 class QLabel;
 class QPushButton;
+class QToolButton;
 class QShowEvent;
 class QStackedWidget;
 class QVBoxLayout;
@@ -47,11 +48,16 @@ public:
         int scopeStartPosition = -1;
         int scopeEndPosition = -1;
         int scopeStartLineZeroBased = 0;
+        QString instancePath;
+        QString rootIdentity;
+        QString configurationIdentity;
         bool operator==(const TargetCandidate& other) const
         {
             return fileName == other.fileName && moduleName == other.moduleName
                 && signalName == other.signalName
                 && signalAccessPath == other.signalAccessPath
+                && instancePath == other.instancePath && rootIdentity == other.rootIdentity
+                && configurationIdentity == other.configurationIdentity
                 && scopeLabel == other.scopeLabel
                 && scopeStartPosition == other.scopeStartPosition
                 && scopeEndPosition == other.scopeEndPosition;
@@ -128,6 +134,7 @@ private:
     std::array<bool, 4> hasRenderedSnapshot{};
     QStackedWidget* contentStack = nullptr;
     QPushButton* fullViewButton = nullptr;
+    QToolButton* scopeButton = nullptr;
     LiveInsightKind selected = LiveInsightKind::Kernel;
     bool fixedKindValue = false;
     QString workspaceIdValue;

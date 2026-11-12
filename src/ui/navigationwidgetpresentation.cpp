@@ -144,33 +144,5 @@ void NavigationWidget::refreshFileTreeIcons()
 
 void NavigationWidget::refreshDesignTreeIcons()
 {
-    if (!designTreeWidget)
-        return;
-    const auto refreshItem = [this](QTreeWidgetItem* item,
-                                    const auto& self) -> void {
-        if (!item)
-            return;
-        const int payloadId =
-            item->data(0, Qt::UserRole + 1).toInt();
-        const auto payload = designItemPayloads.constFind(payloadId);
-        if (payload != designItemPayloads.cend()) {
-            const DesignHierarchyNode& node = payload.value();
-            item->setIcon(
-                0,
-                getSymbolIcon(
-                    node.isTop
-                        ? SymbolOutlineIconKind::Module
-                        : (node.unresolved
-                               ? SymbolOutlineIconKind::Symbol
-                               : SymbolOutlineIconKind::Instance)));
-            applyDesignItemDimming(item, !node.inSelectedTop);
-        }
-        for (int index = 0; index < item->childCount(); ++index)
-            self(item->child(index), self);
-    };
-    for (int index = 0;
-         index < designTreeWidget->topLevelItemCount();
-         ++index) {
-        refreshItem(designTreeWidget->topLevelItem(index), refreshItem);
-    }
+    if (designTreeWidget) designTreeWidget->viewport()->update();
 }

@@ -6,6 +6,8 @@
 #include "editorfileidentity.h"
 #include "roundedicons.h"
 #include "navigationrowstyle.h"
+#include "designhierarchymodel.h"
+#include <QScrollBar>
 #include <QToolButton>
 #include <QEvent>
 #include <QFileInfo>
@@ -30,6 +32,8 @@ NavigationWidget::NavigationWidget(QWidget *parent)
 
 NavigationWidget::~NavigationWidget()
 {
+    if (designSearchCancellation) designSearchCancellation->store(true);
+    if (designSearchWatcher) { disconnect(designSearchWatcher, nullptr, this, nullptr); designSearchWatcher->waitForFinished(); }
     cancelFileTreePopulation();
 }
 
@@ -61,17 +65,11 @@ QString NavigationWidget::searchFilter(NavigationTab tab) const
     return searchFilterForIndex(tab);
 }
 
-void NavigationWidget::setSearchFilter(NavigationTab tab,
-                                       const QString& filter)
+void NavigationWidget::setSearchFilter(NavigationTab tab, const QString& filter)
 {
-    const int index = static_cast<int>(tab);
-    if (index != FileTab && index != DesignTab) return;
-    const QString normalized = filter.trimmed();
-    setStoredSearchFilter(index, normalized);
-    if (index == DesignTab && designAdding) return;
-    auto* search=index==DesignTab ? designSearchLineEdit : searchLineEdit;
-    if (search->text()!=normalized) search->setText(normalized);
-    else onSearchTextChanged(index,normalized);
+    if (tab != FileTab && tab != DesignTab) return;
+    auto* search = tab == DesignTab ? designSearchLineEdit : searchLineEdit;
+    if (search->text() != filter.trimmed()) search->setText(filter.trimmed());
 }
 
 void NavigationWidget::setWorkspaceRoot(
@@ -81,13 +79,16 @@ void NavigationWidget::setWorkspaceRoot(
         EditorFileIdentity::normalized(workspaceRoot);
     if (workspaceFileTreeRootPath == normalized)
         return;
+    saveDesignViewState();
     workspaceFileTreeRootPath = normalized;
-    designCandidates.clear(); designLikelyTops.clear(); designAddSearchFilter.clear();
-    pendingDesignFile.clear(); pendingDesignModule.clear();
-    designAdding = true; designSelectionExplicit = false; designHasProjects = false; designScanning = false;
-    designSelectionError->clear();
-    populateDesignCandidates();
+    if (designSearchCancellation) designSearchCancellation->store(true);
+    ++designSearchGeneration;
+    pendingDesignFile.clear(); pendingDesignModule.clear(); designScanning = false;
+    savedDesignState = workspaceDesignStates.value(normalized);
+    designExpandedIds.clear();
+    designSearchLineEdit->clear();
     explicitlyTrackedPaths.clear();
+    clearDesignHierarchy();
     populateFileTree();
 }
 
@@ -233,77 +234,37 @@ void NavigationWidget::updateFileHierarchy(
 
 void NavigationWidget::updateDesignHierarchy(const DesignHierarchyReport& report)
 {
-    updateDesignSummary(report);
+    saveDesignViewState();
+    currentDesignHierarchy = report;
+    designAnalysisPending = false;
     populateDesignTree();
 }
-
 void NavigationWidget::setDesignHierarchyPending(bool pending)
 {
     designAnalysisPending = pending;
-    if (designTreeWidget)
-        designTreeWidget->setEnabled(!pending);
     updateDesignPresentation();
 }
-
 void NavigationWidget::setDesignProjectExpanded(const QString& id, bool expanded)
 {
-    for (auto& node : currentDesignHierarchy.nodes)
-        if (node.isTop && node.projectId == id) node.expanded = expanded;
-    if (!designTreeWidget || !designSearchFilter.isEmpty()) return;
-    const QSignalBlocker guard(designTreeWidget);
-    for (int i = 0; i < designTreeWidget->topLevelItemCount(); ++i) {
-        auto* row = designTreeWidget->topLevelItem(i);
-        if (row->data(0, NavigationRowStyle::ProjectRole).toString() == id) row->setExpanded(expanded);
-    }
+    const auto index = designModel->indexForId(id);
+    if (index.isValid()) designTreeWidget->setExpanded(index, expanded);
 }
-
 void NavigationWidget::updateDesignSummary(const DesignHierarchyReport& report, bool structureChanged)
 {
+    Q_UNUSED(structureChanged)
+    saveDesignViewState();
     currentDesignHierarchy = report;
-    if (!report.nodes.isEmpty()) {
-        designHasProjects = true;
-        if (!designSelectionExplicit) designAdding = false;
-    }
-    if (!structureChanged && designTreeWidget) {
-        QHash<QString, DesignHierarchyNode> nodes;
-        for (const auto& node : report.nodes) nodes.insert(node.id, node);
-        for (QTreeWidgetItemIterator it(designTreeWidget); *it; ++it) {
-            const int payloadId = (*it)->data(0, Qt::UserRole + 1).toInt();
-            auto payload = designItemPayloads.find(payloadId);
-            if (payload == designItemPayloads.end()) continue;
-            const auto next = nodes.constFind(payload->id);
-            if (next == nodes.cend()) continue;
-            const bool moved = payload->definitionFile != next->definitionFile
-                || payload->definitionLine != next->definitionLine
-                || payload->instanceFile != next->instanceFile || payload->instanceLine != next->instanceLine;
-            payload.value() = next.value();
-            if (moved) {
-                const QString location = next->isTop
-                    ? QStringLiteral("%1:%2").arg(next->definitionFile).arg(next->definitionLine)
-                    : QStringLiteral("instance %1:%2\nmodule %3:%4").arg(next->instanceFile).arg(next->instanceLine)
-                          .arg(next->definitionFile).arg(next->definitionLine);
-                const auto status = next->unresolved ? tr("Unresolved: %1").arg(next->unresolvedReason)
-                    : next->isTop && next->inSelectedTop ? tr("Active project")
-                    : next->isTop ? tr("Activate project using the pin") : QString();
-                const auto description = (*it)->text(0) + QChar(10) + location + (status.isEmpty() ? QString() : QChar(10) + status);
-                (*it)->setToolTip(0, description);
-                (*it)->setData(0, Qt::AccessibleDescriptionRole, description);
-            }
-        }
-    }
-    setDesignHierarchyPending(false);
-    designTreeRefreshPending |= structureChanged;
+    designAnalysisPending = false;
+    if (activeTab() == DesignTab) populateDesignTree();
+    else designTreeRefreshPending = true;
     updateDesignPresentation();
 }
-
 void NavigationWidget::clearDesignHierarchy()
 {
     currentDesignHierarchy = {};
-    setDesignHierarchyPending(false);
+    designAnalysisPending = false;
     populateDesignTree();
 }
-
-
 
 void NavigationWidget::highlightFile(const QString& filePath)
 {
@@ -342,23 +303,24 @@ void NavigationWidget::onTabChanged(int index)
 void NavigationWidget::onSearchTextChanged(int index, const QString& text)
 {
     if (index != FileTab && index != DesignTab) return;
-    const QString normalized = text.trimmed();
-    if (index == DesignTab && designAdding) {
-        if (designAddSearchFilter != normalized) {
-            designAddSearchFilter = normalized;
-            designSelectionError->clear();
-            populateDesignCandidates();
-        }
-        return;
+    const auto normalized = text.trimmed();
+    if (searchFilterForIndex(index) == normalized) return;
+    if (index == DesignTab) {
+        if (designSearchFilter.isEmpty()) savedDesignState = designViewState();
+        designSearchFilter = normalized;
+        ++designSearchGeneration;
+        if (designSearchCancellation) designSearchCancellation->store(true);
+        designTreeWidget->setProperty("designSearchPending", !normalized.isEmpty());
+        if (normalized.isEmpty()) {
+            designSearchTimer->stop();
+            setDesignTreeModel(designModel);
+            restoreDesignViewState(savedDesignState);
+            updateDesignPresentation();
+            designTreeWidget->viewport()->update();
+        } else designSearchTimer->start();
+    } else {
+        setStoredSearchFilter(index, normalized); populateFileTree();
     }
-    if (searchFilterForIndex(index) == normalized
-        && !(index == DesignTab ? designTreeRefreshPending : fileTreeRefreshPending))
-        return;
-    setStoredSearchFilter(index, normalized);
-    if (index == DesignTab)
-        populateDesignTree();
-    else
-        populateFileTree();
     emit searchFilterChanged(index, normalized);
 }
 
@@ -377,15 +339,19 @@ void NavigationWidget::onFileTreeDoubleClicked(QTreeWidgetItem* item, int column
     }
 }
 
-void NavigationWidget::onDesignTreeDoubleClicked(QTreeWidgetItem* item, int column)
+void NavigationWidget::onDesignTreeDoubleClicked(const QModelIndex& index)
 {
-    Q_UNUSED(column)
-
-    if (!item)
-        return;
-    const int payloadId = item->data(0, Qt::UserRole + 1).toInt();
-    if (designItemPayloads.contains(payloadId))
-        emit designNodeDoubleClicked(designItemPayloads.value(payloadId));
+    auto* model = qobject_cast<DesignHierarchyModel*>(designTreeWidget->model());
+    const auto node = model ? model->node(index) : DesignHierarchyNode();
+    if (node.id.isEmpty()) return;
+    if (model == designSearchModel) {
+        designSearchLineEdit->clear();
+        const auto current = designModel->indexForId(node.id);
+        for (auto parent = current.parent(); parent.isValid(); parent = parent.parent()) designTreeWidget->expand(parent);
+        designTreeWidget->setCurrentIndex(current); designTreeWidget->scrollTo(current);
+    }
+    saveDesignViewState();
+    emit designNodeDoubleClicked(node);
 }
 
 void NavigationWidget::onFileTreeContextMenuRequested(const QPoint& pos)
@@ -419,9 +385,8 @@ void NavigationWidget::onFileTreeContextMenuRequested(const QPoint& pos)
 
 void NavigationWidget::onDesignTreeContextMenuRequested(const QPoint& pos)
 {
-    QTreeWidgetItem* item = designTreeWidget->itemAt(pos);
-    const int payloadId = item ? item->data(0, Qt::UserRole + 1).toInt() : -1;
-    emit designNodeContextMenuRequested(designItemPayloads.value(payloadId),
+    auto* model = qobject_cast<DesignHierarchyModel*>(designTreeWidget->model());
+    emit designNodeContextMenuRequested(model->node(designTreeWidget->indexAt(pos)),
         designTreeWidget->viewport()->mapToGlobal(pos));
 }
 
@@ -443,8 +408,8 @@ void NavigationWidget::setupUI()
     designSearchLineEdit->setPlaceholderText(tr("Search instances or modules..."));
     tabWidget = UiControls::navigationTabWidget(this);
     tabWidget->setObjectName(QStringLiteral("navigationTabs"));
-    tabWidget->setIconSize(QSize(20, 20));
-    auto* addDocument = UiControls::toolButton(tabWidget);
+    tabWidget->setIconSize(QSize(RoundedIcons::SidebarSize, RoundedIcons::SidebarSize));
+    auto* addDocument = UiControls::railButton(tabWidget);
     addDocument->setObjectName(QStringLiteral("leftAddDocument")); addDocument->setIcon(RoundedIcons::icon(RoundedIcons::Add)); addDocument->setToolTip(QStringLiteral("New or Open Document"));
     auto* documentMenu = UiControls::menu(addDocument);
     for (const auto& entry : {qMakePair(QStringLiteral("New Markdown"), QStringLiteral("markdown")), qMakePair(QStringLiteral("New Block Document"), QStringLiteral("blocks")), qMakePair(QStringLiteral("Open File…"), QStringLiteral("open"))}) {
@@ -505,57 +470,47 @@ void NavigationWidget::setupDesignTab()
 {
     designTab = new QWidget();
     designTabLayout = new QVBoxLayout(designTab);
-    designTabLayout->setContentsMargins(2, 2, 2, 2);
-    designTabLayout->setSpacing(8);
-
-    auto* actions = new QHBoxLayout;
-    actions->setContentsMargins(0, 0, 0, 0);
-    designBackButton = UiControls::toolButton(designTab);
-    designBackButton->setObjectName(QStringLiteral("cancelDesignSelection"));
-    designBackButton->setIcon(RoundedIcons::icon(RoundedIcons::Left));
-    designBackButton->setText(tr("Back"));
-    static_cast<QToolButton*>(designBackButton)->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-    designBackButton->setAccessibleName(tr("Cancel adding a design project"));
-    connect(designBackButton, &QAbstractButton::clicked, this, &NavigationWidget::cancelDesignProjectSelection);
-    actions->addWidget(designBackButton);
-    actions->addStretch();
-    auto* add = UiControls::toolButton(designTab);
-    add->setObjectName(QStringLiteral("addDesignProject"));
-    add->setIcon(RoundedIcons::icon(RoundedIcons::Add));
-    add->setToolTip(tr("Add design project from a module"));
-    add->setAccessibleName(tr("Add design project"));
-    actions->addWidget(add);
-    connect(add, &QToolButton::clicked, this, &NavigationWidget::addDesignProjectRequested);
-    designTabLayout->addLayout(actions);
-
-    designTreeWidget = UiControls::treeWidget(designTab);
+    designTabLayout->setContentsMargins(2, 2, 2, 2); designTabLayout->setSpacing(4);
+    designTreeWidget = new QTreeView(designTab);
     designTreeWidget->setObjectName(QStringLiteral("navigationDesignTree"));
-    UiControls::enableTreeTransitions(designTreeWidget);
-    designTreeWidget->setColumnCount(1);
     designTreeWidget->setHeaderHidden(true);
-    auto* rows = new NavigationRowStyle(designTreeWidget, true);
-    rows->activateProject = [this](const QString& id) { emit designProjectActivated(id); };
-    const auto expansion = [this](QTreeWidgetItem* item, bool expanded) {
-        if (populatingDesignTree || !designSearchFilter.isEmpty()) return;
-        const auto id = item->data(0, NavigationRowStyle::ProjectRole).toString();
-        if (!id.isEmpty()) emit designExpansionChanged(id, expanded);
-    };
-    connect(designTreeWidget, &QTreeWidget::itemExpanded, this, [expansion](QTreeWidgetItem* item) { expansion(item, true); });
-    connect(designTreeWidget, &QTreeWidget::itemCollapsed, this, [expansion](QTreeWidgetItem* item) { expansion(item, false); });
-    designTreeWidget->setAlternatingRowColors(false);
+    designTreeWidget->setFrameShape(QFrame::NoFrame);
+    designTreeWidget->setEditTriggers(QAbstractItemView::NoEditTriggers);
     designTreeWidget->setProperty("workspaceNavigationList", true);
     designTreeWidget->setMouseTracking(true);
-
-    designTreeWidget->setSortingEnabled(false);
+    designModel = new DesignHierarchyModel(this);
+    designSearchModel = new DesignHierarchyModel(this);
+    setDesignTreeModel(designModel);
+    designTreeWidget->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+    new NavigationRowStyle(designTreeWidget, true);
     designTreeWidget->header()->setStretchLastSection(true);
-    designTreeWidget->header()->setSectionResizeMode(0, QHeaderView::Stretch);
     designTabLayout->addWidget(designTreeWidget);
-    setupDesignSelector();
-
-    designTab->setLayout(designTabLayout);
+    designStateLabel = new QLabel(designTab);
+    designStateLabel->setObjectName(QStringLiteral("designStateLabel"));
+    designStateLabel->setWordWrap(true); designStateLabel->setAlignment(Qt::AlignCenter);
+    designTabLayout->addWidget(designStateLabel);
+    designSearchTimer = new QTimer(this); designSearchTimer->setInterval(120); designSearchTimer->setSingleShot(true);
+    connect(designSearchTimer, &QTimer::timeout, this, &NavigationWidget::startDesignSearch);
+    designStateTimer = new QTimer(this); designStateTimer->setInterval(250); designStateTimer->setSingleShot(true);
+    connect(designStateTimer, &QTimer::timeout, this, &NavigationWidget::saveDesignViewState);
+    const auto expansion = [this](const QModelIndex& index, bool expanded) {
+        if (restoringDesignState || designTreeWidget->model() != designModel) return;
+        const auto id = index.data(Qt::UserRole).toString();
+        if (expanded) designExpandedIds.insert(id); else designExpandedIds.remove(id);
+        designStateTimer->start();
+    };
+    connect(designTreeWidget, &QTreeView::expanded, this, [expansion](const QModelIndex& index) { expansion(index, true); });
+    connect(designTreeWidget, &QTreeView::collapsed, this, [expansion](const QModelIndex& index) { expansion(index, false); });
+    connect(designTreeWidget->verticalScrollBar(), &QScrollBar::valueChanged, this, [this] { if (!restoringDesignState) designStateTimer->start(); });
+    connect(designModel, &DesignHierarchyModel::reportApplied, this, [this] {
+        designTreeWidget->setProperty("designTotalNodes", designModel->report()->nodes.size());
+        designTreeWidget->setProperty("designMaterializedRows", designModel->materializedCount());
+        if (!savedDesignState.isEmpty() && designTreeWidget->model() == designModel) restoreDesignViewState(savedDesignState);
+        revealPendingDesignProject(); updateDesignPresentation(); refreshSimulationTop();
+        if (!designSearchFilter.isEmpty()) designSearchTimer->start();
+    });
     const auto index = tabWidget->addTab(designTab, RoundedIcons::icon(RoundedIcons::Hierarchy), QString());
-    tabWidget->setTabToolTip(index, tr("Design"));
-    tabWidget->tabBar()->setAccessibleTabName(index, tr("Design"));
+    tabWidget->setTabToolTip(index, tr("Design")); tabWidget->tabBar()->setAccessibleTabName(index, tr("Design"));
 }
 
 QString NavigationWidget::searchFilterForIndex(int index) const
@@ -631,16 +586,8 @@ void NavigationWidget::setupConnections()
     fileTreeWidget->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(fileTreeWidget, &QTreeWidget::customContextMenuRequested,
             this, &NavigationWidget::onFileTreeContextMenuRequested);
-    connect(designTreeWidget, &QTreeWidget::itemDoubleClicked,
-            this, &NavigationWidget::onDesignTreeDoubleClicked);
-    connect(designTreeWidget,&QTreeWidget::itemSelectionChanged,this,[this]{
-        if(populatingDesignTree)return;
-        const auto* item=designTreeWidget->currentItem();if(!item)return;
-        const auto node=designItemPayloads.value(item->data(0,Qt::UserRole+1).toInt());
-        if(node.inSelectedTop && !node.instancePath.isEmpty())emit designInstanceSelected(node.instancePath);
-    });
+    connect(designTreeWidget, &QTreeView::clicked, this, &NavigationWidget::onDesignTreeDoubleClicked);
+    connect(designTreeWidget, &QTreeView::activated, this, &NavigationWidget::onDesignTreeDoubleClicked);
     designTreeWidget->setContextMenuPolicy(Qt::CustomContextMenu);
-    connect(designTreeWidget, &QTreeWidget::customContextMenuRequested,
-            this, &NavigationWidget::onDesignTreeContextMenuRequested);
-
+    connect(designTreeWidget, &QTreeView::customContextMenuRequested, this, &NavigationWidget::onDesignTreeContextMenuRequested);
 }

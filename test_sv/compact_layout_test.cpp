@@ -464,19 +464,26 @@ private slots:
         QVERIFY(provider.activateView(view,resource));
         QVERIFY(host.addResource(resource,view));
         host.show();QTest::qWait(30);
-        auto* header=host.sectionHeader(resource.stableKey());QVERIFY(header);
-        auto* title=header->findChild<QLabel*>("contextSectionTitle");QVERIFY(title);
+        auto* frame=host.sectionWidget(resource.stableKey());QVERIFY(frame);
+        auto* group=host.pageRegistry()->groupForPage(frame);QVERIFY(group);
+        const auto title=[&] { return group->tabText(group->indexOf(frame)); };
+        const auto tooltip=[&] { return group->tabToolTip(group->indexOf(frame)); };
+        QVERIFY(group->tabBar()->isVisible());
+        QVERIFY(!frame->findChild<QLabel*>("contextSectionTitle"));
         const QRegularExpression uuid("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-");
-        for (const auto& key:host.resourceKeys()) QVERIFY(!uuid.match(host.sectionHeader(key)->findChild<QLabel*>("contextSectionTitle")->text()).hasMatch());
-        QCOMPARE(title->text(),editors.tabText(editors.currentIndex()));
-        QCOMPARE(header->toolTip(),resource.uri.toString());
-        qInfo()<<"I6 editor="<<editors.tabText(editors.currentIndex())<<"context="<<title->text();
+        for (const auto& key:host.resourceKeys()) {
+            auto* page=host.sectionWidget(key);auto* tabs=host.pageRegistry()->groupForPage(page);QVERIFY(tabs);
+            QVERIFY(!uuid.match(tabs->tabText(tabs->indexOf(page))).hasMatch());
+        }
+        QCOMPARE(title(),editors.tabText(editors.currentIndex()));
+        QVERIFY(tooltip().split('\n').contains(resource.uri.toString()));
+        qInfo()<<"I6 editor="<<editors.tabText(editors.currentIndex())<<"context="<<title();
         QVERIFY(manager.duplicateCurrentView());QTest::qWait(30);
-        QCOMPARE(title->text(),editors.tabText(editors.currentIndex()));
-        qInfo()<<"I6 duplicated editor="<<editors.tabText(editors.currentIndex())<<"context="<<title->text();
+        QCOMPARE(title(),editors.tabText(editors.currentIndex()));
+        qInfo()<<"I6 duplicated editor="<<editors.tabText(editors.currentIndex())<<"context="<<title();
         manager.getCurrentEditor()->insertPlainText("module test; endmodule");QTest::qWait(30);
-        QCOMPARE(title->text(),editors.tabText(editors.currentIndex()));
-        QCOMPARE(header->toolTip(),resource.uri.toString());
+        QCOMPARE(title(),editors.tabText(editors.currentIndex()));
+        QVERIFY(tooltip().split('\n').contains(resource.uri.toString()));
         for (int width : {220,270,340,480}) {
             host.setFixedWidth(width);host.resize(width,900);QTest::qWait(30);
             const auto c=audit(&host);
@@ -505,7 +512,7 @@ private slots:
             ContextResource resource;resource.providerId="extent-regression";
             resource.resourceId=QString::number(i);resource.title=resource.resourceId;
             auto* view=new QWidget;view->setMinimumHeight(i?170:48);
-            if(i)view->setProperty("contextScopeText","Scope expanded for this view");
+            if(bottom)view->setMinimumWidth(i?280:180);
             QVERIFY(host.addResource(resource,view));
             keys.append(resource.stableKey());
             QVERIFY(host.moveResourceToArea(keys.last(),dockArea));
@@ -577,7 +584,8 @@ private slots:
         }
         QTest::qWait(30);
         auto* incoming=new QWidget;incoming->setMinimumHeight(120);
-        if(bottom)incoming->setMinimumWidth(host.sectionHeader(keys.first())->minimumSizeHint().width());
+        auto* existingGroup=host.pageRegistry()->groupForPage(host.sectionWidget(keys.first()));QVERIFY(existingGroup);
+        if(bottom)incoming->setMinimumWidth(existingGroup->tabBar()->minimumSizeHint().width());
         const auto predicted=host.projectedSectionRect(bottom,1,host.viewportGlobalRect(bottom),incoming);
         ContextResource resource;resource.providerId="projection-regression";
         resource.resourceId="incoming";resource.title="incoming";
@@ -588,7 +596,7 @@ private slots:
         for(const auto& key:host.resourceKeys()) {
             auto* frame=host.sectionWidget(key);auto* group=host.pageRegistry()->groupForPage(frame);
             qInfo()<<"projection section"<<key<<frame->size()<<frame->minimumSize()<<frame->minimumSizeHint()
-                <<"header"<<host.sectionHeader(key)->size()<<"group"<<group->size()<<group->minimumSizeHint();
+                <<"tabs"<<group->tabBar()->size()<<"group"<<group->size()<<group->minimumSizeHint();
         }
         qInfo()<<"extent projection"<<bottom<<"DPR"<<surface->devicePixelRatioF()<<predicted<<actual;
         QCOMPARE(predicted,actual);

@@ -48,6 +48,7 @@ UiMessageDialog::UiMessageDialog(QWidget* parent)
 #endif
     auto* body = new QWidget(this);
     auto* layout = new QVBoxLayout(body);
+    bodyLayout = layout;
     layout->setContentsMargins(20, 18, 20, 18);
     layout->setSpacing(12);
     auto* heading = new QHBoxLayout;
@@ -103,6 +104,13 @@ UiMessageDialog::UiMessageDialog(QWidget* parent)
 }
 
 void UiMessageDialog::setText(const QString& text) { messageLabel->setText(text); }
+void UiMessageDialog::setContentWidget(QWidget* widget)
+{
+    if (contentWidget == widget) return;
+    if (contentWidget) delete contentWidget;
+    contentWidget = widget;
+    if (widget) bodyLayout->insertWidget(bodyLayout->indexOf(actions), widget);
+}
 QString UiMessageDialog::text() const { return messageLabel->text(); }
 void UiMessageDialog::setDetailedText(const QString& text) {
     details->setPlainText(text);

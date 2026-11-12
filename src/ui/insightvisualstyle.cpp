@@ -125,21 +125,21 @@ namespace {
 InsightTheme buildLightTheme()
 {
     InsightTheme theme;
-    theme.appBackground = color("#eef1f5");
-    theme.canvasBackground = color("#f6f8fb");
+    theme.appBackground = color("#f7f7f5");
+    theme.canvasBackground = color("#ffffff");
     theme.panelBackground = color("#ffffff");
-    theme.panelSubtle = color("#f8fafc");
-    theme.border = color("#d9e0ea");
-    theme.borderStrong = color("#aeb8c8");
-    theme.textPrimary = color("#242b39");
-    theme.textSecondary = color("#515d6d");
-    theme.textMuted = color("#7a8797");
+    theme.panelSubtle = color("#f7f7f5");
+    theme.border = color("#e6e5e2");
+    theme.borderStrong = color("#b4b3af");
+    theme.textPrimary = color("#37352f");
+    theme.textSecondary = color("#6b6a67");
+    theme.textMuted = color("#9b9a97");
     theme.accent = color("#2563eb");
     theme.selected = color("#db2777");
     theme.hover = color("#0f766e");
     theme.warning = color("#b45309");
     theme.splitterHandle = color("#cbd5e1");
-    theme.toolbarBackground = color("#f8fafc");
+    theme.toolbarBackground = theme.panelSubtle;
     theme.surface.canvas = theme.canvasBackground;
     theme.surface.panel = theme.panelBackground;
     theme.surface.raised = color("#ffffff");
@@ -178,10 +178,11 @@ InsightTheme buildLightTheme()
     theme.tab.barBackground = color("#f4f7fb");
     theme.tab.tabBackground = color("#f3f6fa");
     theme.tab.tabBackgroundHover = color("#eef4ff");
-    theme.tab.tabBackgroundSelected = theme.panelBackground;
+    theme.tab.tabBackgroundHover = color("#f1f0ee");
+    theme.tab.tabBackgroundSelected = color("#eae9e6");
     theme.tab.text = color("#475569");
-    theme.tab.textHover = color("#1e40af");
-    theme.tab.textSelected = color("#1d4ed8");
+    theme.tab.textHover = theme.textPrimary;
+    theme.tab.textSelected = theme.textPrimary;
     theme.tab.border = color("#d8e1ec");
     theme.tab.borderSelected = color("#b9cff4");
 
@@ -215,8 +216,8 @@ InsightTheme buildLightTheme()
     theme.itemView.headerBorder = color("#e2e8f0");
     theme.itemView.text = color("#1f2937");
     theme.itemView.headerText = color("#475569");
-    theme.itemView.selectedBackground = color("#dbeafe");
-    theme.itemView.hoverBackground = color("#eef4ff");
+    theme.itemView.selectedBackground = theme.tab.tabBackgroundSelected;
+    theme.itemView.hoverBackground = theme.tab.tabBackgroundHover;
 
     theme.graph.background = theme.canvasBackground;
     theme.graph.gridLine = color("#e2e8f0");
@@ -280,26 +281,26 @@ InsightTheme buildLightTheme()
 InsightTheme buildDarkTheme()
 {
     InsightTheme theme;
-    theme.appBackground = color("#0b1120");
-    theme.canvasBackground = color("#0b1220");
-    theme.panelBackground = color("#111827");
-    theme.panelSubtle = color("#172033");
-    theme.border = color("#334155");
-    theme.borderStrong = color("#64748b");
-    theme.textPrimary = color("#dce2ec");
-    theme.textSecondary = color("#b1bac9");
-    theme.textMuted = color("#94a3b8");
+    theme.appBackground = color("#191919");
+    theme.canvasBackground = color("#202020");
+    theme.panelBackground = color("#252525");
+    theme.panelSubtle = color("#2b2b2b");
+    theme.border = color("#3f3f3d");
+    theme.borderStrong = color("#666662");
+    theme.textPrimary = color("#e7e7e5");
+    theme.textSecondary = color("#b4b4b1");
+    theme.textMuted = color("#858583");
     theme.accent = color("#60a5fa");
     theme.selected = color("#f472b6");
     theme.hover = color("#2dd4bf");
     theme.warning = color("#fbbf24");
     theme.splitterHandle = color("#334155");
-    theme.toolbarBackground = color("#0f172a");
+    theme.toolbarBackground = theme.appBackground;
     theme.surface.canvas = theme.canvasBackground;
     theme.surface.panel = theme.panelBackground;
-    theme.surface.raised = color("#172033");
-    theme.surface.overlay = color("#1e293b");
-    theme.surface.empty = color("#172033");
+    theme.surface.raised = color("#303030");
+    theme.surface.overlay = color("#353535");
+    theme.surface.empty = theme.panelSubtle;
     theme.surface.loading = color("#172554");
     theme.surface.stale = color("#422006");
     theme.focus.ring = color("#60a5fa");
@@ -323,24 +324,24 @@ InsightTheme buildDarkTheme()
     theme.button.borderHover = color("#60a5fa");
     theme.button.borderChecked = color("#60a5fa");
 
-    theme.input.background = color("#0f172a");
+    theme.input.background = theme.appBackground;
     theme.input.text = color("#f8fafc");
     theme.input.border = color("#475569");
     theme.input.focusBorder = theme.accent;
     theme.input.selectionBackground = color("#1d4ed8");
     theme.input.selectionText = color("#ffffff");
 
-    theme.tab.barBackground = color("#0f172a");
-    theme.tab.tabBackground = color("#172033");
-    theme.tab.tabBackgroundHover = color("#1e3a5f");
-    theme.tab.tabBackgroundSelected = theme.panelBackground;
+    theme.tab.barBackground = theme.appBackground;
+    theme.tab.tabBackground = theme.panelBackground;
+    theme.tab.tabBackgroundHover = color("#30302f");
+    theme.tab.tabBackgroundSelected = color("#3a3a39");
     theme.tab.text = color("#94a3b8");
-    theme.tab.textHover = color("#dbeafe");
-    theme.tab.textSelected = color("#bfdbfe");
+    theme.tab.textHover = theme.textPrimary;
+    theme.tab.textSelected = theme.textPrimary;
     theme.tab.border = theme.border;
     theme.tab.borderSelected = color("#3b82f6");
 
-    theme.statusBar.background = color("#0f172a");
+    theme.statusBar.background = theme.appBackground;
     theme.statusBar.text = color("#e2e8f0");
     theme.statusBar.border = theme.border;
     theme.statusBar.infoText = color("#bfdbfe");
@@ -369,8 +370,8 @@ InsightTheme buildDarkTheme()
     theme.itemView.headerBorder = theme.border;
     theme.itemView.text = color("#e5e7eb");
     theme.itemView.headerText = color("#cbd5e1");
-    theme.itemView.selectedBackground = color("#1e3a8a");
-    theme.itemView.hoverBackground = color("#1e293b");
+    theme.itemView.selectedBackground = theme.tab.tabBackgroundSelected;
+    theme.itemView.hoverBackground = theme.tab.tabBackgroundHover;
 
     theme.graph.background = theme.canvasBackground;
     theme.graph.gridLine = color("#25344a");
@@ -612,6 +613,23 @@ InsightTheme buildCatppuccinTheme(int flavor)
 const InsightTheme& InsightVisualStyle::theme()
 {
     return theme(ApplicationThemeManager::instance().mode());
+}
+
+QJsonObject InsightVisualStyle::webThemeTokens()
+{
+    return webThemeTokens(isDarkTheme(ApplicationThemeManager::instance().mode()));
+}
+
+QJsonObject InsightVisualStyle::webThemeTokens(bool dark)
+{
+    auto mode = ApplicationThemeManager::instance().mode();
+    if (isDarkTheme(mode) != dark) mode = dark ? ThemeMode::Dark : ThemeMode::Light;
+    const auto& t = theme(mode);
+    return {{"panel", t.surface.panel.name()}, {"subtle", t.panelSubtle.name()},
+        {"text", t.textPrimary.name()}, {"secondary", t.textSecondary.name()},
+        {"muted", t.textMuted.name()}, {"border", t.border.name()},
+        {"hover", t.itemView.hoverBackground.name()}, {"accent", t.accent.name()},
+        {"shellFont", QStringLiteral("'Segoe UI', 'Microsoft YaHei UI', 'Noto Sans', 'Noto Sans SC', sans-serif")}};
 }
 
 const InsightTheme& InsightVisualStyle::theme(ThemeMode mode)

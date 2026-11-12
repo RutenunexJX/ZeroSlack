@@ -2,6 +2,7 @@
 #include "uitypography.h"
 #include "settingscenterpanel.h"
 #include "insightvisualstyle.h"
+#include "blocknotestyle.h"
 
 #include <QAbstractItemModel>
 #include <QAbstractItemView>
@@ -14,7 +15,6 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
-#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
@@ -23,6 +23,7 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QResizeEvent>
+#include <QTimer>
 #include <QScrollArea>
 #include <QSet>
 #include <QSignalBlocker>
@@ -34,6 +35,8 @@
 #include <QTableView>
 #include <QVBoxLayout>
 #include <QStyle>
+#include <QTextEdit>
+#include <QFontInfo>
 
 #include <limits>
 #include <utility>
@@ -179,7 +182,7 @@ bool SettingsCenterPanel::isScopeDirty(
     SettingsCenterScope requestedScope) const
 {
     return draftValues(requestedScope)
-        != loadedValues(requestedScope);
+        != loadedValues(requestedScope) || !localStringMapIssues(requestedScope).isEmpty();
 }
 
 QList<SettingsCenterValidationIssue>
@@ -252,8 +255,9 @@ void SettingsCenterPanel::setWorkspaceSnapshot(const SettingsCenterSnapshot& sna
     const auto nextKey = workspaceDraftKey(snapshot.workspaceRoot);
     if (previousKey == nextKey) return;
     commitPendingEditors();
-    if (!previousKey.isEmpty() && isScopeDirty(SettingsCenterScope::Workspace))
-        workspaceDrafts.insert(previousKey, {loadedSnapshot, workspaceDraft});
+    if (!previousKey.isEmpty() && (isScopeDirty(SettingsCenterScope::Workspace)
+        || !rowIssues(workspaceRows, workspaceDraft, SettingsCenterScope::Workspace).isEmpty()))
+        workspaceDrafts.insert(previousKey, {loadedSnapshot, workspaceDraft, workspaceRows});
     else
         workspaceDrafts.remove(previousKey);
 
@@ -266,8 +270,10 @@ void SettingsCenterPanel::setWorkspaceSnapshot(const SettingsCenterSnapshot& sna
         const auto saved = workspaceDrafts.take(nextKey);
         copySettingsLayer(next, saved.baseline, SettingsCenterScope::Workspace);
         workspaceDraft = saved.values;
+        workspaceRows = saved.rows;
     } else {
         workspaceDraft = next.workspaceValues;
+        workspaceRows.clear();
     }
     loadedSnapshot = std::move(next);
     activeWorkspaceRoot = snapshot.workspaceRoot;
@@ -283,6 +289,8 @@ void SettingsCenterPanel::setWorkspaceSnapshot(const SettingsCenterSnapshot& sna
 
 void SettingsCenterPanel::reload()
 {
+    globalRows.clear();
+    workspaceRows.clear();
     workspaceDrafts.remove(workspaceDraftKey(activeWorkspaceRoot));
     QPointer<QWidget> previousFocus = QApplication::focusWidget();
     if (!settingsService) {
@@ -354,91 +362,76 @@ void SettingsCenterPanel::selectCategory(
 
 void SettingsCenterPanel::applyCurrentScope()
 {
+    commitPendingEditors();
+    applyDraft(activeScope == SettingsCenterScope::Global ? QStringLiteral("global")
+        : QStringLiteral("workspace:") + workspaceDraftKey(activeWorkspaceRoot));
+}
+
+SettingsCenterSaveResult SettingsCenterPanel::applyDraft(const QString& key)
+{
     QPointer<QWidget> previousFocus = QApplication::focusWidget();
-    const QVariantMap values = activeDraftValues();
-
-    SettingsCenterLayerValidation validation =
-        SettingsCenterSchema::validateLayer(values, activeScope);
-    validation.issues.append(localStringMapIssues(activeScope));
-
-    bool hasValidationError = false;
-    for (const SettingsCenterValidationIssue& issue :
-         validation.issues) {
-        if (issue.kind == SettingsCenterIssueKind::InvalidValue) {
-            hasValidationError = true;
-            break;
-        }
-    }
-    if (hasValidationError) {
-        reportIssues(validation.issues,
-                     tr("Settings contain invalid values."),
-                     true);
-        if (previousFocus)
-            previousFocus->setFocus(Qt::OtherFocusReason);
-        return;
-    }
-
-    if (!isScopeDirty(activeScope)) {
-        reportIssues(validation.issues,
-                     tr("No settings changes to apply."));
-        if (previousFocus)
-            previousFocus->setFocus(Qt::OtherFocusReason);
-        return;
-    }
-    if (!settingsService) {
-        reportStatus(tr("Settings service is unavailable."), true);
-        if (previousFocus)
-            previousFocus->setFocus(Qt::OtherFocusReason);
-        return;
-    }
-
     SettingsCenterSaveResult result;
-    if (activeScope == SettingsCenterScope::Global) {
-        result = settingsService->saveGlobal(
-            validation.values,
-            loadedSnapshot.globalRevision);
+    const bool global = key == QStringLiteral("global");
+    const auto requestedScope = global ? SettingsCenterScope::Global : SettingsCenterScope::Workspace;
+    const QString workspaceKey = key.mid(QStringLiteral("workspace:").size());
+    const bool currentWorkspace = !global && key.startsWith(QStringLiteral("workspace:"))
+        && workspaceKey == workspaceDraftKey(activeWorkspaceRoot) && !workspaceKey.isEmpty();
+    auto cached = workspaceDrafts.find(workspaceKey);
+    if (!global && !currentWorkspace && cached == workspaceDrafts.end()) {
+        result.message = tr("The settings draft is no longer available.");
+        return result;
+    }
+    const auto& baseline = global || currentWorkspace ? loadedSnapshot : cached->baseline;
+    const auto& values = global ? globalDraft : currentWorkspace ? workspaceDraft : cached->values;
+    const auto& rows = global ? globalRows : currentWorkspace ? workspaceRows : cached->rows;
+    auto validation = SettingsCenterSchema::validateLayer(values, requestedScope);
+    validation.issues.append(rowIssues(rows, values, requestedScope));
+    bool invalid = false;
+    for (const auto& issue : validation.issues) invalid |= isErrorIssue(issue.kind);
+    if (invalid) {
+        result.issues = validation.issues;
+        result.message = tr("Settings contain invalid values.");
+    } else if (values == (global ? baseline.globalValues : baseline.workspaceValues)) {
+        result.saved = true;
+        result.message = tr("No settings changes to apply.");
+        reportIssues(validation.issues, result.message);
+        return result;
+    } else if (!settingsService) {
+        result.message = tr("Settings service is unavailable.");
     } else {
-        result = settingsService->saveWorkspace(
-            activeWorkspaceRoot,
-            validation.values,
-            loadedSnapshot.workspaceRevision);
+        result = global ? settingsService->saveGlobal(validation.values, baseline.globalRevision)
+            : settingsService->saveWorkspace(baseline.workspaceRoot, validation.values, baseline.workspaceRevision);
     }
-
-    if (!result.saved) {
-        reportIssues(result.issues,
-                     result.message.isEmpty()
-                         ? tr("Settings could not be saved.")
-                         : result.message,
-                     true);
-        if (previousFocus)
-            previousFocus->setFocus(Qt::OtherFocusReason);
-        return;
+    if (result.saved) {
+        if (global) {
+            globalDraft = result.normalizedValues;
+            globalRows.clear();
+            loadedSnapshot.globalValues = result.normalizedValues;
+            loadedSnapshot.globalRevision = result.revision;
+        } else if (currentWorkspace) {
+            workspaceDraft = result.normalizedValues;
+            workspaceRows.clear();
+            loadedSnapshot.workspaceValues = result.normalizedValues;
+            loadedSnapshot.workspaceRevision = result.revision;
+            loadedSnapshot.workspaceDocumentExists = true;
+        } else {
+            workspaceDrafts.erase(cached);
+        }
+        loadedSnapshot.effectiveValues = SettingsCenterSchema::merge(
+            loadedSnapshot.globalValues, loadedSnapshot.workspaceValues);
+        if (global || currentWorkspace) populateFields();
+        emit settingsApplied(requestedScope);
     }
-
-    if (activeScope == SettingsCenterScope::Global) {
-        globalDraft = result.normalizedValues;
-        loadedSnapshot.globalValues = result.normalizedValues;
-        loadedSnapshot.globalRevision = result.revision;
-    } else {
-        workspaceDraft = result.normalizedValues;
-        loadedSnapshot.workspaceValues = result.normalizedValues;
-        loadedSnapshot.workspaceRevision = result.revision;
-        loadedSnapshot.workspaceDocumentExists = true;
-    }
-    loadedSnapshot.effectiveValues = SettingsCenterSchema::merge(
-        loadedSnapshot.globalValues,
-        loadedSnapshot.workspaceValues);
-    populateFields();
-    reportIssues(result.issues, result.message);
-    emit settingsApplied(activeScope);
-    if (previousFocus)
-        previousFocus->setFocus(Qt::OtherFocusReason);
+    reportIssues(result.issues, result.message, !result.saved);
+    if (previousFocus) previousFocus->setFocus(Qt::OtherFocusReason);
+    return result;
 }
 
 void SettingsCenterPanel::revertCurrentScope()
 {
     QPointer<QWidget> previousFocus = QApplication::focusWidget();
     activeDraftValues() = loadedValues(activeScope);
+    activeRows().clear();
     populateFields();
     displayedIssues.clear();
     reportStatus(
@@ -456,38 +449,49 @@ void SettingsCenterPanel::commitPendingEditors()
     QPointer<QWidget> focus = QApplication::focusWidget();
     if (!focus || (focus != this && !isAncestorOf(focus)))
         return;
-    bool tableEditor = false;
+    QPointer<QTableView> table;
     for (QWidget* editor = focus; editor && editor != this; editor = editor->parentWidget()) {
         if (auto* spin = qobject_cast<QAbstractSpinBox*>(editor))
             spin->interpretText();
-        if (qobject_cast<QTableView*>(editor))
-            tableEditor = true;
+        if (auto* view=qobject_cast<QTableView*>(editor))
+            table=view;
     }
-    // Normal focus-out commits an active item delegate before the dirty query.
-    focus->clearFocus();
-    if (!tableEditor && focus && focus->isVisible() && focus->isEnabled())
-        focus->setFocus(Qt::OtherFocusReason);
+    // Only an active item delegate needs focus-out. Ordinary fields already
+    // update their draft synchronously; clearing their focus changes the page.
+    if (table && focus!=table && focus!=table->viewport()) {
+        focus->clearFocus();
+        if (table) table->setFocus(Qt::OtherFocusReason);
+    }
 }
 
 QStringList SettingsCenterPanel::unappliedScopes() const
 {
     QStringList scopes;
-    const bool invalidEditor = !localStringMapIssues(activeScope).isEmpty();
+    for (const auto& pending : pendingScopes()) scopes.append(pending.label);
+    return scopes;
+}
+
+QList<SettingsCenterPanel::PendingScope> SettingsCenterPanel::pendingScopes() const
+{
+    QList<PendingScope> scopes;
     if (isScopeDirty(SettingsCenterScope::Global)
-        || (activeScope == SettingsCenterScope::Global && invalidEditor))
-        scopes.append(tr("Global"));
+        || !localStringMapIssues(SettingsCenterScope::Global).isEmpty())
+        scopes.append({QStringLiteral("global"), tr("Global"), activeScope == SettingsCenterScope::Global});
     if (!activeWorkspaceRoot.isEmpty()
         && (isScopeDirty(SettingsCenterScope::Workspace)
-            || (activeScope == SettingsCenterScope::Workspace && invalidEditor)))
-        scopes.append(tr("Workspace: %1").arg(QDir::toNativeSeparators(activeWorkspaceRoot)));
-    QStringList cached;
-    for (auto it = workspaceDrafts.cbegin(); it != workspaceDrafts.cend(); ++it) {
-        if (it->values != it->baseline.workspaceValues)
-            cached.append(tr("Workspace: %1").arg(QDir::toNativeSeparators(it->baseline.workspaceRoot)));
+            || !localStringMapIssues(SettingsCenterScope::Workspace).isEmpty()))
+        scopes.append({QStringLiteral("workspace:") + workspaceDraftKey(activeWorkspaceRoot),
+            tr("Workspace: %1").arg(QDir::toNativeSeparators(activeWorkspaceRoot)),
+            activeScope == SettingsCenterScope::Workspace});
+    auto keys = workspaceDrafts.keys();
+    keys.sort();
+    for (const auto& key : keys) {
+        const auto& cached = workspaceDrafts[key];
+        if (cached.values != cached.baseline.workspaceValues
+            || !rowIssues(cached.rows, cached.values, SettingsCenterScope::Workspace).isEmpty())
+            scopes.append({QStringLiteral("workspace:") + key,
+                tr("Workspace: %1").arg(QDir::toNativeSeparators(cached.baseline.workspaceRoot)), false});
     }
-    cached.sort();
-    scopes.append(cached);
-    scopes.removeDuplicates();
     return scopes;
 }
 
@@ -496,6 +500,8 @@ void SettingsCenterPanel::discardUnappliedChanges()
     globalDraft = loadedSnapshot.globalValues;
     workspaceDraft = loadedSnapshot.workspaceValues;
     workspaceDrafts.clear();
+    globalRows.clear();
+    workspaceRows.clear();
     populateFields();
     displayedIssues.clear();
     reportStatus(tr("Unapplied changes discarded."), false);
@@ -509,7 +515,10 @@ void SettingsCenterPanel::buildUi()
     rootLayout->setContentsMargins(16, 16, 16, 16);
     rootLayout->setSpacing(20);
 
-    auto* navigationLayout = new QVBoxLayout;
+    auto* navigationSurface = new QWidget(this);
+    navigationSurface->setObjectName(QStringLiteral("settingsCenterNavigationSurface"));
+    auto* navigationLayout = new QVBoxLayout(navigationSurface);
+    navigationLayout->setContentsMargins(10, 10, 10, 10);
     navigationBox = navigationLayout;
     auto* scopeLabel = UiControls::label(tr("Scope"), this);
     scopeLabel->setObjectName(
@@ -537,9 +546,12 @@ void SettingsCenterPanel::buildUi()
         QAbstractItemView::SingleSelection);
     categoryList->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     navigationLayout->addWidget(categoryList, 1);
-    rootLayout->addLayout(navigationLayout);
+    rootLayout->addWidget(navigationSurface);
 
-    auto* contentLayout = new QVBoxLayout;
+    auto* contentSurface = new QWidget(this);
+    contentSurface->setObjectName(QStringLiteral("settingsCenterContentSurface"));
+    auto* contentLayout = new QVBoxLayout(contentSurface);
+    contentLayout->setContentsMargins(10, 10, 10, 10);
     scopeSummaryLabel = UiControls::label(this);
     scopeSummaryLabel->setObjectName(
         QStringLiteral("settingsCenterScopeSummary"));
@@ -566,40 +578,53 @@ void SettingsCenterPanel::buildUi()
             categoryPageObjectName(category.id));
         auto* pageLayout = new QVBoxLayout(pageContent);
         pageLayout->setContentsMargins(8, 8, 8, 8);
-        pageLayout->setSpacing(16);
+        pageLayout->setSpacing(8);
         auto* pageTitle = UiControls::label(category.title, pageContent);
         UiTypography::apply(pageTitle, UiTypography::Role::PageTitle);
         pageLayout->addWidget(pageTitle);
 
-        auto* description = UiControls::label(category.description,
-                                       pageContent);
-        description->setWordWrap(true);
-        description->setObjectName(
-            QStringLiteral("settingsCenterCategoryDescription.%1")
-                .arg(category.id));
-        UiTypography::apply(description, UiTypography::Role::Metadata);
-        pageLayout->addWidget(description);
+        pageTitle->setToolTip(category.description);
 
         for (const SettingsCenterFieldDescriptor& descriptor :
              category.fields) {
-            auto* group = new QGroupBox(descriptor.title,
-                                        pageContent);
+            if (category.id == QStringLiteral("font")
+                && (descriptor.id == QStringLiteral("font.family") || descriptor.id == QStringLiteral("blockNotes.fontFamily"))) {
+                auto* section = UiControls::label(descriptor.id.startsWith(QStringLiteral("blockNotes."))
+                    ? tr("Block notes") : tr("Code"), pageContent);
+                UiTypography::apply(section, UiTypography::Role::Section);
+                pageLayout->addWidget(section);
+            }
+            auto* group = new QWidget(pageContent);
             group->setObjectName(
                 QStringLiteral("settingsCenterFieldGroup.%1")
                     .arg(descriptor.id));
-            auto* fieldLayout = new QVBoxLayout(group);
-            fieldLayout->setContentsMargins(12, 16, 12, 12);
-            fieldLayout->setSpacing(8);
+            auto* rowLayout = new QHBoxLayout(group);
+            rowLayout->setContentsMargins(0, 4, 0, 4);
+            rowLayout->setSpacing(16);
 
             FieldBinding binding;
             binding.descriptor = descriptor;
+            binding.rowLayout = rowLayout;
+            binding.titleLabel = UiControls::label(descriptor.title, group);
+            binding.titleLabel->setWordWrap(true);
+            binding.titleLabel->setToolTip(descriptor.description);
+            binding.titleLabel->setMinimumWidth(180);
+            binding.titleLabel->setMaximumWidth(180);
+            rowLayout->addWidget(binding.titleLabel, 0, Qt::AlignTop);
+            auto* controls = new QWidget(group);
+            auto* fieldLayout = new QVBoxLayout(controls);
+            fieldLayout->setContentsMargins(0, 0, 0, 0);
+            fieldLayout->setSpacing(4);
+            rowLayout->addWidget(controls, 1);
+            auto* metadata = new QHBoxLayout;
+            metadata->setContentsMargins(0, 0, 0, 0);
 
             binding.overrideCheck = UiControls::checkBox(group);
             binding.overrideCheck->setObjectName(
                 fieldOverrideObjectName(descriptor.id));
             binding.overrideCheck->setVisible(
                 !descriptor.alwaysActive);
-            fieldLayout->addWidget(binding.overrideCheck);
+            metadata->addWidget(binding.overrideCheck);
 
             binding.editor = createEditor(
                 descriptor, group, &binding);
@@ -608,16 +633,8 @@ void SettingsCenterPanel::buildUi()
             binding.editor->setAccessibleName(descriptor.title);
             binding.editor->setAccessibleDescription(
                 descriptor.description);
+            binding.editor->setToolTip(descriptor.description);
             fieldLayout->addWidget(binding.editor);
-
-            auto* fieldDescription =
-                UiControls::label(descriptor.description, group);
-            fieldDescription->setWordWrap(true);
-            fieldDescription->setObjectName(
-                QStringLiteral("settingsCenterFieldDescription.%1")
-                    .arg(descriptor.id));
-            UiTypography::apply(fieldDescription, UiTypography::Role::Metadata);
-            fieldLayout->addWidget(fieldDescription);
 
             binding.stateLabel = UiControls::label(group);
             binding.stateLabel->setWordWrap(true);
@@ -625,11 +642,38 @@ void SettingsCenterPanel::buildUi()
             binding.stateLabel->setObjectName(
                 fieldStateObjectName(descriptor.id));
             binding.stateLabel->setFocusPolicy(Qt::NoFocus);
-            fieldLayout->addWidget(binding.stateLabel);
+            metadata->addStretch();
+            metadata->addWidget(binding.stateLabel);
+            fieldLayout->addLayout(metadata);
 
             pageLayout->addWidget(group);
             fieldBindings.insert(descriptor.id, binding);
             connectEditor(descriptor.id);
+        }
+        if (category.id == QStringLiteral("font")) {
+            blockPreview = new QTextEdit(pageContent);
+            blockPreview->setObjectName(QStringLiteral("settingsBlockNotesPreview"));
+            blockPreview->setReadOnly(true);
+            blockPreview->setAcceptRichText(false);
+            blockPreview->setPlainText(tr("Block notes\nDescribe the design intent beside the code.\n说明示例：记录设计意图与实现约束。"));
+            blockPreview->setMinimumHeight(120);
+            blockPreview->setMaximumHeight(160);
+            pageLayout->addWidget(blockPreview);
+            auto* previewFooter = new QHBoxLayout;
+            blockFontResult = UiControls::label(pageContent);
+            blockFontResult->setWordWrap(true);
+            UiTypography::apply(blockFontResult, UiTypography::Role::Metadata);
+            previewFooter->addWidget(blockFontResult, 1);
+            blockFontReset = UiControls::pushButton(tr("Reset block appearance"), pageContent);
+            blockFontReset->setObjectName(QStringLiteral("settingsResetBlockFont"));
+            previewFooter->addWidget(blockFontReset);
+            connect(blockFontReset, &QPushButton::clicked, this, [this] {
+                if (activeScope != SettingsCenterScope::Global) return;
+                for (const auto* key : {"blockNotes.fontFamily", "blockNotes.sizePx", "blockNotes.lineHeight", "blockNotes.style", "blockNotes.background", "blockNotes.textColor", "blockNotes.borderColor"})
+                    globalDraft.remove(QString::fromLatin1(key));
+                populateFields();
+            });
+            pageLayout->addLayout(previewFooter);
         }
         pageLayout->addStretch(1);
 
@@ -665,7 +709,7 @@ void SettingsCenterPanel::buildUi()
     InsightVisualStyle::applyPrimaryButton(applyButton);
     buttonLayout->addWidget(applyButton);
     contentLayout->addLayout(buttonLayout);
-    rootLayout->addLayout(contentLayout, 1);
+    rootLayout->addWidget(contentSurface, 1);
 
     connect(scopeCombo,
             qOverload<int>(&QComboBox::currentIndexChanged),
@@ -709,6 +753,7 @@ bool SettingsCenterPanel::eventFilter(QObject* watched, QEvent* event)
         if (scroll && scroll->widget()) {
             for (auto* table : scroll->widget()->findChildren<QTableView*>())
                 table->setMaximumHeight(qMax(table->minimumSizeHint().height(), viewport->height()));
+            updateResponsiveLayout();
         }
     }
     return QWidget::eventFilter(watched, event);
@@ -728,15 +773,28 @@ void SettingsCenterPanel::updateResponsiveLayout()
         + rootBox->spacing();
     if (auto* page = qobject_cast<QScrollArea*>(categoryStack->currentWidget()))
         fieldWidth = qMax(fieldWidth, page->widget()->minimumSizeHint().width() + scrollBar);
+    fieldWidth=qMax(fieldWidth,440);
     const QMargins margins = rootBox->contentsMargins();
     const bool narrow = width() < qMax(categoryWidth, scopeCombo->minimumSizeHint().width())
         + fieldWidth + rootBox->spacing() + margins.left() + margins.right();
-    rootBox->setDirection(narrow ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
+    for (auto& binding : fieldBindings) {
+        const int available = binding.rowLayout->parentWidget()->width();
+        const bool stack = available < 180 + 16 + qMax(220, binding.editor->minimumSizeHint().width());
+        binding.rowLayout->setDirection(stack ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
+        binding.titleLabel->setMinimumWidth(stack ? 0 : 180);
+        binding.titleLabel->setMaximumWidth(stack ? QWIDGETSIZE_MAX : 180);
+    }
+    const auto direction=narrow ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight;
+    const bool directionChanged=rootBox->direction()!=direction;
+    rootBox->setDirection(direction);
     navigationBox->setDirection(narrow ? QBoxLayout::LeftToRight : QBoxLayout::TopToBottom);
     categoryList->setMaximumWidth(narrow ? QWIDGETSIZE_MAX : categoryWidth);
     categoryList->setMaximumHeight(narrow
         ? qMax(categoryList->minimumSizeHint().height(), categoryList->fontMetrics().lineSpacing() * 4 + frame * 2)
         : QWIDGETSIZE_MAX);
+    if (directionChanged) QTimer::singleShot(0,categoryList,[list=categoryList] {
+        if (auto* item=list->currentItem()) list->scrollToItem(item,QAbstractItemView::EnsureVisible);
+    });
     updatingLayout = false;
 }
 
@@ -780,6 +838,13 @@ QWidget* SettingsCenterPanel::createEditor(
         return editor;
     }
     case SettingsCenterValueKind::String:
+        if (descriptor.id == QStringLiteral("blockNotes.fontFamily")) {
+            auto* editor = UiControls::comboBox(parent);
+            editor->setEditable(true);
+            editor->addItem(tr("UI default"), QString());
+            editor->addItems(QFontDatabase::families());
+            return editor;
+        }
         if (!descriptor.choices.isEmpty()) {
             auto* editor = UiControls::comboBox(parent);
             editor->addItems(descriptor.choices);
@@ -1077,6 +1142,23 @@ void SettingsCenterPanel::updateFieldStates()
          ++it) {
         updateFieldState(&it.value());
     }
+    updateBlockPreview();
+}
+
+void SettingsCenterPanel::updateBlockPreview()
+{
+    if (!blockPreview) return;
+    const auto appearance = BlockNoteStyle::resolve(effectiveDraftValues());
+    BlockNoteStyle::format(blockPreview->document(), appearance);
+    auto colors = blockPreview->palette();
+    colors.setColor(QPalette::Text, appearance.text);
+    colors.setColor(QPalette::Base, appearance.background);
+    blockPreview->setPalette(colors);
+    blockPreview->setStyleSheet(QString("QTextEdit {background:%1;color:%2;border:1px solid %3;border-radius:6px;padding:10px;}")
+        .arg(appearance.background.name(QColor::HexArgb),appearance.text.name(),appearance.border.name(QColor::HexArgb)));
+    blockFontResult->setText(tr("Rendered: %1 · %2 px · %3×").arg(QFontInfo(appearance.font).family())
+        .arg(appearance.font.pixelSize()).arg(appearance.lineHeight));
+    blockFontReset->setEnabled(activeScope == SettingsCenterScope::Global);
 }
 
 void SettingsCenterPanel::updateFieldState(
@@ -1098,29 +1180,17 @@ void SettingsCenterPanel::updateFieldState(
         binding->stateLabel->setText(
             activeScope == SettingsCenterScope::Global
                 ? (binding->descriptor.immediateApply
-                       ? tr("Applied immediately - Effective: %1")
-                       : tr("Global setting - Effective: %1"))
-                      .arg(effective)
-                : tr("Global only - Effective: %1")
-                      .arg(effective));
+                       ? tr("Immediate") : tr("Global")) : tr("Global only"));
     } else if (activeScope == SettingsCenterScope::Global) {
-        binding->overrideCheck->setText(tr("Override schema default"));
-        binding->stateLabel->setText(
-            overridden
-                ? tr("Global override - Effective: %1")
-                      .arg(effective)
-                : tr("Schema default - Effective: %1")
-                      .arg(effective));
+        binding->overrideCheck->setText(tr("Override"));
+        binding->stateLabel->setText(overridden ? tr("Global") : tr("Default"));
     } else {
-        binding->overrideCheck->setText(
-            tr("Override global/default value"));
-        binding->stateLabel->setText(
-            overridden
-                ? tr("Workspace override - Effective: %1")
-                      .arg(effective)
-                : tr("Inherited - Effective: %1")
-                      .arg(effective));
+        binding->overrideCheck->setText(tr("Override"));
+        binding->stateLabel->setText(overridden ? tr("Workspace") : tr("Inherited"));
     }
+    binding->stateLabel->setToolTip(tr("Effective: %1").arg(effective));
+    binding->overrideCheck->setToolTip(activeScope == SettingsCenterScope::Global
+        ? tr("Override the default value") : tr("Override the global value in this workspace"));
     binding->stateLabel->setProperty(
         "settingsCenterOverride", overridden);
 }
@@ -1149,16 +1219,15 @@ void SettingsCenterPanel::updateScopePresentation()
         return;
     if (activeScope == SettingsCenterScope::Global) {
         scopeSummaryLabel->setText(
-            tr("Global settings apply to every workspace. "
-               "Unchecked fields use schema defaults."));
+            tr("Global"));
         applyButton->setText(tr("Apply Global"));
     } else {
         scopeSummaryLabel->setText(
-            tr("Workspace settings apply only to: %1. "
-               "Unchecked fields inherit the global/default value.")
-                .arg(activeWorkspaceRoot));
+            tr("Workspace · %1").arg(QFileInfo(activeWorkspaceRoot).fileName()));
         applyButton->setText(tr("Apply Workspace"));
     }
+    scopeSummaryLabel->setToolTip(activeScope == SettingsCenterScope::Global
+        ? tr("Applies to every workspace") : QDir::toNativeSeparators(activeWorkspaceRoot));
 }
 
 void SettingsCenterPanel::updateDraftFromEditor(
@@ -1187,6 +1256,13 @@ void SettingsCenterPanel::updateDraftFromEditor(
     if (!activeDraftValues().contains(fieldId))
         return;
     activeDraftValues().insert(fieldId, editorValue(it.value()));
+    if (it->stringMapModel) {
+        QList<QStringList> rows;
+        for (int row = 0; row < it->stringMapModel->rowCount(); ++row)
+            rows.append({it->stringMapModel->index(row, 0).data(Qt::EditRole).toString(),
+                         it->stringMapModel->index(row, 1).data(Qt::EditRole).toString()});
+        activeRows().insert(fieldId, rows);
+    }
     updateFieldStates();
     updateButtons();
 }
@@ -1316,6 +1392,7 @@ void SettingsCenterPanel::setOverride(
             inheritedValue(it->descriptor, activeScope));
     } else {
         values.remove(fieldId);
+        activeRows().remove(fieldId);
     }
     populateFields();
 }
@@ -1338,6 +1415,8 @@ QVariant SettingsCenterPanel::editorValue(
     case SettingsCenterValueKind::String:
         if (auto* combo =
                 qobject_cast<QComboBox*>(binding.editor)) {
+            if (binding.descriptor.id == QStringLiteral("blockNotes.fontFamily")
+                && combo->currentIndex() == 0 && combo->currentText() == combo->itemText(0)) return QString();
             return combo->currentText();
         }
         return qobject_cast<QLineEdit*>(
@@ -1412,7 +1491,9 @@ void SettingsCenterPanel::setEditorValue(
         if (auto* combo =
                 qobject_cast<QComboBox*>(binding->editor)) {
             const QSignalBlocker blocker(combo);
-            combo->setCurrentText(value.toString());
+            if (binding->descriptor.id == QStringLiteral("blockNotes.fontFamily") && value.toString().isEmpty())
+                combo->setCurrentIndex(0);
+            else combo->setCurrentText(value.toString());
         } else {
             auto* editor =
                 qobject_cast<QLineEdit*>(binding->editor);
@@ -1434,6 +1515,11 @@ void SettingsCenterPanel::setEditorValue(
         binding->stringMapModel->removeRows(
             0, binding->stringMapModel->rowCount());
         const QVariantMap map = value.toMap();
+        if (activeDraftValues().contains(binding->descriptor.id) && activeRows().contains(binding->descriptor.id)) {
+            for (const auto& values : activeRows().value(binding->descriptor.id))
+                binding->stringMapModel->appendRow({new QStandardItem(values.value(0)), new QStandardItem(values.value(1))});
+            break;
+        }
         for (auto it = map.cbegin(); it != map.cend(); ++it) {
             QList<QStandardItem*> row;
             row.append(new QStandardItem(it.key()));
@@ -1491,34 +1577,29 @@ QList<SettingsCenterValidationIssue>
 SettingsCenterPanel::localStringMapIssues(
     SettingsCenterScope requestedScope) const
 {
-    QList<SettingsCenterValidationIssue> result;
-    for (auto it = fieldBindings.cbegin();
-         it != fieldBindings.cend();
-         ++it) {
-        const FieldBinding& binding = it.value();
-        if (binding.descriptor.valueKind
-                != SettingsCenterValueKind::StringMap
-            || !activeDraftValues().contains(
-                binding.descriptor.id)
-            || !binding.stringMapModel) {
-            continue;
-        }
+    return rowIssues(requestedScope == SettingsCenterScope::Global ? globalRows : workspaceRows,
+        draftValues(requestedScope), requestedScope);
+}
 
+SettingsCenterPanel::StringMapRows& SettingsCenterPanel::activeRows()
+{
+    return activeScope == SettingsCenterScope::Global ? globalRows : workspaceRows;
+}
+
+QList<SettingsCenterValidationIssue> SettingsCenterPanel::rowIssues(
+    const StringMapRows& rows, const QVariantMap& values, SettingsCenterScope requestedScope)
+{
+    QList<SettingsCenterValidationIssue> result;
+    for (auto it = rows.cbegin(); it != rows.cend(); ++it) {
+        if (!values.contains(it.key())) continue;
         QSet<QString> actionIds;
-        for (int row = 0;
-             row < binding.stringMapModel->rowCount();
-             ++row) {
-            const QString actionId =
-                binding.stringMapModel
-                    ->index(row, 0)
-                    .data(Qt::EditRole)
-                    .toString()
-                    .trimmed();
+        for (const auto& row : it.value()) {
+            const QString actionId = row.value(0).trimmed();
             if (actionId.isEmpty()) {
                 result.append({
                     requestedScope,
                     SettingsCenterIssueKind::InvalidValue,
-                    binding.descriptor.id,
+                    it.key(),
                     tr("Shortcut action identifiers cannot be empty."),
                 });
                 continue;
@@ -1528,7 +1609,7 @@ SettingsCenterPanel::localStringMapIssues(
                 result.append({
                     requestedScope,
                     SettingsCenterIssueKind::InvalidValue,
-                    binding.descriptor.id,
+                    it.key(),
                     tr("Shortcut action identifiers must be unique."),
                 });
             }

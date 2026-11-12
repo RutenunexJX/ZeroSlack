@@ -1,317 +1,189 @@
 #include "navigationwidget.h"
+#include "designhierarchymodel.h"
 #include "editorfileidentity.h"
-#include "roundedicons.h"
-#include "uicontrols.h"
-#include "navigationrowstyle.h"
-#include <QDir>
-#include <QHeaderView>
-#include <QPushButton>
+#include <QtConcurrent/QtConcurrent>
+#include <QJsonArray>
 #include <QScrollBar>
 #include <QSignalBlocker>
-#include <QTreeWidgetItemIterator>
-#include <algorithm>
+#include <QItemSelectionModel>
 
-namespace {
-constexpr int CandidateFileRole = Qt::UserRole + 60;
-constexpr int CandidateModuleRole = Qt::UserRole + 61;
-QString candidateKey(const QTreeWidgetItem* item)
+void NavigationWidget::setDesignTreeModel(DesignHierarchyModel* model)
 {
-    return item ? EditorFileIdentity::lookupKey(item->data(0, CandidateFileRole).toString())
-        + QChar(0x1f) + item->data(0, CandidateModuleRole).toString() : QString();
+    if (designTreeWidget->model() == model) return;
+    auto* previous = designTreeWidget->selectionModel();
+    designTreeWidget->setModel(model);
+    if (previous) previous->deleteLater();
+    connect(designTreeWidget->selectionModel(), &QItemSelectionModel::currentChanged, this, [this] {
+        if (designStateTimer && !restoringDesignState && designTreeWidget->model() == designModel)
+            designStateTimer->start();
+    });
 }
 
-}
-
-void NavigationWidget::setSimulationTargetProvider(std::function<QPair<QString,QString>()> provider)
-{
-    simulationTargetProvider=std::move(provider);
-    refreshSimulationTop();
-}
+void NavigationWidget::setSimulationTargetProvider(std::function<QPair<QString, QString>()> provider)
+{ simulationTargetProvider = std::move(provider); refreshSimulationTop(); }
 void NavigationWidget::refreshSimulationTop()
 {
-    if (!designTreeWidget) return;
-    const auto target=simulationTargetProvider ? simulationTargetProvider() : QPair<QString,QString>();
-    const QSignalBlocker blocker(designTreeWidget);
-    for (QTreeWidgetItemIterator it(designTreeWidget);*it;++it) {
-        auto* item=*it;
-        const auto node=designItemPayloads.value(item->data(0,Qt::UserRole+1).toInt());
-        const bool selected=!target.second.isEmpty() && target.second==node.moduleType
-            && EditorFileIdentity::same(target.first,node.definitionFile);
-        item->setData(0,NavigationRowStyle::SimulationRole,selected);
-        auto description=item->toolTip(0);
-        description.remove(QStringLiteral("\nSimulation top"));
-        if (selected) description+=QStringLiteral("\nSimulation top");
-        item->setToolTip(0,description);
-        item->setData(0,Qt::AccessibleDescriptionRole,description);
+    const auto target = simulationTargetProvider ? simulationTargetProvider() : QPair<QString, QString>();
+    designModel->setSimulationTarget(target); designSearchModel->setSimulationTarget(target);
+}
+bool NavigationWidget::selectDesignInstance(const QString& path, bool reveal)
+{
+    const auto report = designModel->report();
+    const auto candidates = report->nodesByPath.value(path);
+    if (candidates.isEmpty()) return false;
+    // A bare path is only unambiguous within its selected root. Do not guess
+    // between same-named roots from different source definitions.
+    int position = candidates.size() == 1 ? candidates.first() : -1;
+    const auto current = designModel->node(designTreeWidget->currentIndex());
+    for (int candidate : candidates)
+        if (!current.rootId.isEmpty() && report->nodes[candidate].rootId == current.rootId) position = candidate;
+    if (position < 0) return false;
+    const auto index = designModel->indexForId(report->nodes[position].id, reveal);
+    if (!index.isValid()) return false;
+    if (reveal && !designSearchFilter.isEmpty()) designSearchLineEdit->clear();
+    if (designTreeWidget->model() != designModel) return false;
+    if (reveal) {
+        for (auto parent = index.parent(); parent.isValid(); parent = parent.parent()) designTreeWidget->expand(parent);
+        designTreeWidget->scrollTo(index); setActiveTab(DesignTab);
     }
+    designTreeWidget->setCurrentIndex(index);
+    return true;
 }
-
-bool NavigationWidget::selectDesignInstance(const QString& instancePath,bool reveal)
+bool NavigationWidget::selectDesignModule(const QString& module, const QString& file)
 {
-    for(QTreeWidgetItemIterator it(designTreeWidget);*it;++it){
-        const auto node=designItemPayloads.value((*it)->data(0,Qt::UserRole+1).toInt());
-        if(!node.inSelectedTop || node.instancePath!=instancePath)continue;
-        QSignalBlocker blocker(designTreeWidget);designTreeWidget->setCurrentItem(*it);
-        if(reveal){for(auto* parent=(*it)->parent();parent;parent=parent->parent())parent->setExpanded(true);designTreeWidget->scrollToItem(*it);setActiveTab(DesignTab);}
-        return true;
+    const auto report = designModel->report();
+    const DesignHierarchyNode* found = nullptr;
+    for (const auto& node : report->nodes) {
+        if (node.moduleType != module || (!file.isEmpty() && !EditorFileIdentity::same(file, node.definitionFile))) continue;
+        if (!found || node.isTop) found = &node;
+        if (node.isTop) break;
     }
-    return false;
+    if (!found) return false;
+    if (!designSearchFilter.isEmpty()) designSearchLineEdit->clear();
+    const auto index = designModel->indexForId(found->id);
+    for (auto parent = index.parent(); parent.isValid(); parent = parent.parent()) designTreeWidget->expand(parent);
+    designTreeWidget->setCurrentIndex(index); designTreeWidget->scrollTo(index); setActiveTab(DesignTab);
+    return index.isValid();
 }
-bool NavigationWidget::selectDesignModule(const QString& module,const QString& definitionFile)
-{
-    QTreeWidgetItem* match=nullptr;
-    for(QTreeWidgetItemIterator it(designTreeWidget);*it;++it){
-        const auto node=designItemPayloads.value((*it)->data(0,Qt::UserRole+1).toInt());
-        if(node.moduleType!=module || (!definitionFile.isEmpty() && !EditorFileIdentity::same(node.definitionFile,definitionFile)))continue;
-        if(node.inSelectedTop){match=*it;break;}if(!match)match=*it;
-    }
-    if(!match)return false;
-    for(auto* parent=match->parent();parent;parent=parent->parent())parent->setExpanded(true);
-    designTreeWidget->setCurrentItem(match);designTreeWidget->scrollToItem(match);setActiveTab(DesignTab);return true;
-}
-
-void NavigationWidget::setupDesignSelector()
-{
-    designCandidateTree = UiControls::treeWidget(designTab);
-    designCandidateTree->setObjectName(QStringLiteral("designCandidateTree"));
-    designCandidateTree->setHeaderHidden(true);
-    designCandidateTree->setColumnCount(1);
-    designCandidateTree->setExpandsOnDoubleClick(false);
-    designCandidateTree->setIconSize({18,18});
-    designCandidateTree->header()->setSectionResizeMode(QHeaderView::Stretch);
-    designCandidateTree->setContextMenuPolicy(Qt::CustomContextMenu);
-    connect(designCandidateTree, &QTreeWidget::customContextMenuRequested, this, [this](const QPoint& p) {
-        emit designNodeContextMenuRequested({}, designCandidateTree->viewport()->mapToGlobal(p));
-    });
-    connect(designCandidateTree, &QTreeWidget::itemClicked, this, [this](QTreeWidgetItem* item) { activateDesignCandidate(item); });
-    connect(designCandidateTree, &QTreeWidget::itemActivated, this, [this](QTreeWidgetItem* item) { activateDesignCandidate(item); });
-    designTabLayout->addWidget(designCandidateTree, 1);
-    designStateLabel = new QLabel(designTab);
-    designStateLabel->setObjectName(QStringLiteral("designEmptyState"));
-    designStateLabel->setWordWrap(true);
-    designStateLabel->setAlignment(Qt::AlignLeft | Qt::AlignTop);
-    designTabLayout->addWidget(designStateLabel, 1);
-    designClearSearchButton = UiControls::pushButton(tr("Clear search"), designTab);
-    designClearSearchButton->setObjectName(QStringLiteral("clearDesignSearch"));
-    connect(designClearSearchButton, &QAbstractButton::clicked, this, [this] { designSearchLineEdit->clear(); });
-    designTabLayout->addWidget(designClearSearchButton);
-    designSelectionError = new QLabel(designTab);
-    designSelectionError->setObjectName(QStringLiteral("designSelectionError"));
-    designSelectionError->setWordWrap(true);
-    designTabLayout->addWidget(designSelectionError);
-    updateDesignPresentation();
-}
-
-void NavigationWidget::setDesignCandidateContext(const QStringList& files, bool hasProjects, bool scanning)
-{
-    QStringList previous;
-    for (const auto& candidate : std::as_const(designCandidates)) previous << candidate.file;
-    if (designHasProjects && !hasProjects) { designAdding = true; designSelectionExplicit = false; }
-    if (hasProjects && !designSelectionExplicit) designAdding = false;
-    designHasProjects = hasProjects;
-    designScanning = scanning;
-    if (previous != files) {
-        designCandidates.clear(); designLikelyTops.clear();
-        for (const auto& file : files) designCandidates.append({file, {}, false, false});
-        populateDesignCandidates();
-    }
-    updateDesignPresentation();
-}
-
-void NavigationWidget::updateDesignCandidates(const QString& workspace,
-                                              const QList<DesignFileCandidate>& files,
-                                              const QStringList& likelyTops)
-{
-    if (!EditorFileIdentity::same(workspace, workspaceFileTreeRootPath)) return;
-    designCandidates = files;
-    designLikelyTops = likelyTops;
-    populateDesignCandidates();
-}
-
+void NavigationWidget::setDesignCandidateContext(const QStringList&, bool, bool scanning)
+{ designScanning = scanning; updateDesignPresentation(); }
+void NavigationWidget::updateDesignCandidates(const QString&, const QList<DesignFileCandidate>&, const QStringList&)
+{ updateDesignPresentation(); }
 void NavigationWidget::beginDesignProjectSelection()
-{
-    if (!designAdding) {
-        savedDesignScroll = designTreeWidget->verticalScrollBar()->value();
-        const auto* item = designTreeWidget->currentItem();
-        savedDesignSelection = item ? item->data(0, Qt::UserRole).toString() : QString();
-    }
-    designAdding = true;
-    designSelectionExplicit = true;
-    designSelectionError->clear();
-    setActiveTab(DesignTab);
-    populateDesignCandidates();
-    updateDesignPresentation();
-}
-
-void NavigationWidget::cancelDesignProjectSelection()
-{
-    designAdding = false;
-    designSelectionExplicit = false;
-    designSelectionError->clear();
-    if (designTreeRefreshPending) populateDesignTree();
-    updateDesignPresentation();
-    for (QTreeWidgetItemIterator it(designTreeWidget); *it; ++it)
-        if ((*it)->data(0, Qt::UserRole).toString() == savedDesignSelection) {
-            designTreeWidget->setCurrentItem(*it); break;
-        }
-    designTreeWidget->verticalScrollBar()->setValue(savedDesignScroll);
-}
-
+{ setActiveTab(DesignTab); designSearchLineEdit->setFocus(); }
 void NavigationWidget::finishDesignProjectSelection(const QString& issue, const QString& file, const QString& module)
 {
-    if (!issue.isEmpty()) {
-        designSelectionError->setText(issue);
-        designSelectionError->setAccessibleName(issue);
-        updateDesignPresentation();
-        return;
-    }
-    pendingDesignFile = file; pendingDesignModule = module;
-    designAdding = false;
-    designSelectionExplicit = false;
-    designSelectionError->clear();
-    if (!designSearchFilter.isEmpty()) {
-        designSearchFilter.clear();
-        emit searchFilterChanged(DesignTab, {});
-        populateDesignTree();
-    }
-    updateDesignPresentation();
-    revealPendingDesignProject();
+    if (!issue.isEmpty()) { designStateLabel->setText(issue); designStateLabel->show(); return; }
+    pendingDesignFile = file; pendingDesignModule = module; revealPendingDesignProject();
 }
-
 void NavigationWidget::revealPendingDesignProject()
 {
     if (pendingDesignModule.isEmpty()) return;
-    for (QTreeWidgetItemIterator it(designTreeWidget); *it; ++it) {
-        const auto node = designItemPayloads.value((*it)->data(0, Qt::UserRole + 1).toInt());
-        if (node.isTop && node.moduleType == pendingDesignModule && EditorFileIdentity::same(node.definitionFile, pendingDesignFile)) {
-            designTreeWidget->setCurrentItem(*it);
-            designTreeWidget->scrollToItem(*it, QAbstractItemView::EnsureVisible);
-            pendingDesignFile.clear(); pendingDesignModule.clear();
-            break;
-        }
+    if (selectDesignModule(pendingDesignModule, pendingDesignFile)) {
+        pendingDesignFile.clear(); pendingDesignModule.clear();
     }
 }
-
-void NavigationWidget::activateDesignCandidate(QTreeWidgetItem* item)
+void NavigationWidget::startDesignSearch()
 {
-    if (!designAdding || !item || !(item->flags() & Qt::ItemIsEnabled)) return;
-    const auto file = item->data(0, CandidateFileRole).toString();
-    const auto module = item->data(0, CandidateModuleRole).toString();
-    if (!file.isEmpty() && !module.isEmpty()) emit designModuleChosen(file, module);
-    else if (!file.isEmpty() && item->childCount()) item->setExpanded(true);
-}
-
-void NavigationWidget::populateDesignCandidates()
-{
-    if (!designCandidateTree) return;
-    const auto selected = candidateKey(designCandidateTree->currentItem());
-    const int scroll = designCandidateTree->verticalScrollBar()->value();
-    const QSignalBlocker blocker(designCandidateTree);
-    designCandidateTree->clear();
-    const QDir workspace(workspaceFileTreeRootPath);
-    QList<DesignFileCandidate> files = designCandidates;
-    std::sort(files.begin(), files.end(), [&](const auto& a, const auto& b) {
-        return workspace.relativeFilePath(a.file) < workspace.relativeFilePath(b.file);
+    if (designSearchFilter.isEmpty()) return;
+    if (designSearchWatcher) { designSearchCancellation->store(true); return; }
+    const auto report = designModel->report();
+    const auto query = designSearchFilter;
+    const auto generation = designSearchGeneration;
+    const auto cancellation = std::make_shared<std::atomic_bool>(false);
+    designSearchCancellation = cancellation;
+    auto* watcher = new QFutureWatcher<QList<QString>>(this);
+    designSearchWatcher = watcher;
+    designTreeWidget->setProperty("designSearchPending", true);
+    connect(watcher, &QFutureWatcher<QList<QString>>::finished, this, [this, watcher, report, query, generation, cancellation] {
+        const auto ids = watcher->result(); designSearchWatcher = nullptr; watcher->deleteLater();
+        if (!cancellation->load() && generation == designSearchGeneration && query == designSearchFilter
+            && report == designModel->report()) {
+            designSearchModel->setSearchResults(report, ids);
+            setDesignTreeModel(designSearchModel);
+            refreshSimulationTop();
+            designTreeWidget->setProperty("designSearchPending", false);
+            updateDesignPresentation(); designTreeWidget->viewport()->update();
+        } else if (!designSearchFilter.isEmpty()) designSearchTimer->start();
+        else designTreeWidget->setProperty("designSearchPending", false);
     });
-    auto group = [&](const QString& text, const QString& identity) {
-        auto* item = new QTreeWidgetItem(designCandidateTree, {text});
-        item->setData(0, Qt::UserRole, identity);
-        item->setFlags(Qt::ItemIsEnabled);
-        item->setExpanded(true);
-        return item;
-    };
-    auto addModule = [&](QTreeWidgetItem* parent, const DesignFileCandidate& file,
-                         const DesignModuleCandidate& module, const QString& label) {
-        auto* row = new QTreeWidgetItem(parent, {label});
-        row->setData(0, CandidateFileRole, file.file);
-        row->setData(0, CandidateModuleRole, module.name);
-        row->setIcon(0, RoundedIcons::icon(RoundedIcons::Module));
-        QString reason;
-        if (module.ambiguous) reason = tr("Ambiguous definitions in this file");
-        else if (module.added) reason = tr("Added");
-        if (!reason.isEmpty()) {
-            row->setText(0, label + QStringLiteral(" — ") + reason);
-            row->setFlags(row->flags() & ~Qt::ItemIsEnabled);
+    watcher->setFuture(QtConcurrent::run([report, query, cancellation] {
+        QList<QString> matches;
+        for (const auto& node : report->nodes) {
+            if (cancellation->load()) return QList<QString>();
+            if (node.instancePath.contains(query, Qt::CaseInsensitive)
+                || node.moduleType.contains(query, Qt::CaseInsensitive)
+                || node.definitionFile.contains(query, Qt::CaseInsensitive)) matches.append(node.id);
         }
-        const auto description = module.name + '\n' + file.file + (reason.isEmpty() ? QString() : '\n' + reason);
-        row->setToolTip(0, description);
-        row->setData(0, Qt::AccessibleTextRole, row->text(0));
-        row->setData(0, Qt::AccessibleDescriptionRole, description);
-        return row;
-    };
-    auto matches = [&](const DesignFileCandidate& file, const QString& module) {
-        return designAddSearchFilter.isEmpty() || workspace.relativeFilePath(file.file).contains(designAddSearchFilter, Qt::CaseInsensitive)
-            || module.contains(designAddSearchFilter, Qt::CaseInsensitive);
-    };
-    QTreeWidgetItem* likely = nullptr;
-    int recommendations = 0;
-    for (const auto& name : std::as_const(designLikelyTops)) {
-        for (const auto& file : files) for (const auto& module : file.modules) {
-            if (recommendations == 3) break;
-            if (module.name != name || module.ambiguous || !matches(file, module.name)) continue;
-            if (!likely) likely = group(tr("Likely tops"), QStringLiteral("likelyTops"));
-            addModule(likely, file, module, module.name + QStringLiteral(" — ") + workspace.relativeFilePath(file.file));
-            ++recommendations;
-        }
-        if (recommendations == 3) break;
-    }
-    auto* all = group(tr("All files"), QStringLiteral("allFiles"));
-    for (const auto& file : files) {
-        QList<DesignModuleCandidate> visible;
-        for (const auto& module : file.modules) if (matches(file, module.name)) visible << module;
-        if (!matches(file, {}) && visible.isEmpty()) continue;
-        const auto path = workspace.relativeFilePath(file.file);
-        if (file.modules.size() == 1) {
-            const auto& module = file.modules.first();
-            addModule(all, file, module, path + QStringLiteral(" [%1]").arg(module.name));
-            continue;
-        }
-        auto* row = new QTreeWidgetItem(all, {path});
-        row->setIcon(0, RoundedIcons::icon(RoundedIcons::File));
-        row->setData(0, CandidateFileRole, file.file);
-        QString reason;
-        if (file.modules.isEmpty()) {
-            reason = !file.analyzed ? tr("Analysis not available") : file.hasDiagnostics
-                ? tr("No module definitions; diagnostics available") : tr("No module definitions");
-            row->setText(0, path + QStringLiteral(" — ") + reason);
-        }
-        row->setToolTip(0, file.file + (reason.isEmpty() ? QString() : '\n' + reason));
-        row->setData(0, Qt::AccessibleDescriptionRole, row->toolTip(0));
-        for (const auto& module : visible) addModule(row, file, module, module.name);
-        row->setExpanded(!designAddSearchFilter.isEmpty());
-    }
-    if (all->childCount() == 0) delete all;
-    for (QTreeWidgetItemIterator it(designCandidateTree); *it; ++it)
-        if (!selected.isEmpty() && candidateKey(*it) == selected) { designCandidateTree->setCurrentItem(*it); break; }
-    designCandidateTree->verticalScrollBar()->setValue(scroll);
-    updateDesignPresentation();
+        return matches;
+    }));
 }
-
+QJsonObject NavigationWidget::designViewState() const
+{
+    if (designTreeWidget->model() != designModel) return savedDesignState;
+    QJsonArray expanded;
+    auto expandedIds = designExpandedIds.values();
+    expandedIds.sort();
+    for (const auto& id : expandedIds) expanded.append(id);
+    QJsonArray ancestors;
+    for (auto parent=designTreeWidget->currentIndex().parent();parent.isValid();parent=parent.parent())
+        ancestors.append(parent.data(Qt::UserRole).toString());
+    const auto top = designTreeWidget->indexAt({4, 4});
+    return {{"version", 1}, {"expanded", expanded},
+        {"selected", designTreeWidget->currentIndex().data(Qt::UserRole).toString()},
+        {"selectionAncestors", ancestors},
+        {"scrollAnchor", top.data(Qt::UserRole).toString()},
+        {"scrollOffset", top.isValid() ? designTreeWidget->visualRect(top).top() : 0},
+        {"scroll", designTreeWidget->verticalScrollBar()->value()}};
+}
+void NavigationWidget::saveDesignViewState()
+{
+    if (restoringDesignState || workspaceFileTreeRootPath.isEmpty() || designModel->applying()
+        || designModel->report()->nodes.isEmpty() || designTreeWidget->model() != designModel) return;
+    designStateTimer->stop(); savedDesignState = designViewState();
+    workspaceDesignStates.insert(workspaceFileTreeRootPath, savedDesignState);
+    emit designViewStateChanged(workspaceFileTreeRootPath, savedDesignState);
+}
+void NavigationWidget::restoreDesignViewState(const QJsonObject& state)
+{
+    if (state.value("version").toInt() != 1) return;
+    savedDesignState = state;
+    if (designModel->applying() || designTreeWidget->model() != designModel) return;
+    restoringDesignState = true;
+    designExpandedIds.clear();
+    for (const auto& item : state.value("expanded").toArray()) {
+        const auto id = item.toString(); const auto index = designModel->indexForId(id);
+        if (!index.isValid()) continue;
+        designExpandedIds.insert(id); designTreeWidget->expand(index);
+    }
+    auto selected = designModel->indexForId(state.value("selected").toString());
+    if (!selected.isValid())
+        for (const auto& ancestor : state.value("selectionAncestors").toArray()) {
+            selected=designModel->indexForId(ancestor.toString());
+            if (selected.isValid()) break;
+        }
+    if (selected.isValid()) designTreeWidget->setCurrentIndex(selected);
+    const auto anchor = designModel->indexForId(state.value("scrollAnchor").toString());
+    if (anchor.isValid()) {
+        designTreeWidget->scrollTo(anchor, QAbstractItemView::PositionAtTop);
+        designTreeWidget->verticalScrollBar()->setValue(designTreeWidget->verticalScrollBar()->value()
+            - state.value("scrollOffset").toInt());
+    } else designTreeWidget->verticalScrollBar()->setValue(state.value("scroll").toInt());
+    restoringDesignState = false;
+}
 void NavigationWidget::updateDesignPresentation()
 {
     if (!designStateLabel) return;
-    const auto query = designAdding ? designAddSearchFilter : designSearchFilter;
-    bool empty = designAdding ? designCandidateTree->topLevelItemCount() == 0 : designTreeWidget->topLevelItemCount() == 0;
-    QString stateText;
+    const bool empty = designTreeWidget->model()->rowCount() == 0;
+    QString message;
     if (empty) {
-        if (!query.isEmpty()) stateText = tr("No matches");
-        else if (workspaceFileTreeRootPath.isEmpty() && currentDesignHierarchy.nodes.isEmpty()) stateText = tr("Open a workspace to choose a module.");
-        else if (designScanning) stateText = tr("Scanning workspace…");
-        else if (designAnalysisPending && designHasProjects) stateText = tr("Updating design…");
-        else if (designAdding) stateText = tr("No files match the workspace configuration.");
-        else stateText = tr("No design projects. Use + to choose a module.");
+        if (!designSearchFilter.isEmpty()) message = tr("No matches");
+        else if (designScanning) message = tr("Scanning workspace…");
+        else if (designAnalysisPending) message = tr("Updating design…");
+        else if (workspaceFileTreeRootPath.isEmpty()) message = tr("Open a workspace to browse Design.");
+        else message = tr("No module definitions available.");
     }
-    designTreeWidget->setVisible(!designAdding && !empty);
-    designCandidateTree->setVisible(designAdding && !empty);
-    designStateLabel->setText(stateText);
-    designStateLabel->setVisible(empty);
-    designClearSearchButton->setVisible(empty && !query.isEmpty());
-    designBackButton->setVisible(designAdding);
-    designSelectionError->setVisible(designAdding && !designSelectionError->text().isEmpty());
-    {
-        const QSignalBlocker blocker(designSearchLineEdit);
-        designSearchLineEdit->setText(query);
-        designSearchLineEdit->setPlaceholderText(designAdding ? tr("Search files or modules...") : tr("Search instances or modules..."));
-        designSearchLineEdit->setVisible(!query.isEmpty() || (designAdding ? !designCandidates.isEmpty() : designHasProjects || !currentDesignHierarchy.nodes.isEmpty()));
-    }
+    designTreeWidget->setVisible(!empty);
+    designStateLabel->setText(message); designStateLabel->setVisible(empty);
+    designTreeWidget->setToolTip(designAnalysisPending ? tr("Updating design; the previous hierarchy remains available.") : QString());
 }

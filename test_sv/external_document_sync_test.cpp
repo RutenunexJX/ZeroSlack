@@ -1,15 +1,19 @@
 #include "externaldocumentsynccontroller.h"
+#include "documentreviewcoordinator.h"
 #include "mycodeeditor.h"
 #include "shareddocument.h"
 #include "tabmanager.h"
 
 #include <QApplication>
+#include <QAction>
 #include <QCoreApplication>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
 #include <QProcess>
+#include <QPlainTextEdit>
+#include <QPushButton>
 #include <QSaveFile>
 #include <QScrollBar>
 #include <QSignalSpy>
@@ -189,6 +193,8 @@ int main(int argc, char** argv)
     layout->addWidget(tabs);
     TabManager manager(tabs);
     manager.enableSplitLayout(&host);
+    DocumentReviewCoordinator reviewCoordinator(&manager, &host);
+    reviewCoordinator.setupExternalConflictReviewUi(layout, &host);
     host.resize(900, 420);
     host.show();
 
@@ -203,6 +209,11 @@ int main(int argc, char** argv)
         manager.sharedDocumentForEditor(left);
     ExternalDocumentSyncController* sync =
         manager.externalDocumentSyncController();
+    auto* leftReviewAction = left->findChild<QAction*>(QStringLiteral("reviewExternalChanges"));
+    auto* rightReviewAction = right->findChild<QAction*>(QStringLiteral("reviewExternalChanges"));
+    expect("clean views hide their external review entry",
+           leftReviewAction && rightReviewAction
+               && !leftReviewAction->isVisible() && !rightReviewAction->isVisible());
     QCoreApplication::processEvents();
     expect("file and parent directory are watched",
            document
@@ -339,6 +350,26 @@ int main(int argc, char** argv)
         QApplication::focusWidget();
     const int splitCountBeforeReview =
         manager.splitCount();
+    expect("conflicted shared views expose their review entry",
+           leftReviewAction && rightReviewAction
+               && leftReviewAction->isVisible() && rightReviewAction->isVisible());
+    if (leftReviewAction) leftReviewAction->trigger();
+    QCoreApplication::processEvents();
+    auto* reviewBar = host.findChild<QWidget*>(QStringLiteral("externalConflictReview"));
+    auto* localComparison = host.findChild<QPlainTextEdit*>(QStringLiteral("externalConflictLocalText"));
+    auto* diskComparison = host.findChild<QPlainTextEdit*>(QStringLiteral("externalConflictDiskText"));
+    auto* closeReview = host.findChild<QPushButton*>(QStringLiteral("externalConflictCloseButton"));
+    expect("view action opens the real comparison without resolving the conflict",
+           reviewBar && reviewBar->isVisible() && localComparison && diskComparison
+               && localComparison->toPlainText() == localText
+               && diskComparison->toPlainText() == secondExternalText
+               && document->externalState() == SharedDocumentExternalState::Conflict);
+    if (closeReview) closeReview->click();
+    QCoreApplication::processEvents();
+    expect("comparison close preserves the conflict and original focus",
+           reviewBar && !reviewBar->isVisible()
+               && QApplication::focusWidget() == focusBeforeReview
+               && document->externalState() == SharedDocumentExternalState::Conflict);
     const ExternalDocumentConflictReview firstReview =
         manager.externalConflictReview(fileName);
     expect("conflict review captures exact local and external generations",
@@ -469,6 +500,9 @@ int main(int argc, char** argv)
                && sync->isFileWatchedForTesting(fileName)
                && sync->processFileChange(fileName).outcome
                       == ExternalDocumentSyncOutcome::Unchanged);
+    expect("resolved shared views hide the review entry again",
+           leftReviewAction && rightReviewAction
+               && !leftReviewAction->isVisible() && !rightReviewAction->isVisible());
 
     QTextCursor reloadLocalEdit(left->document());
     reloadLocalEdit.setPosition(

@@ -13,6 +13,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
+#include <QToolButton>
 #include <QShowEvent>
 #include <QSignalBlocker>
 #include <QStackedWidget>
@@ -199,7 +200,7 @@ void LiveInsightsContextView::setSelectedKind(LiveInsightKind kind)
     const LiveInsightKind previous = selected;
     selected = kind;
     setProperty("contextFullViewActionVisible", true);
-    fullViewButton->setVisible(!fixedKindValue);
+    fullViewButton->show();
     if (cards.at(index).button)
         cards.at(index).button->setChecked(true);
     if (contentStack)
@@ -320,13 +321,18 @@ LiveInsightToolContext LiveInsightsContextView::effectiveContext() const
             context.moduleName = targetContext.moduleName;
             context.signalName = targetContext.signalName;
             context.signalAccessPath = targetContext.signalAccessPath;
+            context.instancePath = targetContext.instancePath;
+            context.rootIdentity = targetContext.rootIdentity;
+            context.configurationIdentity = targetContext.configurationIdentity;
         } else {
             const auto semanticRevision = context.semanticRevision;
             const auto projectId=context.projectId;
             const auto configureTrace=context.configureTrace;
+            const auto navigateModule=context.navigateModule;
             context = targetContext;
             context.projectId=projectId;
             context.configureTrace=configureTrace;
+            context.navigateModule=navigateModule;
             context.semanticRevision = qMax(context.semanticRevision, semanticRevision);
         }
     }
@@ -335,6 +341,9 @@ LiveInsightToolContext LiveInsightsContextView::effectiveContext() const
             context.moduleName = targetOverride.moduleName;
         context.signalName = targetOverride.signalName;
         context.signalAccessPath = targetOverride.signalAccessPath;
+        context.instancePath = targetOverride.instancePath;
+        context.rootIdentity = targetOverride.rootIdentity;
+        context.configurationIdentity = targetOverride.configurationIdentity;
         // Keep the selected scope with the explicit target.
         if (targetOverride.scopeStartPosition >= 0
             && targetOverride.scopeEndPosition
@@ -371,6 +380,9 @@ void LiveInsightsContextView::rememberTarget(
     candidate.moduleName = context.moduleName.trimmed();
     candidate.signalName = context.signalName.trimmed();
     candidate.signalAccessPath = context.signalAccessPath.trimmed();
+    candidate.instancePath = context.instancePath;
+    candidate.rootIdentity = context.rootIdentity;
+    candidate.configurationIdentity = context.configurationIdentity;
     switch (selected) {
     case LiveInsightKind::Kernel:
     case LiveInsightKind::Hotspot:
@@ -402,14 +414,18 @@ LiveInsightsContextView::candidateTargets() const
             candidate.fileName = editorContext.fileName;
             candidate.moduleName = editorContext.moduleName.trimmed();
             candidate.signalName = editorContext.signalName.trimmed();
-            candidate.signalAccessPath =
-                editorContext.signalAccessPath.trimmed();
+            candidate.signalAccessPath = editorContext.signalAccessPath.trimmed();
+            candidate.instancePath = editorContext.instancePath;
+            candidate.rootIdentity = editorContext.rootIdentity;
+            candidate.configurationIdentity = editorContext.configurationIdentity;
             candidate.label = candidate.signalName.isEmpty()
                 ? candidate.moduleName
                 : candidate.signalName;
             if (!candidate.label.isEmpty()
                 && !(candidate.moduleName == current.moduleName.trimmed()
-                     && candidate.signalName == current.signalName.trimmed())) {
+                     && candidate.signalName == current.signalName.trimmed()
+                     && candidate.fileName == current.fileName && candidate.instancePath == current.instancePath
+                     && candidate.rootIdentity == current.rootIdentity && candidate.configurationIdentity == current.configurationIdentity)) {
                 candidates.append(candidate);
             }
         }
@@ -418,7 +434,9 @@ LiveInsightsContextView::candidateTargets() const
         if (candidates.contains(candidate))
             continue;
         if (candidate.moduleName == current.moduleName.trimmed()
-            && candidate.signalName == current.signalName.trimmed()) {
+            && candidate.signalName == current.signalName.trimmed()
+            && candidate.fileName == current.fileName && candidate.instancePath == current.instancePath
+            && candidate.rootIdentity == current.rootIdentity && candidate.configurationIdentity == current.configurationIdentity) {
             continue;
         }
         candidates.append(candidate);
@@ -443,6 +461,9 @@ bool LiveInsightsContextView::applyTargetCandidate(
     targetContext.moduleName = candidate.moduleName;
     targetContext.signalName = candidate.signalName;
     targetContext.signalAccessPath = candidate.signalAccessPath;
+    targetContext.instancePath = candidate.instancePath;
+    targetContext.rootIdentity = candidate.rootIdentity;
+    targetContext.configurationIdentity = candidate.configurationIdentity;
     hasTargetContext = true;
     renderSurface();
     publishSectionScope();
@@ -482,6 +503,7 @@ void LiveInsightsContextView::publishSectionScope()
     if (!fixedKindValue || !targetPickRequest) {
         setProperty("contextScopeText", QString());
         setProperty("contextScopeTooltip", QString());
+        if (scopeButton) scopeButton->hide();
         return;
     }
     const LiveInsightToolContext context = effectiveContext();
@@ -504,6 +526,12 @@ void LiveInsightsContextView::publishSectionScope()
             ? QStringLiteral("Pick this insight's target in the editor")
             : QStringLiteral("Target: %1 — click to pick another in the editor")
                   .arg(label));
+    if (scopeButton) {
+        scopeButton->setText(property("contextScopeText").toString());
+        scopeButton->setToolTip(property("contextScopeTooltip").toString());
+        scopeButton->setAccessibleName(QStringLiteral("Choose insight target"));
+        scopeButton->show();
+    }
 }
 
 QWidget* LiveInsightsContextView::emptyStateForTest() const
@@ -601,6 +629,13 @@ void LiveInsightsContextView::renderSurface()
         surfaceRenderPending = true;
         return;
     }
+    if (toolContextSource && hasTargetContext && !targetContext.workspaceId.isEmpty()
+        && toolContextSource().workspaceId != targetContext.workspaceId) {
+        hasTargetContext = false;
+        targetOverrideActive = false;
+        recentTargets.clear();
+        pendingNativeState.clear();
+    }
     const LiveInsightToolContext context = effectiveContext();
     if (!contextHasTarget(context)) {
         // Nothing to render: offer the targets this section can reach instead
@@ -634,7 +669,10 @@ QVariantMap LiveInsightsContextView::saveState() const
             {QStringLiteral("fileName"), targetContext.fileName},
             {QStringLiteral("moduleName"), targetContext.moduleName},
             {QStringLiteral("signalName"), targetContext.signalName},
-            {QStringLiteral("signalAccessPath"), targetContext.signalAccessPath}}
+            {QStringLiteral("signalAccessPath"), targetContext.signalAccessPath},
+            {QStringLiteral("instancePath"), targetContext.instancePath},
+            {QStringLiteral("rootIdentity"), targetContext.rootIdentity},
+            {QStringLiteral("configurationIdentity"), targetContext.configurationIdentity}}
             : QVariantMap{}}
     };
 }
@@ -662,6 +700,9 @@ void LiveInsightsContextView::restoreState(
         candidate.moduleName = target.value(QStringLiteral("moduleName")).toString();
         candidate.signalName = target.value(QStringLiteral("signalName")).toString();
         candidate.signalAccessPath = target.value(QStringLiteral("signalAccessPath")).toString();
+        candidate.instancePath = target.value(QStringLiteral("instancePath")).toString();
+        candidate.rootIdentity = target.value(QStringLiteral("rootIdentity")).toString();
+        candidate.configurationIdentity = target.value(QStringLiteral("configurationIdentity")).toString();
         candidate.label = candidate.signalName.isEmpty() ? candidate.moduleName : candidate.signalName;
         applyTargetCandidate(candidate);
     }
@@ -750,15 +791,22 @@ void LiveInsightsContextView::buildUi()
     InsightVisualStyle::applyTitleLabel(title);
     titleRow->addWidget(title, 1);
 
+    scopeButton = UiControls::toolButton(this);
+    scopeButton->setObjectName(QStringLiteral("liveInsightsScope"));
+    scopeButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    scopeButton->hide();
+    titleRow->addWidget(scopeButton);
+    connect(scopeButton, &QToolButton::clicked, this, &LiveInsightsContextView::requestScopePick);
+
     fullViewButton = UiControls::pushButton(
-        QStringLiteral("Open Full View"), this);
+        QStringLiteral("Open in main area"), this);
     fullViewButton->setObjectName(
         QStringLiteral("liveInsightsOpenFullView"));
     fullViewButton->setToolTip(
         QStringLiteral("Open the selected insight beside the editor"));
     InsightVisualStyle::applyToolbarButton(fullViewButton);
     titleRow->addWidget(fullViewButton);
-    fullViewButton->setVisible(!fixedKindValue);
+    fullViewButton->show();
     root->addLayout(titleRow);
 
     auto* cardGrid = new QGridLayout;
@@ -845,11 +893,8 @@ void LiveInsightsContextView::buildUi()
         });
 
     if (fixedKindValue) {
-        // A fixed-kind section is named by its own section header, which also
-        // carries the full-view entry and the freshness chip. Repeating them
-        // in the body only pushes the real content down.
+        // The real page tab names this view. Keep only its content actions.
         title->hide();
-        fullViewButton->hide();
         for (const CardWidgets& card : cards) {
             if (card.button && card.button->parentWidget())
                 card.button->parentWidget()->hide();

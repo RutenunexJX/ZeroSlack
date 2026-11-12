@@ -42,7 +42,7 @@ private slots:
                 painter.end();
                 const auto full=bounds(image,1),core=bounds(image,128);measured<<full;
                 if(!output().isEmpty())QVERIFY(image.save(output()+QString("/%1-%2.png").arg(name).arg(qRound(dpr*100))));
-                const int minWidth=qFloor((13+1.75)*18/24*dpr),maxWidth=qCeil((18+1.75)*18/24*dpr)+1;
+                const int minWidth=qFloor((18+1.75)*18/24*dpr),maxWidth=qCeil((18+1.75)*18/24*dpr)+1;
                 QJsonObject record{{"kind",name},{"requestedDpr",dpr},{"actualDpr",image.devicePixelRatio()},
                     {"physicalSize",QJsonArray{image.width(),image.height()}},{"logicalRect",QJsonArray{0,0,18,18}},
                     {"mode","Normal"},{"state","Off"},{"textColor",QApplication::palette().color(QPalette::Text).name()},
@@ -56,6 +56,8 @@ private slots:
                 QCOMPARE(measured[0]["left"],measured[2]["left"]);
                 QCOMPARE(measured[0]["rightInclusive"],measured[1]["rightInclusive"]);
                 QCOMPARE(measured[0]["width"],measured[1]["width"]);
+                QCOMPARE(measured[0]["rightInclusive"],measured[2]["rightInclusive"]);
+                QCOMPARE(measured[0]["width"],measured[2]["width"]);
             }
         }
         if(!output().isEmpty())QVERIFY(write(output()+"/raster.json",QJsonDocument(records).toJson()));

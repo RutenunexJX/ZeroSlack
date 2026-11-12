@@ -18,12 +18,17 @@ struct LiveInsightGraphInput {
     QString moduleName;
     QString signalName;
     int maxDepth = -1;
+    QString rootIdentity;
+    QString instancePath;
+    QString configurationIdentity;
 
     bool operator==(const LiveInsightGraphInput& other) const {
         return mode == other.mode && semantic.snapshot == other.semantic.snapshot
             && semantic.revision == other.semantic.revision
             && fileName == other.fileName && moduleName == other.moduleName
-            && signalName == other.signalName && maxDepth == other.maxDepth;
+            && signalName == other.signalName && maxDepth == other.maxDepth
+            && rootIdentity == other.rootIdentity && instancePath == other.instancePath
+            && configurationIdentity == other.configurationIdentity;
     }
 };
 

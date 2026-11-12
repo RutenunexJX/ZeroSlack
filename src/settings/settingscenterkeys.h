@@ -2,6 +2,13 @@
 #define SETTINGSCENTERKEYS_H
 
 namespace SettingsCenterKeys {
+inline constexpr const char* BlockNotesFontFamily = "settingsCenter/blockNotes/fontFamily";
+inline constexpr const char* BlockNotesSizePx = "settingsCenter/blockNotes/sizePx";
+inline constexpr const char* BlockNotesLineHeight = "settingsCenter/blockNotes/lineHeight";
+inline constexpr const char* BlockNotesBackground = "settingsCenter/blockNotes/background";
+inline constexpr const char* BlockNotesTextColor = "settingsCenter/blockNotes/textColor";
+inline constexpr const char* BlockNotesBorderColor = "settingsCenter/blockNotes/borderColor";
+inline constexpr const char* BlockNotesStyle = "settingsCenter/blockNotes/style";
 inline constexpr const char* AppearanceTheme =
     "settingsCenter/appearance/theme";
 inline constexpr const char* FloatingContextOpacity =

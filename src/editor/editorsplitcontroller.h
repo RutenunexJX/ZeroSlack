@@ -76,6 +76,7 @@ public:
     QJsonObject savePageLayout(const std::function<bool(QWidget*)>& include = {}) const;
     QStringList restorePageLayout(const QJsonObject& layout);
     void setRegionRevealHandler(const QString& regionId, std::function<void()> reveal);
+    void setRegionTabStrip(const QString& regionId, QWidget* strip);
     QWidget* host() const;
     QTabWidget* initialGroup() const;
     QTabWidget* activeGroup() const;
@@ -152,6 +153,7 @@ private:
         QPointer<QTabWidget> anchor;
         QPointer<QTabWidget> current;
         std::function<void()> reveal;
+        QPointer<QWidget> tabStrip;
     };
     struct Page {
         QString id;

@@ -42,6 +42,8 @@ struct CrashRecoveryApplyResult :
 };
 
 class DocumentRecoveryQueue;
+class AssociatedBlockPage;
+class AssociatedBlockDragController;
 
 struct WorkspacePathMutation {
     struct WebDocument { QPointer<WebDocumentPage> page; QString path; quint64 revision = 0; std::shared_ptr<void> lock; QString target; };
@@ -51,6 +53,8 @@ struct WorkspacePathMutation {
         QString identity;
         std::uint64_t revision = 0;
         QList<QPointer<MyCodeEditor>> views;
+        quint64 associationRevision = 0;
+        QList<QPointer<AssociatedBlockPage>> blocks;
     };
     QPointer<QObject> owner;
     QList<Document> documents;
@@ -87,6 +91,14 @@ public:
     bool openFileInTab(const QString& fileName);
     bool saveCurrentTab();
     bool saveAsCurrentTab();
+    AssociatedBlockPage* currentAssociatedBlock() const;
+    QList<AssociatedBlockPage*> associatedBlockPages() const;
+    AssociatedBlockPage* openAssociatedBlock(SharedDocument* document, const QString& id,
+        QTabWidget* group = nullptr, const QString& viewId = {});
+    AssociatedBlockPage* detachAssociatedBlock(SharedDocument* document, const QString& id,
+        QTabWidget* group = nullptr, std::function<bool(AssociatedBlockPage*)> place = {});
+    bool saveSharedDocument(SharedDocument* document, bool forceSaveAs = false,
+        const QString& explicitFileName = {}, WorkspaceFileSnapshot* savedGeneration = nullptr);
     void closeTab(int index);
     void setEditorTransitionGuard(std::function<bool(MyCodeEditor*)> guard);
     void enableSplitLayout(QWidget* host);
@@ -163,6 +175,7 @@ public:
     // Tool activation keeps the last document's insight context; edit commands
     // still use the focused page through editorActionTarget().
     MyCodeEditor* contextEditor() const;
+    QWidget* contextPage() const;
     DocumentSnapshot contextDocumentMetadata() const;
     DocumentSnapshot getDocumentForEditor(MyCodeEditor* editor) const;
     bool activateOpenFile(const QString& fileName);
@@ -268,6 +281,7 @@ signals:
         const QString& failureReason);
     void activeTabChanged(MyCodeEditor* editor);
     void activeDocumentChanged(const DocumentSnapshot& snapshot);
+    void contextDocumentChanged(const DocumentSnapshot& metadata);
     void tabGroupCreated(QTabWidget* group);
     void splitLayoutChanged();
     void workspaceSessionStateChanged();
@@ -284,6 +298,8 @@ protected:
 private:
     friend class WorkspaceEditDocumentManager;
     struct ClosedTabState {
+        QString ownerDocumentId, associatedBlockId;
+        QRect floatingGeometry;
         QString fileName;
         QString text;
         QJsonObject associations;
@@ -326,6 +342,10 @@ private:
     qint64 recoveryCaptureNs = 0;
     quint64 recoveryCaptureCharacters = 0;
     std::unique_ptr<EditorSplitController> splitController;
+    std::unique_ptr<AssociatedBlockDragController> blockDragController;
+    QHash<SharedDocument*, QSet<QString>> previousDetachedBlocks;
+    QHash<SharedDocument*, QHash<QString, ClosedTabState>> blockPageLocations;
+    QList<WorkspaceSessionTabState> pendingAssociatedTabs;
     TabFileIo fileIo;
     TabDocumentQueries documentQueries;
     // Kept lexical for UI/session propagation; membership and equality use
@@ -374,6 +394,9 @@ private:
         const QString& workspaceRoot);
     void applyWorkspaceScope();
     bool editorVisibleInWorkspaceScope(MyCodeEditor* editor) const;
+    bool validContextPage(QWidget* page) const;
+    void setContextPage(QWidget* page);
+    void repairContextPage();
     QList<MyCodeEditor*> allEditors() const;
     QTabWidget* activeTabWidget() const;
     void registerTabGroup(QTabWidget* group);
@@ -421,7 +444,7 @@ private:
     void updateAllTabTitles();
     QString shortestDistinctTitle(
         const QString& fileName) const;
-    QString tabTitleForEditor(MyCodeEditor* editor) const;
+    QString tabTitleForEditor(MyCodeEditor* editor, bool includeStatus = true) const;
     QString tabToolTipForEditor(MyCodeEditor* editor) const;
     QString groupingKeyForEditor(MyCodeEditor* editor) const;
     void applyTabGrouping();
@@ -439,6 +462,11 @@ private:
     bool closeWebDocument(WebDocumentPage* page, bool confirm = true, bool remember = true);
     PdfDocumentPage* openPdfDocument(const QString& fileName, QTabWidget* group = nullptr, const QString& viewId = {}, QString* error = nullptr);
     bool closePdfDocument(PdfDocumentPage* page, bool remember = true);
+    bool closeAssociatedBlock(AssociatedBlockPage* page, bool confirm = true, bool remember = true);
+    void reconcileAssociatedBlocks(SharedDocument* document);
+    void updateAssociatedBlockTitle(AssociatedBlockPage* page);
+    AssociatedBlockPage* createAssociatedBlockPage(SharedDocument* document, const QString& id,
+        QTabWidget* group, const QString& viewId = {});
     bool confirmWebDocuments(const QList<WebDocumentPage*>& pages);
     void checkpointWebRecovery(WebDocumentPage* page);
     void clearWebRecovery(WebDocumentPage* page);

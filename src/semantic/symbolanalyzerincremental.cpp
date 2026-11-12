@@ -8,6 +8,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QFutureWatcher>
+#include <utility>
 
 namespace {
 QString normalizedIncrementalBandFileName(const QString& fileName)
@@ -46,6 +47,78 @@ SemanticAnalysisBandReport preparedBandReport(
     }
     return report;
 }
+}
+
+void SymbolAnalyzer::checkSemanticInputsAsync(const ProjectSnapshot& project)
+{
+    if (shutdownStarted || !project.isOpen())
+        return;
+    pendingSemanticInputCheck = project;
+    launchPendingSemanticInputCheck();
+}
+
+void SymbolAnalyzer::cancelSemanticInputCheck()
+{
+    pendingSemanticInputCheck.reset();
+    if (semanticInputCheckCancelFlag)
+        semanticInputCheckCancelFlag->store(true, std::memory_order_relaxed);
+}
+
+void SymbolAnalyzer::launchPendingSemanticInputCheck()
+{
+    if (shutdownStarted || !pendingSemanticInputCheck || semanticInputCheckWatcher
+        || hasWorkspaceAnalysisInFlight())
+        return;
+    const auto project = *std::exchange(pendingSemanticInputCheck, std::nullopt);
+    const auto state = activeWorkspaceState;
+    if (!state || !state->input
+        || state->input->projectIdentity != project.semanticIdentity()) {
+        emit semanticInputsChecked(project, true);
+        return;
+    }
+    const auto input = state->input;
+    const auto epoch = workspaceEpoch;
+    const auto generation = workspaceAnalysisGeneration;
+    const std::weak_ptr<const PublishedWorkspaceSemanticState> baseline = state;
+    const auto cancellation = std::make_shared<std::atomic_bool>(false);
+    semanticInputCheckCancelFlag = cancellation;
+    const auto gate = workspaceWorkerStartGateForTesting;
+    auto* watcher = new QFutureWatcher<bool>(this);
+    semanticInputCheckWatcher = watcher;
+    connect(watcher, &QFutureWatcher<bool>::finished, this,
+        [this, watcher, project, baseline, cancellation, epoch, generation] {
+            const bool unchanged = watcher->result();
+            semanticInputCheckWatcher = nullptr;
+            watcher->deleteLater();
+            if (semanticInputCheckCancelFlag == cancellation)
+                semanticInputCheckCancelFlag.reset();
+            if (!shutdownStarted && !cancellation->load(std::memory_order_relaxed)
+                && epoch == workspaceEpoch) {
+                if (hasWorkspaceAnalysisInFlight() || generation != workspaceAnalysisGeneration
+                    || baseline.lock() != activeWorkspaceState) {
+                    if (!pendingSemanticInputCheck
+                        && overlayProject.semanticIdentity() == project.semanticIdentity())
+                        pendingSemanticInputCheck = project;
+                } else {
+                    emit semanticInputsChecked(project, !unchanged);
+                }
+            }
+            launchPendingSemanticInputCheck();
+        });
+    watcher->setFuture(QtConcurrent::run(&semanticAnalysisThreadPool,
+        [input, project, cancellation, gate] {
+            const auto cancelled = [&] { return cancellation->load(std::memory_order_relaxed); };
+            if (gate) gate(cancelled);
+            SemanticAnalysisRequest request;
+            request.project = project;
+            request.documentRevisions = input->documentRevisions;
+            for (auto it = input->sources.cbegin(); it != input->sources.cend(); ++it)
+                if (it->overridden) request.sourceOverrides.insert(it.key(), it->text);
+            SemanticInputCapture current(request);
+            return current.capture(input->sources.keys(), cancelled)
+                && current.input().equivalentTo(*input)
+                && current.stillMatchesDisk(cancelled);
+        }));
 }
 
 void SymbolAnalyzer::startSemanticAnalysisAsync(

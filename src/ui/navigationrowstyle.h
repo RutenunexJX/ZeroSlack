@@ -22,7 +22,7 @@ public:
     static constexpr int SimulationRole = Qt::UserRole + 48;
     std::function<void(const QString&)> activateProject;
 
-    explicit NavigationRowStyle(QTreeWidget* view, bool design)
+    explicit NavigationRowStyle(QTreeView* view, bool design)
         : QStyledItemDelegate(view), tree(view), design(design) {
         tree->setIndentation(0);
         tree->setRootIsDecorated(false);
@@ -69,6 +69,28 @@ public:
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override {
         if (watched != tree->viewport()) return false;
+        if (design) {
+            if (event->type() == QEvent::MouseButtonDblClick) return true;
+            if (event->type() == QEvent::Hide || event->type() == QEvent::Leave
+                || event->type() == QEvent::UngrabMouse) { pressed = QPersistentModelIndex(); pressedAction = false; }
+            if (event->type() == QEvent::MouseButtonPress || event->type() == QEvent::MouseButtonRelease) {
+                auto* mouse = static_cast<QMouseEvent*>(event);
+                if (mouse->button() != Qt::LeftButton) return false;
+                const auto index = tree->indexAt(mouse->position().toPoint());
+                const bool disclosure = index.isValid() && tree->model()->hasChildren(index)
+                    && disclosureRect(tree->visualRect(index), index).contains(mouse->position().toPoint());
+                if (event->type() == QEvent::MouseButtonPress) {
+                    pressed = index; pressedAction = disclosure;
+                    return disclosure;
+                }
+                const bool toggle = pressedAction && pressed == index && disclosure;
+                const bool consumed = pressedAction;
+                pressed = QPersistentModelIndex(); pressedAction = false;
+                if (toggle) tree->setExpanded(index, !tree->isExpanded(index));
+                return consumed;
+            }
+            return false;
+        }
         if (design && (event->type() == QEvent::Hide || event->type() == QEvent::Leave
             || event->type() == QEvent::UngrabMouse)) { pressed = QPersistentModelIndex(); suppressRelease = false; }
         if (design && event->type() == QEvent::MouseButtonPress) {
@@ -126,24 +148,33 @@ protected:
         return false;
     }
 private:
+    QRect disclosureRect(const QRect& rect, const QModelIndex& index) const {
+        int depth = 0;
+        for (auto parent = index.parent(); parent.isValid(); parent = parent.parent()) ++depth;
+        const int reserved = (index.data(UnresolvedRole).toBool() ? 22 : 0)
+            + (index.data(SimulationRole).toBool() ? 28 : 0);
+        const int indent = qMin(depth * 14, qMax(0, rect.width() - reserved - 30
+            - tree->fontMetrics().horizontalAdvance(QStringLiteral("…"))));
+        return QRect(rect.left() + 2 + indent, rect.top(), 24, rect.height());
+    }
     void paintDesign(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const {
         QStyleOptionViewItem row(option);
         initStyleOption(&row, index);
         QStyleOptionViewItem background(row);
         background.text.clear(); background.icon = {};
         tree->style()->drawControl(QStyle::CE_ItemViewItem, &background, painter, tree);
-        const bool project = !index.data(ProjectRole).toString().isEmpty();
+        const bool project = false;
         const bool unresolved = index.data(UnresolvedRole).toBool();
         const bool simulation = index.data(SimulationRole).toBool();
         const bool expandable = tree->model()->hasChildren(index);
         int depth = 0;
         for (auto parent = index.parent(); parent.isValid(); parent = parent.parent()) ++depth;
         const auto metrics = row.fontMetrics;
-        const int reserved = (project ? 28 : 0) + (unresolved ? 22 : 0) + (simulation ? 22 : 0);
+        const int reserved = (unresolved ? 22 : 0) + (simulation ? 28 : 0);
         // Keep one elision glyph after the icon slot (18), gap (6) and margins (2 + 4).
         const int indent = qMin(depth * 14, qMax(0, row.rect.width() - reserved - 30 - metrics.horizontalAdvance(QStringLiteral("…"))));
         QRect content = row.rect.adjusted(2 + indent, 0, -reserved - 4, 0);
-        QRect icon(content.left(), content.center().y() - 9, 18, 18);
+        QRect icon(content.left(), content.center().y() - RoundedIcons::SidebarSize/2, RoundedIcons::SidebarSize, RoundedIcons::SidebarSize);
         const auto decoration = expandable
             ? RoundedIcons::icon(tree->isExpanded(index) ? RoundedIcons::Down : RoundedIcons::Right) : row.icon;
         decoration.paint(painter, icon);
@@ -169,9 +200,12 @@ private:
                 '[' + metrics.elidedText(type, Qt::ElideRight, qMax(0,text.width()-brackets)) + ']');
         }
         painter->restore();
-        if (simulation) RoundedIcons::icon(RoundedIcons::Simulation).paint(painter,
-            QRect(row.rect.right() - (project ? 28 : 0) - (unresolved ? 22 : 0) - 20,
-                  row.rect.top() + (row.rect.height() - 18) / 2, 18, 18));
+        if (simulation) {
+            painter->save(); auto font = row.font; font.setPointSizeF(qMax(7.0, font.pointSizeF()-2));
+            painter->setFont(font); painter->setPen(secondary);
+            painter->drawText(QRect(row.rect.right() - (unresolved ? 22 : 0) - 28, row.rect.top(), 26, row.rect.height()),
+                Qt::AlignCenter, QStringLiteral("SIM")); painter->restore();
+        }
         if (unresolved) RoundedIcons::icon(RoundedIcons::Warning).paint(painter,
             QRect(row.rect.right() - (project ? 28 : 0) - 20, row.rect.center().y()-9, 18,18));
         if (project) {
@@ -183,7 +217,7 @@ private:
         }
     }
     static QRect actionRect(const QRect& row) { return {row.right() - 27, row.top(), 28, row.height()}; }
-    QTreeWidget* tree;
+    QTreeView* tree;
     bool design;
     bool suppressRelease = false;
     QPersistentModelIndex pressed;
