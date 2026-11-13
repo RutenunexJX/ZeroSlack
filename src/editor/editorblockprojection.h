@@ -38,12 +38,14 @@ public:
     QString adjacentBlock(int sourceLine, bool forward) const;
     QString neighboringBlock(const QString& id, bool forward) const;
     int sourceLineForBlock(const QString& id) const;
+    int ordinalForBlock(const QString& id) const { return ordinals.value(id); }
     quint64 rowsMeasured() const { return measured; }
 private:
     struct Run { int source, rows, firstRow; };
     struct Measured { qreal height; int revision; };
     QList<Run> runs;
     QList<EditorBlockGap> gaps;
+    QHash<QString,int> ordinals;
     QMap<int,Measured> heights;
     struct NoteMeasure { quint64 revision = 0, style = 0; int width = 0; qreal dpr = 0, height = 0; };
     QHash<QString, NoteMeasure> noteHeights;

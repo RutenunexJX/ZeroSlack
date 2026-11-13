@@ -1,6 +1,8 @@
 # ZeroSlack
 
-Current version: `v0.35.5`
+Current version: `v0.35.6`
+
+Release 0.35.6 adds cross-file block movement, independent copies and cut/paste, named appearance presets, gutter placement, and editable Wave blocks using the accepted Tickx 0.15.10 component. User templates can be managed without recompilation; built-in code templates are cleared. The left add menu restores Files and Design. Functional acceptance is retained with separate release build and package evidence. Suite SDK/Runtime remains 1.0.2, native xIPs 2.16.2 and the independent asset adapter 2.14.2.
 
 Release 0.35.5 persists validated semantic workspace results, filters Design hierarchy to real instances, and separates selection from source navigation. Context menus and nested module diagrams share lightweight snapshot queries; instance parameter and port editing retain read-only and stale-source guards. QuestaSim waveform palettes are restored, and bottom tabs use a single compact shape. Functional acceptance combines valid prior results with targeted repairs and rechecks; release-specific build and package verification retain their own identities. Suite SDK/Runtime remains 1.0.2, native xIPs 2.16.2 and the independent asset adapter 2.14.2.
 

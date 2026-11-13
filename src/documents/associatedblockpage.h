@@ -5,6 +5,7 @@
 
 class SharedDocument;
 class DocumentBlockModel;
+struct EditorAssociatedBlock;
 class QTextEdit;
 class QLabel;
 class QToolButton;
@@ -17,7 +18,7 @@ class ZEROSLACK_API AssociatedBlockPage final : public QWidget {
     Q_OBJECT
 public:
     AssociatedBlockPage(SharedDocument* document, const QString& blockId, QWidget* parent = nullptr,
-                        const QString& viewId = {});
+                        const QString& viewId = {}, const EditorAssociatedBlock* prepared = nullptr);
     ~AssociatedBlockPage() override;
     SharedDocument* ownerDocument() const;
     DocumentBlockModel* model() const;
@@ -30,8 +31,10 @@ signals:
     void statusChanged();
     void sourceRequested();
     void saveRequested(bool saveAs);
+    void clipboardRequested(bool cut);
 protected:
     bool eventFilter(QObject*, QEvent*) override;
+    void resizeEvent(QResizeEvent*) override;
 private:
     QPointer<SharedDocument> document;
     QString id, view;
@@ -40,6 +43,7 @@ private:
     QLabel *origin = nullptr, *description = nullptr;
     PinloomHostClient* client = nullptr;
     QToolButton *grip = nullptr, *remove = nullptr;
+    QWidget* tools = nullptr;
     bool updating = false;
     void refresh();
     void openOriginal();

@@ -1205,6 +1205,7 @@ int main(int argc, char **argv) {
           profile.filePath("legacy.ini").toUtf8());
   UserTemplateService::getInstance()->setGlobalTemplateFilePath(
       profile.filePath("templates.json"));
+  if (!UserTemplateService::getInstance()->setRecords(simulationTemplateFixtures()).valid) return 3;
   if (!initializeUiStyleForTest())
     return 2;
   ApplicationThemeManager::instance().setAnimationsEnabled(false);

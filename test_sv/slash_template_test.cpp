@@ -1,6 +1,8 @@
 #include "mycodeeditor.h"
 #include "ordinarytemplateplan.h"
 #include "usertemplateservice.h"
+#include "usertemplatefixtures.h"
+#include "codetemplateservice.h"
 #include "documenttemplatemodel.h"
 #include "templateinputservice.h"
 #include "semanticindexsnapshot.h"
@@ -9,6 +11,7 @@
 #include "formatterservice.h"
 #include "mainwindow.h"
 #include "tabmanager.h"
+#include "templatemanagerdialog.h"
 #include <QScopeGuard>
 #include <QtTest>
 #include <QtWidgets>
@@ -36,6 +39,7 @@ private slots:
         auto* service = UserTemplateService::getInstance();
         service->setGlobalTemplateFilePath(root.filePath(QString::number(QRandomGenerator::global()->generate()) + ".json"));
         service->setWorkspaceTemplateFilePath({}); service->reload();
+        QVERIFY(service->setRecords(ordinaryTemplateFixtures()).valid);
         editor = std::make_unique<MyCodeEditor>();
         editor->setDocumentFileName(root.filePath("design.sv"));
         editor->resize(740, 420); editor->show(); editor->setFocus();
@@ -44,6 +48,54 @@ private slots:
         QTextCursor cursor(editor->document()); cursor.setPosition(10); editor->setTextCursor(cursor);
     }
     void cleanup() { editor.reset(); }
+    void managerPublishesReloadsImportsAndDeletesUserDefinitions() {
+        auto* service=UserTemplateService::getInstance(); QVERIFY(service->setRecords({}).valid);
+        SimulationCommandRequest request; request.context.fileName=editor->documentFileName();
+        TemplateManagerDialog dialog(service,request,{},editor.get()); dialog.show();
+        auto* name=dialog.findChild<QLineEdit*>("templateName"); auto* body=dialog.findChild<QPlainTextEdit*>("templateBody");
+        auto* scope=dialog.findChild<QComboBox*>("templateScope"); auto* list=dialog.findChild<QListWidget*>("templateList");
+        auto* notice=dialog.findChild<QLabel*>("templateNotice"); auto* box=dialog.findChild<QDialogButtonBox*>();
+        auto* reload=dialog.findChild<QPushButton*>("templateReload"); QVERIFY(name && body && scope && list && notice && box && reload);
+        QAbstractButton* saveButton=nullptr;
+        for(auto* button:box->buttons()) if(box->buttonRole(button)==QDialogButtonBox::AcceptRole) saveButton=button;
+        QVERIFY(saveButton);
+        name->setText("/managed"); scope->setCurrentText("User global"); body->setPlainText("logic configured;${cursor}");
+        saveButton->click(); QCOMPARE(notice->text(),QString("Template saved.")); QCOMPARE(service->records().size(),1);
+        const auto savedId=service->records().first().id;
+        body->setPlainText("logic changed;${cursor}"); saveButton->click(); QCOMPARE(service->records().first().insertText,body->toPlainText());
+        QFile file(service->globalTemplateLocation()); QVERIFY(file.open(QIODevice::ReadOnly)); const auto valid=file.readAll(); file.close();
+        body->setPlainText("${include:missing}"); saveButton->click(); QVERIFY(notice->text()!=QString("Template saved."));
+        QVERIFY(file.open(QIODevice::ReadOnly)); QCOMPARE(file.readAll(),valid); file.close();
+        reload->click(); QCOMPARE(body->toPlainText(),QString("logic changed;${cursor}"));
+        QVERIFY(file.open(QIODevice::WriteOnly)); file.write("{broken"); file.close(); reload->click();
+        QVERIFY(notice->text()!=QString("Templates reloaded from disk.")); QCOMPARE(service->records().first().id,savedId);
+        QVERIFY(file.open(QIODevice::WriteOnly)); QCOMPARE(file.write(valid),valid.size()); file.close(); reload->click();
+        dialog.hide(); editor->setFocus(); open("managed"); QTest::keyClick(search(),Qt::Key_Return);
+        QVERIFY(editor->toPlainText().contains("logic changed;")); const auto inserted=editor->toPlainText();
+        const auto importPath=root.filePath("one-resource.json"); QFile imported(importPath); QVERIFY(imported.open(QIODevice::WriteOnly));
+        imported.write(QJsonDocument(UserTemplateService::toJson(resource("imported","wire imported;"))).toJson()); imported.close();
+        QPushButton* importButton=nullptr; QPushButton* remove=nullptr;
+        for (auto* button:dialog.findChildren<QPushButton*>()) { if(button->text()=="Import resource…") importButton=button; if(button->text()=="Delete") remove=button; }
+        QVERIFY(importButton && remove); dialog.show();
+        const bool nativeDialogs=QCoreApplication::testAttribute(Qt::AA_DontUseNativeDialogs);
+        QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs,true);
+        const auto restore=qScopeGuard([nativeDialogs] { QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs,nativeDialogs); });
+        QTimer::singleShot(0,&dialog,[&] { for(auto* widget:QApplication::topLevelWidgets()) if(auto* picker=qobject_cast<QFileDialog*>(widget)) { picker->selectFile(importPath); QMetaObject::invokeMethod(picker,"accept"); } });
+        importButton->click(); QVERIFY(notice->text().contains("Imported draft")); QCOMPARE(service->records().size(),1);
+        scope->setCurrentText("User global"); saveButton->click(); QCOMPARE(service->records().size(),2);
+        remove->click(); QCOMPARE(service->records().size(),1); list->setCurrentRow(0); remove->click(); QVERIFY(service->records().isEmpty());
+        QVERIFY(service->reload().valid); QVERIFY(service->records().isEmpty()); QCOMPARE(editor->toPlainText(),inserted);
+    }
+    void emptyCatalogDoesNotReinjectCode() {
+        auto* service=UserTemplateService::getInstance(); QVERIFY(service->setRecords({}).valid); QVERIFY(service->reload().valid);
+        QVERIFY(service->records().isEmpty()); QVERIFY(OrdinaryTemplatePlanner::builtins().isEmpty());
+        QVERIFY(UserTemplateService::simulationBuiltins().isEmpty()); QVERIFY(CodeTemplateService::getInstance()->catalog().isEmpty());
+        QVERIFY(OrdinaryTemplatePlanner::catalog(service,editor->documentFileName()).isEmpty());
+        open(); auto* list=editor->findChild<QListWidget*>("editorSlashCandidates"); QCOMPARE(list->count(),6);
+        for(int i=0;i<list->count();++i) QCOMPARE(list->item(i)->data(Qt::UserRole+1).toString(),QString("Block"));
+        QTest::keyClick(search(),Qt::Key_Escape);
+        UserTemplateService reopened(service->globalTemplateLocation(),{}); QVERIFY(reopened.records().isEmpty());
+    }
     void transientAtEveryPosition_data() {
         QTest::addColumn<QString>("source"); QTest::addColumn<int>("position");
         QTest::newRow("expression") << QString("x = a + b;") << 6;
@@ -172,7 +224,8 @@ private slots:
         QTest::keyClicks(page,"/");
         auto* query=page->findChild<QLineEdit*>("editorSlashQuery"); QVERIFY(query && query->isVisible());
         QTRY_VERIFY(query->hasFocus());
-        QApplication::clipboard()->setText("clocked process"); QTest::keyClick(query,Qt::Key_V,Qt::ControlModifier);
+        QApplication::clipboard()->setText("clocked process"); QTRY_COMPARE(QApplication::clipboard()->text(),QString("clocked process"));
+        QTest::keyClick(query,Qt::Key_V,Qt::ControlModifier);
         QCOMPARE(query->text(),QString("clocked process")); QVERIFY(query->isVisible());
         QCOMPARE(page->toPlainText(),source); QCOMPARE(page->document()->availableUndoSteps(),undo);
         QTest::keyClick(query,Qt::Key_Escape); page->document()->setModified(false);

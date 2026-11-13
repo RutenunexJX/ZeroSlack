@@ -36,6 +36,7 @@ CMakeLists.txt.user.*
 !cmake/SlangSourceCapture.cmake
 !cmake/source_layout.cmake
 !cmake/NativeComponents.cmake
+!cmake/TickxWidgets.cmake
 !cmake/SimDock.cmake
 !cmake/SimDockTests.cmake
 !cmake/DomainSources.cmake

@@ -69,6 +69,7 @@ public:
     QString adjacentAssociatedBlock(int sourceLine, bool forward) const { return associated.adjacentBlock(sourceLine, forward); }
     QString neighboringAssociatedBlock(const QString& id, bool forward) const { return associated.neighboringBlock(id, forward); }
     int sourceLineForAssociatedBlock(const QString& id) const { return associated.sourceLineForBlock(id); }
+    int associatedBlockOrdinal(const QString& id) const { return associated.ordinalForBlock(id); }
 
 private:
     EditorBlockProjection associated;

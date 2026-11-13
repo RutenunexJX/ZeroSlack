@@ -639,6 +639,12 @@ void testUnifiedRegions()
     tool->setText(QStringLiteral("background update"));
     check(registry.restorePage(tool,first) && registry.groupForPage(tool)==anchors[1]
           && tool->text()==QStringLiteral("background update"),"reopening restores tool location and background state");
+    check(registry.restorePageInGroup(tool,first) && registry.groupForPage(tool)==anchors[1],
+          "explicit restore activates an open page without relocating it");
+    check(registry.parkPage(tool) && !registry.restorePageInGroup(tool,&foreign)
+          && !registry.groupForPage(tool),"invalid explicit restore leaves the page parked");
+    check(registry.restorePageInGroup(tool,first) && registry.groupForPage(tool)==first
+          && tool->text()==QStringLiteral("background update"),"explicit restore overrides a parked page's return group without replacing state");
     registry.removeEmptyGroups();
     check(registry.groupCount()==4 && registry.regionGroup(QStringLiteral("main"))==first,
           "fixed region anchors remain available after their last page moves");

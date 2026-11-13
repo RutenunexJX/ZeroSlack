@@ -6,6 +6,7 @@
 #include "documentblockstore.h"
 #include "editorblockpreview.h"
 #include "editorblockcontent.h"
+#include "waveblockcontent.h"
 #include "blocknotestyle.h"
 #include "insightvisualstyle.h"
 #include "uitypography.h"
@@ -18,7 +19,6 @@
 #include <QLabel>
 #include <QTextEdit>
 #include <QToolButton>
-#include <QColorDialog>
 #include <QMouseEvent>
 #include <QPushButton>
 #include <QKeyEvent>
@@ -30,6 +30,8 @@
 #include <QMenu>
 #include <QSet>
 #include <QFileDialog>
+#include <QFileInfo>
+#include <utility>
 #include <QPainter>
 #include <QtMath>
 #include <algorithm>
@@ -66,22 +68,27 @@ EditorBlockHost::EditorBlockHost(MyCodeEditor* value) : QObject(value), editor(v
 EditorBlockHost::~EditorBlockHost() {
     qApp->removeEventFilter(this);
     for (const auto& connection : connections) disconnect(connection);
-    for (const auto& view : views) delete view.frame;
+    const auto oldViews=std::exchange(views,{});
+    for (const auto& view : oldViews) delete view.frame;
 }
 void EditorBlockHost::rebind() {
     finishEditing();
     client->cancelReadRequests(this);
     for (const auto& connection : connections) disconnect(connection);
     connections.clear();
-    for (const auto& view : views) delete view.frame;
-    views.clear(); selectedId.clear(); model = DocumentBlockModel::get(editor->document());
+    const auto oldViews=std::exchange(views,{});
+    for (const auto& view : oldViews) delete view.frame;
+    selectedId.clear(); model = DocumentBlockModel::get(editor->document());
     connections << connect(model, &DocumentBlockModel::changed, this, [this] {
         editor->invalidateViewProjection(); editor->viewport()->update(); schedule();
     });
     connections << connect(model, &DocumentBlockModel::errorChanged, editor, &MyCodeEditor::editorStatusMessageRequested);
     schedule();
 }
-void EditorBlockHost::finishEditing() { if (model) model->endTextSession(); }
+void EditorBlockHost::finishEditing() {
+    if (model) model->endTextSession();
+    for (auto& view:views) if (view.content) view.content->setEditing(false);
+}
 void EditorBlockHost::schedule() {
     if (scheduled) return; scheduled = true;
     QTimer::singleShot(0, this, [this] { scheduled = false; updateVisible(); });
@@ -91,6 +98,7 @@ EditorBlockHost::View EditorBlockHost::createView(const EditorAssociatedBlock& b
     auto* frame = new BlockFrame(editor->viewport()); view.frame = frame; view.frame->setObjectName("editorBlockShell");
     view.frame->setProperty("blockId", block.id); view.frame->setFrameShape(QFrame::NoFrame);
     view.frame->setAutoFillBackground(true); view.frame->setFocusPolicy(Qt::StrongFocus);
+    view.frame->setAttribute(Qt::WA_NoMousePropagation);
     view.frame->setMouseTracking(true);
     auto* layout = new QVBoxLayout(view.frame); layout->setContentsMargins(12, 10, 12, 10); layout->setSpacing(4);
     layout->setSizeConstraint(QLayout::SetNoConstraint);
@@ -124,17 +132,14 @@ EditorBlockHost::View EditorBlockHost::createView(const EditorAssociatedBlock& b
     view.collapse = button("Collapse", "Collapse or expand this block", [this,id] {
         if (const auto* current = model->find(id)) { auto next = *current; next.collapsed = !next.collapsed; model->update(next); }
     });
-    button("Up", "Move before the previous block at this anchor", [this,id] { model->reorder(id, -1); });
-    button("Down", "Move after the next block at this anchor", [this,id] { model->reorder(id, 1); });
     button("Attach", "Attach to the current code selection or line", [this,id] { model->reattach(id, editor->textCursor()); });
-    button("Copy", "Copy this block's content", [this,id] {
-        if (const auto* current = model->find(id)) QApplication::clipboard()->setText(current->type == "text" ? current->text : current->uri);
-    });
+    button("Copy", "Copy block", [this,id] { emit editor->editorBlockClipboardRequested(id,false); });
+    button("Cut", "Move this block when pasted", [this,id] { emit editor->editorBlockClipboardRequested(id,true); });
     button("Delete", "Remove this block (undoable)", [this,id] { model->remove(id); editor->setFocus(); });
     auto* remove = tool(RoundedIcons::Close, "Delete block"); remove->setEnabled(!editor->documentReadOnly());
     connect(remove, &QToolButton::clicked, this, [this,id] { if (!editor->documentReadOnly()) { model->remove(id); editor->setFocus(); } });
     EditorBlockContent::addAppearanceMenu(menu,model,id,view.frame,[this] { return editor->documentReadOnly(); });
-    if (block.type == "text" || !EditorBlockPreview::linkOnlyText(block).isEmpty()) button("Auto height", "Fit the text in this view", [this,id] {
+    if (block.type == "text" || block.type == "code" || !EditorBlockPreview::linkOnlyText(block).isEmpty()) button("Auto height", "Fit the text in this view", [this,id] {
         if (const auto* current = model->find(id)) { auto next = *current; next.autoHeight = true; model->update(next); }
     });
     button("Height", "Set display height", [this,id] {
@@ -142,7 +147,7 @@ EditorBlockHost::View EditorBlockHost::createView(const EditorAssociatedBlock& b
         bool accepted = false; const int height = UiDialogs::getInt(editor, "Block height", "Height in logical pixels", current->height, 60, 600, 10, &accepted);
         if (accepted && !editor->documentReadOnly() && model->revision() == revision && model->find(id)) { auto next = *model->find(id); next.height = height; next.autoHeight = false; model->update(next); }
     });
-    if (block.type != "text") {
+    if (block.type == "image" || block.type=="reference") {
         button("Caption", "Edit the preview caption", [this,id] {
             const auto* current = model->find(id); if (!current) return; const auto revision = model->revision();
             bool accepted = false; const auto text = UiDialogs::getText(editor, "Preview caption", "Caption", QLineEdit::Normal, current->caption, &accepted);
@@ -167,8 +172,9 @@ void EditorBlockHost::updateVisible() {
     if (updating || !model) return;
     if (!editor->isVisible()) {
         finishEditing(); selectedId.clear();
-        for (const auto& view : views) delete view.frame;
-        views.clear(); return;
+        const auto oldViews=std::exchange(views,{});
+        for (const auto& view : oldViews) delete view.frame;
+        return;
     }
     updating = true;
     editor->state->projection.ensure(editor, editor->state->folding.collapsedLineRanges());
@@ -181,7 +187,8 @@ void EditorBlockHost::updateVisible() {
         if (!views.contains(item.first)) views.insert(item.first, createView(*block));
         auto& view = views[item.first];
         if (view.revision != block->revision || view.styleRevision != BlockNoteStyle::instance().revision()) {
-            view.title->setText(QString(block->missing ? "Missing anchor · " : "") + (block->type == "text" ? "Text note" : block->type == "image" ? "Image" : "Reference"));
+            const auto label=block->type=="text" ? "Text note" : block->type=="image" ? "Image" : block->type=="code" ? "Code" : block->type=="wave" ? "Wave" : block->type=="attachment" ? "Attachment" : "Reference";
+            view.title->setText(QString(block->missing ? "Missing anchor · " : "") + label);
             view.collapse->setIcon(RoundedIcons::icon(block->collapsed ? RoundedIcons::Expand : RoundedIcons::Collapse));
             view.collapse->setToolTip(block->collapsed ? "Expand" : "Collapse");
             const auto style = BlockNoteStyle::instance().appearance(block->appearance);
@@ -223,12 +230,21 @@ void EditorBlockHost::insert(const QVariantMap& preset, const QTextCursor& curso
     };
     EditorAssociatedBlock block; block.type = type; block.text = preset.value("text").toString();
     block.caption = preset.value("caption").toString(); block.width = qBound(120, preset.value("width", 480).toInt(), 1600); block.height = qBound(60, preset.value("height", 160).toInt(), 600);
-    block.autoHeight = type == "text" && !preset.contains("height");
+    block.autoHeight = (type == "text" || type=="code") && !preset.contains("height");
     if (type == "image") {
         const auto path = QFileDialog::getOpenFileName(editor, "Import image", {}, "Images (*.png *.jpg *.jpeg *.webp *.bmp *.gif)");
         if (path.isEmpty() || !current()) return;
         QString issue; block.asset = DocumentBlockStore::get(model)->importImage(path, &issue);
         if (block.asset.isEmpty()) { emit editor->editorStatusMessageRequested(issue); return; }
+    } else if (type == "attachment") {
+        const auto path=QFileDialog::getOpenFileName(editor,"Attach file");
+        if (path.isEmpty() || !current()) return;
+        QString issue; block.asset=DocumentBlockStore::get(model)->importFile(path,&issue); block.caption=QFileInfo(path).fileName();
+        if(block.asset.isEmpty()) { emit editor->editorStatusMessageRequested(issue); return; }
+    } else if (type == "wave") {
+        if(block.text.isEmpty()) block.text=WaveBlockContent::initialProject();
+        QString issue; if(!WaveBlockContent::validate(block.text.toUtf8(),&issue)) { emit editor->editorStatusMessageRequested(issue); return; }
+        block.height=360;
     } else if (type == "reference") {
         PinloomReferencePicker picker(client, preset.value("uri").toString(), editor);
         if (picker.exec() != QDialog::Accepted || !current()) return;
@@ -239,10 +255,11 @@ void EditorBlockHost::insert(const QVariantMap& preset, const QTextCursor& curso
     }
     if (!current()) return;
     const auto id = model->insert(block, cursor);
-    select(id, type == "text");
+    select(id);
 }
 void EditorBlockHost::select(const QString& id, bool edit) {
     const auto* block = model->find(id); if (!block) return;
+    finishEditing();
     selectedId = id; editor->state->projection.ensure(editor, editor->state->folding.collapsedLineRanges());
     editor->state->projection.prepareVisibleGeometry(editor);
     const auto rect = editor->state->projection.associatedBlockRect(editor, id);
@@ -251,7 +268,7 @@ void EditorBlockHost::select(const QString& id, bool edit) {
     updateVisible();
     const auto view = views.value(id);
     if (view.frame) {
-        if (edit && view.text && view.text->isVisible()) { model->beginTextSession(id); view.text->setFocus(); }
+        if (edit && view.content && view.content->isVisible()) view.content->setEditing(true);
         else view.frame->setFocus();
     }
 }
@@ -295,18 +312,16 @@ bool EditorBlockHost::eventFilter(QObject* object, QEvent* event) {
     if (id.isEmpty()) return false;
     const auto* block = model->find(id); if (!block) return false;
     const auto view = views.value(id);
+    if ((event->type()==QEvent::MouseButtonPress || event->type()==QEvent::MouseButtonDblClick)
+        && widget==view.frame && static_cast<QMouseEvent*>(event)->button()==Qt::LeftButton) {
+        select(id); return false;
+    }
     if (event->type() == QEvent::FocusIn) { selectedId = id; view.frame->update(); if (widget == view.text) model->beginTextSession(id); }
     if (event->type() == QEvent::MouseMove || event->type() == QEvent::Enter || event->type() == QEvent::Leave
         || event->type() == QEvent::FocusIn || event->type() == QEvent::FocusOut) {
         const QPointer<QWidget> frame = view.frame, tools = view.tools;
         QTimer::singleShot(0, this, [frame,tools] {
-            if (!frame || !tools) return;
-            const auto point = frame->mapFromGlobal(QCursor::pos());
-            const auto* focus = QApplication::focusWidget();
-            tools->setVisible((frame->rect().adjusted(-4,-4,4,4).contains(point) && point.y() < 46
-                && point.x() > frame->width()-tools->sizeHint().width()-28)
-                || (focus && (focus == frame || frame->isAncestorOf(focus))));
-            tools->raise();
+            EditorBlockContent::refreshTools(frame,tools);
         });
     }
     if (event->type() == QEvent::FocusOut) view.frame->update();
@@ -314,16 +329,18 @@ bool EditorBlockHost::eventFilter(QObject* object, QEvent* event) {
     if (event->type() != QEvent::KeyPress) return false;
     auto* key = static_cast<QKeyEvent*>(event);
     if (key->key() == Qt::Key_Escape) { if (widget == view.frame) returnToCode(*block); else { finishEditing(); view.frame->setFocus(); } return true; }
-    if (key->matches(QKeySequence::Undo) || key->matches(QKeySequence::Redo)) { finishEditing(); if (key->matches(QKeySequence::Undo)) editor->undo(); else editor->redo(); return true; }
+    if (key->matches(QKeySequence::Undo) || key->matches(QKeySequence::Redo)) { if(view.content->nativeWaveEditing()) return false; finishEditing(); if (key->matches(QKeySequence::Undo)) editor->undo(); else editor->redo(); return true; }
     if (key->key() == Qt::Key_Tab || key->key() == Qt::Key_Backtab) {
+        if (view.content->isEditing()) return false;
+        view.tools->show();
         QList<QWidget*> controls;
-        for (auto* control : view.frame->findChildren<QWidget*>()) if (control->isVisible() && control->isEnabled() && (control->focusPolicy() & Qt::TabFocus)) controls.append(control);
+        for (auto* control : view.tools->findChildren<QWidget*>()) if (control->isVisible() && control->isEnabled() && (control->focusPolicy() & Qt::TabFocus)) controls.append(control);
         if (!controls.isEmpty()) { int index = controls.indexOf(widget); const bool back = key->key() == Qt::Key_Backtab || key->modifiers().testFlag(Qt::ShiftModifier); index = (index + (back ? -1 : 1) + controls.size()) % controls.size(); controls[index]->setFocus(); }
         return true;
     }
     if (widget != view.frame) return false;
     if (key->key() == Qt::Key_Delete && !editor->documentReadOnly()) { model->remove(id); editor->setFocus(); return true; }
-    if (key->key() == Qt::Key_Return || key->key() == Qt::Key_Enter) { if (block->type == "text") select(id, true); else openOriginal(id); return true; }
+    if (key->key() == Qt::Key_Return || key->key() == Qt::Key_Enter) { select(id, true); return true; }
     if (key->key() == Qt::Key_Up || key->key() == Qt::Key_Down) { leaveBlock(id, key->key() == Qt::Key_Down); return true; }
     return false;
 }

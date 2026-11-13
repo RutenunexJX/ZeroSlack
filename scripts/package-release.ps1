@@ -225,6 +225,28 @@ foreach ($component in @(
         revision=$(if ($componentInfo.revision) { $componentInfo.revision } elseif ($componentInfo.sourceCommit) { $componentInfo.sourceCommit } else { $null })
     }
 }
+# Wave blocks load the accepted Tickx memory editor from the application directory.
+$tickxRoot = Join-Path $buildRoot 'components/tickx'
+$tickxTarget = Join-Path $outputRoot 'components/tickx'
+$tickxFiles = @('wavewidgets.dll','WaveWorkbenchEla.dll','LICENSE','NOTICE','THIRD-PARTY-NOTICES.md','build-info.json')
+New-Item -ItemType Directory -Path $tickxTarget -Force | Out-Null
+foreach ($name in $tickxFiles) {
+    $inputPath = Join-Path $tickxRoot $name
+    $relative = "components/tickx/$name"
+    $proof = $preparation.packageInputs.PSObject.Properties[$relative]
+    if (-not $proof -or -not (Test-Path -LiteralPath $inputPath -PathType Leaf) -or
+        (Get-FileHash -LiteralPath $inputPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $proof.Value) {
+        throw "Missing or changed accepted Wave block runtime: $relative"
+    }
+    Copy-Item -LiteralPath $inputPath -Destination (Join-Path $tickxTarget $name)
+}
+$tickxInfo = Get-Content -LiteralPath (Join-Path $tickxRoot 'build-info.json') -Raw | ConvertFrom-Json
+$nativeComponents['tickx'] = [ordered]@{
+    directory='components/tickx'; files=$tickxFiles; version=$tickxInfo.version; revision=$tickxInfo.revision
+}
+$deployTargets += @(Join-Path $tickxTarget 'wavewidgets.dll')
+$deployTargets += @(Join-Path $tickxTarget 'WaveWorkbenchEla.dll')
+
 # Keep the asset adapter in its own process/runtime; its Qt DLLs are not host DLLs.
 $adapterRoot = if ($XipsAssetAdapterDirectory) {
     (Resolve-Path -LiteralPath $XipsAssetAdapterDirectory).Path

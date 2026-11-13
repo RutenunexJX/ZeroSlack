@@ -7,6 +7,9 @@
 #include "tsdocument.h"
 #include "pinloompreviewimage.h"
 #include "blocknotestyle.h"
+#include "editorblockcontent.h"
+#include "waveblockcontent.h"
+#include <QLibrary>
 #include <QPlainTextDocumentLayout>
 #include <QtTest>
 #include <QtWidgets>
@@ -21,6 +24,64 @@ class EditorBlockTest : public QObject {
         return model()->insert(fixed, cursor);
     }
 private slots:
+    void namedPresetsPreserveLegacyAndRoundTrip() {
+        for (const auto& type:QStringList{"text","image","reference","attachment","code","wave"}) {
+            const auto id=model()->insert(type,QTextCursor(editor->document()),type=="wave" ? WaveBlockContent::initialProject() : "sample");
+            QVERIFY(!id.isEmpty()); QVERIFY(BlockNoteStyle::validPreset(model()->find(id)->appearance));
+            const auto expected=type=="text" ? "Paper" : type=="image" ? "Plain" : type=="code" || type=="wave" ? "Technical" : "Outline";
+            QCOMPARE(model()->find(id)->appearance.value("preset").toString(),QString(expected));
+        }
+        auto value=model()->items().first(); value.appearance={{"style","Outlined"},{"background","#fff4cc"}}; QVERIFY(model()->update(value));
+        auto saved=model()->serialize(); QTextDocument copy; QString issue; auto* restored=DocumentBlockModel::get(&copy);
+        QVERIFY2(restored->restore(saved,&issue),qPrintable(issue)); QCOMPARE(restored->items().first().appearance,value.appearance);
+        auto bad=saved; auto items=bad["blocks"].toArray(); auto row=items[1].toObject(); auto appearance=row["appearance"].toObject();
+        appearance["presetVersion"]="future"; row["appearance"]=appearance; items[1]=row; bad["blocks"]=items;
+        const auto before=restored->serialize(); QVERIFY(!restored->restore(bad,&issue)); QCOMPARE(restored->serialize(),before);
+    }
+    void tickxMemoryEditorPreviewAndIndependentCopy() {
+        QString issue; const auto payload=WaveBlockContent::initialProject(); QVERIFY2(WaveBlockContent::validate(payload.toUtf8(),&issue),qPrintable(issue));
+        EditorAssociatedBlock block; block.type="wave"; block.text=payload; block.height=360;
+        const auto id=model()->insert(block,QTextCursor(editor->document()));
+        WaveBlockContent view(model(),id,nullptr); view.resize(900,400); view.present(payload,false); view.show();
+        auto* native=view.findChild<QWidget*>("WaveStimulusEditor"); QVERIFY(native);
+        QCOMPARE(native->property("wavewidgets.contract").toString(),QString("wave-workbench.stimulus-editor/v1"));
+        auto* canvas=native->findChild<QWidget*>("stimulusCanvas"); QVERIFY(canvas);
+        QVERIFY(QMetaObject::invokeMethod(canvas,"zoomIn")); QVERIFY(QMetaObject::invokeMethod(canvas,"fitScenario"));
+        QLibrary library(QCoreApplication::applicationDirPath()+"/components/tickx/wavewidgets.dll"); QVERIFY(library.load());
+        using Update=int(*)(QWidget*,const char*,size_t,char*,size_t);
+        auto update=reinterpret_cast<Update>(library.resolve("wavewidgets_update_stimulus_editor_v1")); QVERIFY(update);
+        auto project=QJsonDocument::fromJson(payload.toUtf8()).object(); auto scenarios=project["scenarios"].toArray(); auto scenario=scenarios[0].toObject();
+        auto lanes=scenario["lanes"].toArray(); auto lane=lanes[0].toObject(); auto segments=lane["segments"].toArray(); auto segment=segments[0].toObject(); segment["value"]="1";
+        segments[0]=segment; lane["segments"]=segments; lanes[0]=lane; scenario["lanes"]=lanes; scenarios[0]=scenario; project["scenarios"]=scenarios;
+        const auto changed=QJsonDocument(project).toJson(QJsonDocument::Compact); char message[2048]{};
+        QCOMPARE(update(native,changed.constData(),size_t(changed.size()),message,sizeof(message)),0);
+        QVERIFY2(view.flush(&issue),qPrintable(issue)); QVERIFY(model()->dirty());
+        const auto edited=model()->find(id)->text; QVERIFY(edited.contains("\"value\":\"1\""));
+        auto* undo=native->findChild<QPushButton*>("stimulusUndo"); QVERIFY(undo && undo->isEnabled()); undo->click(); QVERIFY(view.flush(&issue));
+        QVERIFY(model()->find(id)->text.contains("\"value\":\"0\""));
+        model()->endTextSession();
+        QCOMPARE(update(native,changed.constData(),size_t(changed.size()),message,sizeof(message)),0);
+        QVERIFY(view.flush(&issue)); model()->endTextSession();
+        QVERIFY(model()->undoAssociation(false)); view.present(model()->find(id)->text,false);
+        native=view.findChild<QWidget*>("WaveStimulusEditor"); QVERIFY(native);
+        QVERIFY(!native->findChild<QPushButton*>("stimulusUndo")->isEnabled());
+        QVERIFY(model()->find(id)->text.contains("\"value\":\"0\""));
+        QVERIFY(model()->undoAssociation(true)); view.present(model()->find(id)->text,false);
+        native=view.findChild<QWidget*>("WaveStimulusEditor"); QVERIFY(native);
+        QVERIFY(!native->findChild<QPushButton*>("stimulusUndo")->isEnabled());
+        QVERIFY(model()->find(id)->text.contains("\"value\":\"1\""));
+        QVERIFY(model()->undoAssociation(false)); view.present(model()->find(id)->text,false);
+        native=view.findChild<QWidget*>("WaveStimulusEditor"); QVERIFY(native);
+        view.present(model()->find(id)->text,true); QVERIFY(!native->isEnabled());
+        auto* tabs=view.findChild<QTabWidget*>("waveBlockTabs"); QVERIFY(tabs); auto* preview=tabs->currentWidget();
+        QCOMPARE(preview->property("wavewidgets.contract").toString(),QString("wave-workbench.waveform-view/v1"));
+        QCOMPARE(preview->property("presentationState").toString(),QString("ready"));
+        QVERIFY(QMetaObject::invokeMethod(preview,"zoomIn")); bool selected=false;
+        QVERIFY(QMetaObject::invokeMethod(preview,"selectLane",Q_RETURN_ARG(bool,selected),Q_ARG(QString,QString("signal")))); QVERIFY(selected);
+        bool revealed=false; QVERIFY(QMetaObject::invokeMethod(preview,"revealTick",Q_RETURN_ARG(bool,revealed),Q_ARG(qint64,qint64(20)))); QVERIFY(revealed);
+        const auto copy=model()->transferTo(model(),id,QTextCursor(editor->document()),true); QVERIFY(!copy.isEmpty()); QVERIFY(copy!=id);
+        model()->editText(copy,edited); QVERIFY(model()->find(id)->text.contains("\"value\":\"0\""));
+    }
     void init() {
         editor = std::make_unique<MyCodeEditor>(); editor->resize(800, 500);
         editor->setPlainText("alpha\nbeta\ngamma\n"); editor->document()->setModified(false);
@@ -108,7 +169,11 @@ private slots:
         const int to=qFloor((editor->blockGeometry(1).top-3)*scale);
         QVERIFY(to>from+50);
         const auto background=editor->palette().color(QPalette::AlternateBase).rgb();
-        for(int y=from;y<to;++y) for(int x=qCeil(18*scale);x<qFloor((gutter->width()-20)*scale);++x) {
+        bool badgeVisible=false;
+        for(int y=from;y<qMin(to,from+qCeil(30*scale));++y) for(int x=qCeil(3*scale);x<qFloor((gutter->width()-20)*scale);++x)
+            badgeVisible|=capture.pixel(x,y)!=background;
+        QVERIFY2(badgeVisible,"The association gutter must display its type and ordinal");
+        for(int y=from+qCeil(32*scale);y<to;++y) for(int x=qCeil(18*scale);x<qFloor((gutter->width()-20)*scale);++x) {
             if (capture.pixel(x,y)!=background) {
                 qWarning()<<"gutter pixel"<<QPoint(x,y)<<Qt::hex<<capture.pixel(x,y)<<background
                     <<"gap"<<from<<to<<"gutter"<<gutter->geometry()<<"viewport"<<editor->viewport()->geometry();

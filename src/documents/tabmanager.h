@@ -44,6 +44,7 @@ struct CrashRecoveryApplyResult :
 class DocumentRecoveryQueue;
 class AssociatedBlockPage;
 class AssociatedBlockDragController;
+struct EditorAssociatedBlock;
 
 struct WorkspacePathMutation {
     struct WebDocument { QPointer<WebDocumentPage> page; QString path; quint64 revision = 0; std::shared_ptr<void> lock; QString target; };
@@ -96,7 +97,7 @@ public:
     AssociatedBlockPage* openAssociatedBlock(SharedDocument* document, const QString& id,
         QTabWidget* group = nullptr, const QString& viewId = {});
     AssociatedBlockPage* detachAssociatedBlock(SharedDocument* document, const QString& id,
-        QTabWidget* group = nullptr, std::function<bool(AssociatedBlockPage*)> place = {});
+        QTabWidget* group = nullptr, std::function<bool(AssociatedBlockPage*)> place = {}, bool copy = false);
     bool saveSharedDocument(SharedDocument* document, bool forceSaveAs = false,
         const QString& explicitFileName = {}, WorkspaceFileSnapshot* savedGeneration = nullptr);
     void closeTab(int index);
@@ -466,7 +467,7 @@ private:
     void reconcileAssociatedBlocks(SharedDocument* document);
     void updateAssociatedBlockTitle(AssociatedBlockPage* page);
     AssociatedBlockPage* createAssociatedBlockPage(SharedDocument* document, const QString& id,
-        QTabWidget* group, const QString& viewId = {});
+        QTabWidget* group, const QString& viewId = {}, const EditorAssociatedBlock* prepared = nullptr);
     bool confirmWebDocuments(const QList<WebDocumentPage*>& pages);
     void checkpointWebRecovery(WebDocumentPage* page);
     void clearWebRecovery(WebDocumentPage* page);

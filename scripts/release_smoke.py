@@ -82,6 +82,9 @@ def smoke(package,output,gui=False,installed_extras=False):
         test=Path(receipt['buildDirectory'])/'native_component_integration_test.exe'
         require(digest(test)==receipt['packageInputs'][test.name],'Native test binary changed')
         temporary={package/test.name:test,package/'Qt6Test.dll':Path(receipt['qtDirectory'])/'bin/Qt6Test.dll'}
+        wave_test=Path(receipt['buildDirectory'])/'editor_block_test.exe'
+        require(digest(wave_test)==receipt['packageInputs'][wave_test.name],'Wave block test binary changed')
+        temporary[package/wave_test.name]=wave_test
         copied={}
         try:
             for target,source in temporary.items():
@@ -92,6 +95,11 @@ def smoke(package,output,gui=False,installed_extras=False):
             command('native-components',[package/test.name,'-o',str(output/'native.xml')+',xml','-o',str(output/'native.log')+',txt'],native_env)
             incidents=list(ET.parse(output/'native.xml').getroot().iter('Incident'))
             require(incidents and all(x.get('type')=='pass' for x in incidents),'Native component cases failed/skipped')
+            command('wave-block',[package/wave_test.name,'tickxMemoryEditorPreviewAndIndependentCopy',
+                    '-o',str(output/'wave-block.xml')+',xml','-o',str(output/'wave-block.log')+',txt'],native_env)
+            incidents=list(ET.parse(output/'wave-block.xml').getroot().iter('Incident'))
+            require(incidents and all(x.get('type')=='pass' for x in incidents),'Packaged Wave block failed/skipped')
+            result['waveBlockVerified']=True
         finally:
             for target,value in copied.items():
                 require(target.resolve().parent==package.resolve() and digest(target)==value,'Temporary harness changed')

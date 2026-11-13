@@ -228,7 +228,7 @@ int main()
         }
     }
     expect("parameterized adapters explicitly declare shared routes",
-           sharedRouteGroups == 2
+           sharedRouteGroups == 1
                && sharedRoutesAreExplicit);
 
     expect("unified catalog covers all trigger families",
@@ -1744,8 +1744,8 @@ int main()
                                   surface,
                                   inlineDescriptor.label);
     }
-    expect("all built-in inline commands are registry adapters",
-           InlineCommandMode::descriptors().size() >= 44
+    expect("retained semantic inline commands are registry adapters",
+           InlineCommandMode::descriptors().size() >= 22
                && inlineAdaptersUseRegistry);
 
     const ActionDescriptor* semanticParameter =
@@ -1754,12 +1754,8 @@ int main()
     const ActionDescriptor* templateParameter =
         findActionByAlias(ActionSurface::InlineTemplate,
                           QStringLiteral(";;p"));
-    expect("semantic search and template insertion remain distinct intents",
-           semanticParameter
-               && templateParameter
-               && semanticParameter->id != templateParameter->id
-               && semanticParameter->executionRoute
-                      != templateParameter->executionRoute);
+    expect("semantic search remains while built-in parameter insertion is retired",
+           semanticParameter && !templateParameter && semanticParameter->executionRoute == "completion.semantic");
 
     const ActionDescriptor* visibleSymbols =
         findActionByAlias(ActionSurface::InlineSemantic,
@@ -1790,8 +1786,8 @@ int main()
                                   ActionSurface::InlineTemplate,
                                   item.commandToken);
     }
-    expect("built-in template catalog uses registry metadata",
-           CodeTemplateService::getInstance()->catalog().size() == 17
+    expect("built-in code template catalog remains empty",
+           CodeTemplateService::getInstance()->catalog().isEmpty()
                && templatesUseRegistry);
 
     const ActionDescriptor* genericAlways =
@@ -1803,52 +1799,16 @@ int main()
     const ActionDescriptor* flipFlopAlways =
         findActionByAlias(ActionSurface::InlineTemplate,
                           QStringLiteral(";;af"));
-    expect("registry owns the three distinct always template commands",
-           genericAlways
-               && combinationalAlways
-               && flipFlopAlways
-               && genericAlways->id != combinationalAlways->id
-               && genericAlways->id != flipFlopAlways->id
-               && combinationalAlways->id != flipFlopAlways->id
-               && !findActionByAlias(ActionSurface::InlineSemantic,
-                                     QStringLiteral(";ac"))
-               && !findActionByAlias(ActionSurface::InlineSemantic,
-                                     QStringLiteral(";af")));
-
-    const CodeTemplateItem genericAlwaysTemplate =
-        CodeTemplateService::getInstance()->templateForCommand(
-            QStringLiteral(";;a"));
-    expect("generic always template exposes sensitivity and empty body slots",
-           genericAlwaysTemplate.insertText
-                   == QStringLiteral("always @(*) begin\n"
-                                     "    \n"
-                                     "end")
-               && genericAlwaysTemplate.templateSlots.size() == 2
-               && genericAlwaysTemplate.templateSlots.at(0).name
-                      == QStringLiteral("sensitivity")
-               && genericAlwaysTemplate.insertText.mid(
-                      genericAlwaysTemplate.templateSlots.at(0).start,
-                      genericAlwaysTemplate.templateSlots.at(0).length)
-                      == QStringLiteral("*")
-               && genericAlwaysTemplate.templateSlots.at(1).name
-                      == QStringLiteral("body")
-               && genericAlwaysTemplate.templateSlots.at(1).length == 0
-               && genericAlwaysTemplate.templateSlots.at(1).visibleWhenEmpty);
-
-    const CodeTemplateItem combinationalAlwaysTemplate =
-        CodeTemplateService::getInstance()->templateForCommand(
-            QStringLiteral(";;ac"));
-    expect("always_comb template exposes a visible empty body slot",
-           combinationalAlwaysTemplate.insertText
-                   == QStringLiteral("always_comb begin\n"
-                                     "    \n"
-                                     "end")
-               && combinationalAlwaysTemplate.templateSlots.size() == 1
-               && combinationalAlwaysTemplate.templateSlots.first().name
-                      == QStringLiteral("body")
-               && combinationalAlwaysTemplate.templateSlots.first().length == 0
-               && combinationalAlwaysTemplate.templateSlots.first()
-                      .visibleWhenEmpty);
+    expect("all three bundled always command adapters are retired",
+           !genericAlways && !combinationalAlways && !flipFlopAlways
+               && !findActionByAlias(ActionSurface::InlineSemantic, QStringLiteral(";ac"))
+               && !findActionByAlias(ActionSurface::InlineSemantic, QStringLiteral(";af")));
+    const auto genericAlwaysTemplate=CodeTemplateService::getInstance()->templateForCommand(";;a");
+    expect("retired generic always cannot re-inject source or slots",
+           genericAlwaysTemplate.insertText.isEmpty() && genericAlwaysTemplate.templateSlots.isEmpty());
+    const auto combinationalAlwaysTemplate=CodeTemplateService::getInstance()->templateForCommand(";;ac");
+    expect("retired always_comb cannot re-inject source or slots",
+           combinationalAlwaysTemplate.insertText.isEmpty() && combinationalAlwaysTemplate.templateSlots.isEmpty());
 
     const QStringList sourceActionIds = {
         QStringLiteral("insight.signalKernelGraph"),

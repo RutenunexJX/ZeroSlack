@@ -37,7 +37,7 @@ protected:
 private:
     struct View {
         QFrame* frame = nullptr;
-        EditorBlockContent* content = nullptr;
+        QPointer<EditorBlockContent> content;
         QLabel* title = nullptr;
         QTextEdit* text = nullptr;
         QToolButton* collapse = nullptr;

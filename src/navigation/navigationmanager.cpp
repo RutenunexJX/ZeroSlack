@@ -279,6 +279,10 @@ void NavigationManager::setSearchFilter(NavigationView view,
             tab, normalized);
     }
     context.setSearchFilter(view, normalized);
+    // The widget already applied this filter; activating Files must not rebuild
+    // the same tree and discard its selection. Source invalidation stays intact.
+    if (navigationWidget && view == FileHierarchyView && caches.fileHierarchyValid)
+        caches.fileHierarchyFilter = normalized;
 }
 
 void NavigationManager::highlightCurrentFileInTree()

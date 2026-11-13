@@ -3,6 +3,7 @@
 #include "mycodeeditor.h"
 #include "simulationcommandplanner.h"
 #include "usertemplateservice.h"
+#include "usertemplatefixtures.h"
 #include <QtTest>
 
 // Set up retained template/slot data without the removed Ctrl+Space entry.

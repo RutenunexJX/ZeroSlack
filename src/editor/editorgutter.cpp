@@ -2,6 +2,8 @@
 
 #include "editorruntime.h"
 #include "mycodeeditor.h"
+#include "documentblockmodel.h"
+#include "roundedicons.h"
 
 #include <QFontDatabase>
 #include <QFontMetricsF>
@@ -199,10 +201,33 @@ void EditorGutter::paint(MyCodeEditor* editor, QPaintEvent* event) const
         bottom = top + editor->blockBoundingRect(block).height();
         blockNumber = block.blockNumber();
     }
+    if (editor->state) {
+        const auto& projection=editor->state->projection;
+        for (const auto& gap:projection.visibleAssociatedBlocks(editor)) {
+            const auto* associated=editor->blockModel()->find(gap.first); if (!associated) continue;
+            const auto kind=associated->type=="wave" ? RoundedIcons::Wave : associated->type=="image" ? RoundedIcons::Grid
+                : associated->type=="reference" ? RoundedIcons::CopyLink : associated->type=="code" ? RoundedIcons::Subroutine
+                : associated->type=="attachment" ? RoundedIcons::Folder : RoundedIcons::File;
+            const int y=qRound(gap.second.top())+9;
+            RoundedIcons::icon(kind).paint(&painter,QRect(3,y,16,16));
+            painter.setPen(palette.color(QPalette::PlaceholderText));
+            painter.drawText(QRect(21,y,qMax(1,widthFor(editor)-25),18),Qt::AlignLeft|Qt::AlignVCenter,
+                             QString::number(projection.associatedBlockOrdinal(gap.first)));
+        }
+    }
 }
 
 void EditorGutter::handleMousePress(MyCodeEditor* editor, QMouseEvent* event) const
 {
+    if (editor->state && event->button()==Qt::LeftButton) {
+        for (const auto& gap:editor->state->projection.visibleAssociatedBlocks(editor))
+            if (event->position().y()>=gap.second.top() && event->position().y()<=gap.second.bottom()) {
+                const int line=editor->state->projection.sourceLineForAssociatedBlock(gap.first);
+                const auto source=editor->document()->findBlockByNumber(line);
+                if (source.isValid()) editor->setTextCursor(QTextCursor(source));
+                editor->selectAssociatedBlock(gap.first); event->accept(); return;
+            }
+    }
     if (editor->state && editor->state->handleGutterMousePress(editor, event)) {
         event->accept();
         return;
@@ -210,8 +235,12 @@ void EditorGutter::handleMousePress(MyCodeEditor* editor, QMouseEvent* event) co
 
     const QTextCursor cursor = editor->cursorForPosition(
         QPoint(0, static_cast<int>(event->position().y())));
-    if (!cursor.isNull())
+    if (!cursor.isNull()) {
         editor->setTextCursor(cursor);
+        editor->setProperty("blockPasteLine",cursor.blockNumber());
+        editor->setProperty("blockPasteRevision",QVariant::fromValue<qulonglong>(editor->semanticDocumentRevision()));
+        editor->setFocus(Qt::MouseFocusReason);
+    }
 }
 
 void EditorGutter::handleMouseMove(MyCodeEditor* editor, QMouseEvent* event) const

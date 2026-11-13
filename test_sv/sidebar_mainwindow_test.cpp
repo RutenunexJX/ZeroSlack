@@ -6,6 +6,7 @@
 #include "navigationrowstyle.h"
 #include "designhierarchymodel.h"
 #include "navigationpanecoordinator.h"
+#include "analysisscheduler.h"
 #include "workspacemanager.h"
 #include "workspacesessioncoordinator.h"
 #include "projectmodel.h"
@@ -47,11 +48,33 @@
 #include <QPdfWriter>
 #include <QPainter>
 #include <QMouseEvent>
+#include <QMenu>
 
 namespace {
 void put(const QString& path,const QByteArray& bytes) {
     QDir().mkpath(QFileInfo(path).absolutePath()); QFile file(path);
     if (!file.open(QIODevice::WriteOnly)||file.write(bytes)!=bytes.size()) qFatal("fixture write");
+}
+void chooseFile(QObject* owner,const QString& path,bool& observed) {
+    auto* timer=new QTimer(owner);
+    QObject::connect(timer,&QTimer::timeout,owner,[timer,path,&observed] {
+        for(auto* widget:QApplication::topLevelWidgets()) {
+            auto* dialog=qobject_cast<QFileDialog*>(widget);
+            if(!dialog || !dialog->isVisible()) continue;
+            observed=true; timer->stop(); timer->deleteLater();
+            dialog->setDirectory(QFileInfo(path).absolutePath());
+            dialog->selectFile(QFileInfo(path).fileName());
+            QTimer::singleShot(100,dialog,[dialog,path] {
+                auto* name=dialog->findChild<QLineEdit*>("fileNameEdit");
+                if(!name) { QTest::qFail("File picker name field missing",__FILE__,__LINE__); dialog->reject(); return; }
+                name->setText(QFileInfo(path).fileName());
+                qInfo()<<"navigation-file-picker"<<dialog->windowTitle()<<dialog->selectedFiles();
+                QMetaObject::invokeMethod(dialog,"accept",Qt::QueuedConnection);
+            });
+            return;
+        }
+    });
+    timer->start(20);
 }
 void hoverTab(QTabBar* bar, int index) {
     class MoveCounter final : public QObject {
@@ -182,6 +205,157 @@ class SidebarMainWindowTest : public QObject {
     }
 private slots:
     void initTestCase() { QVERIFY(initializeUiStyleForTest()); }
+    void navigationPanelsRestoreThroughAddMenu() {
+        Host h; QVERIFY(h.sessions()->openWorkspace(h.workspace));
+        const auto available=h.window->screen()->availableGeometry();
+        h.window->resize(qMin(1200,available.width()-40),qMin(760,available.height()-80));
+        h.window->move(available.topLeft()+QPoint(20,20));
+        auto* nav=h.navigation(); auto* tabs=h.window->tabManager.get();
+        auto* split=tabs->editorSplitController(); auto* left=split->regionGroup("left");
+        auto* files=split->pageById("tool:files"); auto* design=split->pageById("tool:design");
+        auto* plus=nav->findChild<QToolButton*>("leftAddDocument"); QVERIFY(plus && files && design);
+        auto* menu=plus->menu(); QVERIFY(menu);
+        auto* showFiles=menu->findChild<QAction*>("leftPanel.files");
+        auto* showDesign=menu->findChild<QAction*>("leftPanel.design"); QVERIFY(showFiles && showDesign);
+        auto* fileTree=nav->findChild<QTreeWidget*>("navigationFileTree");
+        auto* designTree=nav->findChild<QTreeView*>("navigationDesignTree"); QVERIFY(fileTree && designTree);
+        nav->setActiveTab(NavigationWidget::DesignTab);
+        QTRY_VERIFY_WITH_TIMEOUT(designTree->model()->rowCount()>0 && !h.window->analysisScheduler->isSemanticAnalysisActive(),15000);
+        auto* designModel=designTree->model();
+        const QPersistentModelIndex root(designModel->index(0,0));
+        designTree->expand(root); designTree->setCurrentIndex(root);
+        nav->setActiveTab(NavigationWidget::FileTab);
+        nav->setSearchFilter(NavigationWidget::FileTab,"design");
+        const auto findFile=[&]() -> QTreeWidgetItem* {
+            for(QTreeWidgetItemIterator it(fileTree); *it; ++it)
+                if((*it)->data(0,Qt::UserRole).toString()==h.workspace+"/rtl/design.sv") return *it;
+            return nullptr;
+        };
+        QTRY_VERIFY(findFile()); auto* fileItem=findFile();
+        auto* fileRoot=fileItem->parent(); QVERIFY(fileRoot);
+        fileRoot->setExpanded(true); fileTree->setCurrentItem(fileItem);
+        QCOMPARE(fileTree->currentItem(),fileItem);
+        QSignalSpy fileResets(fileTree->model(),&QAbstractItemModel::modelReset);
+        QSignalSpy resets(designModel,&QAbstractItemModel::modelReset);
+        QSignalSpy publications(h.window->analysisScheduler.get(),&AnalysisScheduler::semanticAnalysisTelemetry);
+        for(const auto& entry:QList<QPair<QWidget*,QAction*>>{{files,showFiles},{design,showDesign}}) {
+            QVERIFY(split->requestPageClose(entry.first)); QVERIFY(!split->groupForPage(entry.first));
+            entry.second->trigger(); QCOMPARE(split->groupForPage(entry.first),left);
+            QCOMPARE(left->currentWidget(),entry.first);
+            const int count=left->count(); entry.second->trigger(); QCOMPARE(left->count(),count);
+        }
+        QCOMPARE(designTree->model(),designModel); QCOMPARE(designTree->currentIndex(),QModelIndex(root));
+        QVERIFY(designTree->isExpanded(root)); QCOMPARE(fileTree->currentItem(),fileItem); QVERIFY(fileRoot->isExpanded());
+        QCOMPARE(fileResets.size(),0);
+        QCOMPARE(nav->searchFilter(NavigationWidget::FileTab),QString("design"));
+        qInfo()<<"navigation-restore individual close/reopen preserves models and selection";
+        nav->setSearchFilter(NavigationWidget::DesignTab,"sidebar_leaf");
+        QTRY_VERIFY(!designTree->property("designSearchPending").toBool());
+        auto* searchModel=designTree->model();
+        QVERIFY(split->requestPageClose(files)); QVERIFY(split->requestPageClose(design));
+        QCOMPARE(left->count(),0); QTRY_VERIFY(plus->isVisible()); QVERIFY(plus->isEnabled());
+        QVERIFY(plus->parentWidget()->rect().contains(plus->geometry()));
+        bool menuShown=false,keyboardSelected=false;
+        QTimer::singleShot(60,menu,[&] {
+            menuShown=menu->isVisible();
+            menu->setActiveAction(nullptr);
+            for(int i=0;i<menu->actions().size() && menu->activeAction()!=showFiles;++i)
+                QTest::keyClick(menu,Qt::Key_Down);
+            keyboardSelected=menu->activeAction()==showFiles;
+            if(keyboardSelected) QTest::keyClick(menu,Qt::Key_Return); else menu->close();
+        });
+        QTest::mouseClick(plus,Qt::LeftButton); QVERIFY(menuShown); QVERIFY(keyboardSelected);
+        QCOMPARE(left->currentWidget(),files); QVERIFY(!split->groupForPage(design));
+        showDesign->trigger(); QCOMPARE(left->currentWidget(),design); QCOMPARE(left->count(),2);
+        QCOMPARE(designTree->model(),searchModel); QCOMPARE(nav->searchFilter(NavigationWidget::DesignTab),QString("sidebar_leaf"));
+        nav->setSearchFilter(NavigationWidget::DesignTab,{});
+        QCOMPARE(designTree->model(),designModel); QCOMPARE(designTree->currentIndex(),QModelIndex(root));
+        QVERIFY(designTree->isExpanded(root)); QCOMPARE(resets.size(),0); QCOMPARE(publications.size(),0);
+        qInfo()<<"navigation-restore both closed; native menu keyboard restoration passed";
+        auto* pane=h.window->findChild<NavigationPaneCoordinator*>(); QVERIFY(pane);
+        pane->setExpanded(false,false); showFiles->trigger(); QTRY_VERIFY(pane->isExpanded());
+        QVERIFY(split->movePage(files,split->regionGroup("right")));
+        showFiles->trigger(); QCOMPARE(split->groupForPage(files),split->regionGroup("right"));
+        QVERIFY(split->requestPageClose(files)); showFiles->trigger(); QCOMPARE(split->groupForPage(files),left);
+        auto* floating=split->floatPage(design,h.window->mapToGlobal(QPoint(250,180))); QVERIFY(floating);
+        floating->window()->hide(); showDesign->trigger();
+        QCOMPARE(split->groupForPage(design),floating); QTRY_VERIFY(floating->window()->isVisible());
+        QVERIFY(split->requestPageClose(design)); showDesign->trigger(); QCOMPARE(split->groupForPage(design),left);
+        QCOMPARE(split->pageById("tool:files"),files); QCOMPARE(split->pageById("tool:design"),design);
+        qInfo()<<"navigation-restore cross-region and floating reuse passed";
+        QVERIFY(tabs->openFileInRegion(h.workspace+"/rtl/design.sv","main")); auto* editor=tabs->getCurrentEditor(); QVERIFY(editor);
+        const auto original=editor->toPlainText(); editor->insertPlainText("// unsaved navigation check\n");
+        const auto changed=editor->toPlainText(); showFiles->trigger(); showDesign->trigger();
+        QCOMPARE(editor->toPlainText(),changed); editor->undo(); QCOMPARE(editor->toPlainText(),original);
+        QVERIFY(split->requestPageClose(design)); QVERIFY(h.sessions()->saveSession(false));
+        QVERIFY(h.sessions()->openWorkspace(h.other));
+        QCOMPARE(nav->searchFilter(NavigationWidget::FileTab),QString());
+        QVERIFY(h.sessions()->openWorkspace(h.workspace));
+        QCOMPARE(nav->searchFilter(NavigationWidget::FileTab),QString("design"));
+        QCOMPARE(split->pageById("tool:files"),files); QCOMPARE(split->pageById("tool:design"),design);
+        QCOMPARE(split->groupForPage(files),left); QVERIFY(!split->groupForPage(design));
+        showDesign->trigger(); QCOMPARE(split->groupForPage(design),left);
+        QVERIFY(h.sessions()->saveSession(false)); h.window.reset();
+        h.window=std::make_unique<MainWindow>(); h.window->show();
+        h.window->workspaceManager->setRecentWorkspacePersistenceEnabledForTesting(false);
+        QVERIFY(h.sessions()->openWorkspace(h.workspace));
+        auto* restored=h.window->tabManager->editorSplitController();
+        for(const auto& id:{QString("tool:files"),QString("tool:design")}) {
+            auto* page=restored->pageById(id); QVERIFY(page);
+            QCOMPARE(restored->groupForPage(page),restored->regionGroup("left"));
+        }
+        QCOMPARE(h.navigation()->searchFilter(NavigationWidget::FileTab),QString("design"));
+        qInfo()<<"navigation-restore workspace and new-window session restoration passed";
+        capture(h,"navigation-panels-reopened");
+    }
+    void navigationAddMenuPreservesDocumentCreation() {
+        if(QGuiApplication::platformName()!=QStringLiteral("windows")) QSKIP("Native document workers require Windows");
+        Host h; QVERIFY(h.sessions()->openWorkspace(h.workspace));
+        auto* tabs=h.window->tabManager.get(); auto* split=tabs->editorSplitController();
+        auto* plus=h.navigation()->findChild<QToolButton*>("leftAddDocument"); QVERIFY(plus && plus->menu());
+        auto* menu=plus->menu();
+        const auto actions=menu->actions(); QCOMPARE(actions.size(),8);
+        QCOMPARE(actions[0]->text(),QString("Documents")); QVERIFY(!actions[0]->isEnabled());
+        QVERIFY(actions[4]->isSeparator()); QCOMPARE(actions[5]->text(),QString("Panels")); QVERIFY(!actions[5]->isEnabled());
+        for(const auto& kind:{QString("markdown"),QString("blocks")}) {
+            auto* action=menu->findChild<QAction*>("leftDocument."+kind); QVERIFY(action);
+            qInfo()<<"navigation-document-create"<<kind;
+            const int previous=tabs->webDocuments().size(); action->trigger();
+            auto* page=tabs->currentWebDocument(); QVERIFY(page);
+            QCOMPARE(tabs->webDocuments().size(),previous+1); QVERIFY(page->fileName().isEmpty());
+            QCOMPARE(split->groupForPage(page),split->regionGroup("left")); QTRY_VERIFY_WITH_TIMEOUT(page->ready(),15000);
+            qInfo()<<"navigation-document-ready"<<kind;
+            const auto path=h.workspace+(kind=="markdown" ? "/created.md" : "/created.zblock");
+            QVERIFY(!QFileInfo::exists(path)); bool picked=false; chooseFile(h.window.get(),path,picked);
+            QVERIFY(tabs->saveCurrentTab()); QVERIFY(picked); QVERIFY(QFileInfo::exists(path));
+            qInfo()<<"navigation-document-saved"<<kind;
+            QCOMPARE(page->fileName(),path); QVERIFY(!page->dirty());
+        }
+        const auto source=h.workspace+"/rtl/design.sv"; bool opened=false;
+        chooseFile(h.window.get(),source,opened);
+        auto* open=menu->findChild<QAction*>("leftDocument.open"); QVERIFY(open); open->trigger();
+        QVERIFY(opened); auto* editor=tabs->getCurrentEditor(); QVERIFY(editor); QCOMPARE(editor->documentFileName(),source);
+        QCOMPARE(split->groupForPage(editor),split->regionGroup("left"));
+        const auto expected=qEnvironmentVariable("ZEROSLACK_EXPECTED_DPR");
+        if(!expected.isEmpty()) QCOMPARE(h.window->devicePixelRatioF(),expected.toDouble());
+        for(const auto mode:{ThemeMode::Light,ThemeMode::Dark}) {
+            ApplicationThemeManager::instance().setMode(mode);
+            const auto available=h.window->screen()->availableGeometry();
+            h.window->resize(qMin(800,available.width()-40),qMin(650,available.height()-80));
+            h.window->move(available.topLeft()+QPoint(20,20));
+            menu->popup(plus->mapToGlobal(QPoint(0,plus->height())));
+            QTRY_VERIFY(menu->isVisible());
+            QTest::qWait(200);
+            for(auto* action:actions) if(!action->isSeparator()) {
+                QVERIFY(menu->rect().contains(menu->actionGeometry(action)));
+                QVERIFY(menu->actionGeometry(action).width()>menu->fontMetrics().horizontalAdvance(action->text()));
+            }
+            const auto output=qEnvironmentVariable("ZEROSLACK_SIDEBAR_EVIDENCE");
+            if(!output.isEmpty()) QVERIFY(menu->grab().save(QDir(output).filePath(mode==ThemeMode::Light ? "navigation-add-menu-light.png" : "navigation-add-menu-dark.png")));
+            menu->close();
+        }
+        ApplicationThemeManager::instance().setMode(ThemeMode::Light);
+    }
     void leftTabLabelsAcrossDocumentKindsAndRestore() {
         if (QGuiApplication::platformName()!=QStringLiteral("windows"))
             QSKIP("Markdown/Block/PDF workers require native Windows hosts; run this case in the native DPR matrix");

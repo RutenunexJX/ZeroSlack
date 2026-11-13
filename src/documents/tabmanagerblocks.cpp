@@ -24,16 +24,19 @@ AssociatedBlockPage* TabManager::openAssociatedBlock(SharedDocument* document, c
     const auto* block=model->find(id); if (!block || !block->detached) return nullptr;
     return createAssociatedBlockPage(document,id,group,viewId);
 }
-AssociatedBlockPage* TabManager::createAssociatedBlockPage(SharedDocument* document, const QString& id, QTabWidget* group, const QString& viewId) {
+AssociatedBlockPage* TabManager::createAssociatedBlockPage(SharedDocument* document, const QString& id, QTabWidget* group, const QString& viewId, const EditorAssociatedBlock* prepared) {
     for (auto* page : associatedBlockPages()) if (page->ownerDocument()==document && page->blockId()==id) {
         splitController->activatePage(page); return page;
     }
     if (!group) group=activeTabWidget(); if (!group) return nullptr;
-    auto* page=new AssociatedBlockPage(document,id,group,viewId);
+    auto* page=new AssociatedBlockPage(document,id,group,viewId,prepared);
     if (!splitController->registerPage(page,{},"associatedBlock",[this,page] { return closeAssociatedBlock(page); })) { delete page; return nullptr; }
     if (document->fileName().isEmpty() && document->property("associatedWorkspace").toString().isEmpty()) document->setProperty("associatedWorkspace",activeWorkspaceRoot);
     connect(page,&AssociatedBlockPage::statusChanged,this,[this,page] { updateAssociatedBlockTitle(page); });
     connect(page,&AssociatedBlockPage::saveRequested,this,[this,page](bool saveAs) { saveSharedDocument(page->ownerDocument(),saveAs); });
+    connect(page,&AssociatedBlockPage::clipboardRequested,this,[this,page](bool cut) {
+        if (blockDragController) blockDragController->copyBlock(page->ownerDocument(),page->blockId(),cut);
+    });
     connect(page,&AssociatedBlockPage::sourceRequested,this,[this,page] {
         auto* owner=page->ownerDocument(); if (!owner) return;
         for (auto* view : owner->views()) if (!isAuxiliaryView(view)) { splitController->activatePage(view); return; }
@@ -44,18 +47,48 @@ AssociatedBlockPage* TabManager::createAssociatedBlockPage(SharedDocument* docum
     applyWorkspaceScope(); emit workspaceSessionStateChanged(); return page;
 }
 AssociatedBlockPage* TabManager::detachAssociatedBlock(SharedDocument* document, const QString& id, QTabWidget* group,
-    std::function<bool(AssociatedBlockPage*)> place) {
+    std::function<bool(AssociatedBlockPage*)> place, bool copy) {
     if (!document || document->readOnly()) return nullptr;
     auto* model=DocumentBlockModel::get(document->textDocument());
+    QString issue;
+    if (!model->flushContents(&issue) || !DocumentBlockTransfer::validateParticipant(document,true,&issue)) { model->setError(issue); return nullptr; }
+    model->endTextSession();
     const auto* block=model->find(id); if (!block) return nullptr;
     const auto nextBlock=*block;
     const auto revision=model->revision();
+    if (copy) {
+        auto clone=nextBlock; clone.detached=true;
+        QTextCursor anchor(document->textDocument()); anchor.setPosition(qBound(0,clone.start,document->textDocument()->characterCount()-1));
+        QPointer<AssociatedBlockPage> page;
+        const auto created=model->insert(clone,anchor,[&](const QString& cloneId) {
+            clone.id=cloneId; page=createAssociatedBlockPage(document,cloneId,group,{},&clone);
+            return page && (!place || place(page)) && !document->readOnly() && model->revision()==revision;
+        });
+        if (created.isEmpty()) { if (page) closeAssociatedBlock(page,false,false); return nullptr; }
+        return page;
+    }
     bool existing=false;
-    for (auto* page:associatedBlockPages()) if (page->ownerDocument()==document && page->blockId()==id) existing=true;
+    QPointer<QTabWidget> originalGroup;
+    ClosedTabState originalLocation; int originalIndex=-1;
+    for (auto* page:associatedBlockPages()) if (page->ownerDocument()==document && page->blockId()==id) {
+        existing=true; originalGroup=splitController->groupForPage(page);
+        if(originalGroup) {
+            originalIndex=originalGroup->indexOf(page); rememberClosedGroup(originalLocation,originalGroup);
+            if(originalGroup->window()!=splitController->initialGroup()->window()) originalLocation.floatingGeometry=originalGroup->window()->geometry();
+        }
+    }
     auto* page=createAssociatedBlockPage(document,id,group);
     if (!page) return nullptr;
     if ((place && !place(page)) || document->readOnly() || model->revision()!=revision) {
         if (!existing) closeAssociatedBlock(page,false,false);
+        else {
+            auto* restore=originalGroup ? originalGroup.data() : originalLocation.floatingGeometry.isValid()
+                ? splitController->regionGroup(originalLocation.regionId) : closedTabGroup(originalLocation);
+            if(restore) splitController->movePage(page,restore,originalIndex);
+            if(!originalGroup && originalLocation.floatingGeometry.isValid()) {
+                if(auto* floating=splitController->floatPage(page,originalLocation.floatingGeometry.topLeft())) floating->window()->setGeometry(originalLocation.floatingGeometry);
+            }
+        }
         return nullptr;
     }
     if (!nextBlock.detached) {

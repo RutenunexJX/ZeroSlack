@@ -484,6 +484,7 @@ private:
 signals:
     void editorBlockInsertRequested(const QVariantMap& preset, const QTextCursor& sourceCursor);
     void editorBlockPageRequested(const QString& blockId);
+    void editorBlockClipboardRequested(const QString& blockId, bool cut);
     void userEditStarted(int key, bool repeat);
     void userEditFinished(bool textChanged);
     void editingInteractionEnded();

@@ -15,7 +15,7 @@
 void EditorBlockProjection::ensure(MyCodeEditor* editor, const QList<QPair<int,int>>& folds) {
     auto* model = DocumentBlockModel::get(editor->document());
     if (std::none_of(model->items().cbegin(), model->items().cend(), [](const auto& block) { return !block.detached; })) {
-        enabled = false; runs.clear(); gaps.clear(); heights.clear(); noteHeights.clear(); return;
+        enabled = false; runs.clear(); gaps.clear(); ordinals.clear(); heights.clear(); noteHeights.clear(); return;
     }
     const bool wasEnabled = enabled;
     const int previousSource = wasEnabled ? sourceForRow(rowAtY(offset(editor))) : editor->QPlainTextEdit::firstVisibleBlock().blockNumber();
@@ -59,8 +59,9 @@ void EditorBlockProjection::ensure(MyCodeEditor* editor, const QList<QPair<int,i
         const int row = rowForSource(line);
         if (row < 0) continue;
         qreal blockHeight = block.collapsed || hiddenAnchor ? 36 : block.height + 36;
-        const auto autoText=block.type=="text" ? block.text : block.autoHeight ? EditorBlockPreview::linkOnlyText(block) : QString();
-        if (!block.collapsed && !hiddenAnchor && block.autoHeight && (block.type=="text" || !autoText.isEmpty())) {
+        const bool editableText=block.type=="text" || block.type=="code";
+        const auto autoText=editableText ? block.text : block.autoHeight ? EditorBlockPreview::linkOnlyText(block) : QString();
+        if (!block.collapsed && !hiddenAnchor && block.autoHeight && (editableText || !autoText.isEmpty())) {
             measuredNotes.insert(block.id);
             auto& measured = noteHeights[block.id];
             if (measured.revision != block.revision || measured.style != styleRevision || measured.width != width
@@ -76,6 +77,8 @@ void EditorBlockProjection::ensure(MyCodeEditor* editor, const QList<QPair<int,i
     for (auto it = noteHeights.begin(); it != noteHeights.end();)
         if (!measuredNotes.contains(it.key())) it = noteHeights.erase(it); else ++it;
     std::stable_sort(gaps.begin(), gaps.end(), [](const auto& a, const auto& b) { return a.row != b.row ? a.row < b.row : a.order < b.order; });
+    ordinals.clear();
+    for (const auto& gap:gaps) ordinals.insert(gap.id,ordinals.size()+1);
     int lastRow = -1; qreal within = 0;
     for (auto& gap : gaps) { if (gap.row != lastRow) within = 0; gap.offset = within; within += gap.height; lastRow = gap.row; }
     enabled = true; dirty = false; configureScrollBar(editor);

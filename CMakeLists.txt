@@ -355,6 +355,12 @@ set(ZEROSLACK_CORE_SOURCES
     src/editor/editorslashcontroller.cpp
     src/completion/ordinarytemplateplan.cpp
     src/documents/documentblockmodel.cpp
+    src/documents/documentblocktransfer.cpp
+    src/editor/waveblockcontent.cpp
+    src/editor/waveblockcontent.h
+    src/editor/blockdropadapter.cpp
+    src/editor/blockdropadapter.h
+    src/documents/documentblocktransfer.h
     src/documents/documentblockstore.cpp
     src/editor/editorblockprojection.cpp
     src/editor/editorblockhost.cpp
@@ -747,6 +753,7 @@ endif()
 
 add_library(zeroslack_core ${ZEROSLACK_CORE_LIBRARY_TYPE}
     ${ZEROSLACK_CORE_SOURCES})
+include(cmake/TickxWidgets.cmake)
 
 target_sources(zeroslack_core PRIVATE
     src/ui/linkedraillayout.cpp src/ui/linkedraillayout.h
@@ -1128,7 +1135,7 @@ if(BUILD_TESTING)
     set_tests_properties(template_authoring_test PROPERTIES TIMEOUT 120)
     add_executable(tb_dut_template_test test_sv/tb_dut_template_test.cpp)
     target_link_libraries(tb_dut_template_test PRIVATE zeroslack_core Qt6::Test)
-    target_compile_definitions(tb_dut_template_test PRIVATE TB_TEMPLATE_FILE="${CMAKE_CURRENT_SOURCE_DIR}/resources/templates/tb-dut.json")
+    target_compile_definitions(tb_dut_template_test PRIVATE TB_TEMPLATE_FILE="${CMAKE_CURRENT_SOURCE_DIR}/test_sv/user-template-examples.json")
     zeroslack_qt_test_command(tb_dut_template_test_qt_command tb_dut_template_test tb_dut_template_test)
     add_test(NAME tb_dut_template_test COMMAND ${tb_dut_template_test_qt_command})
     set_tests_properties(tb_dut_template_test PROPERTIES TIMEOUT 120)

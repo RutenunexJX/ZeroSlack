@@ -21,10 +21,6 @@ public:
         const CodeTemplateSignalContext& signalContext =
             CodeTemplateSignalContext()) const;
 
-private:
-    QString seededName(const QString& seedText, const QString& fallback) const;
-    QString expandTemplate(const QString& commandToken,
-                           const QString& seedText) const;
 };
 
 #endif // CODETEMPLATESERVICE_H

@@ -7,6 +7,9 @@
 #include <QJsonObject>
 #include <QTextCursor>
 #include <QVariantMap>
+#include <QPointer>
+#include <QSharedPointer>
+#include <functional>
 
 struct EditorAssociatedBlock {
     QString id, type, text, uri, asset, caption;
@@ -30,15 +33,19 @@ public:
     const QList<EditorAssociatedBlock>& items() const { return blocks; }
     const EditorAssociatedBlock* find(const QString& id) const;
     QString insert(const QString& type, const QTextCursor& source, const QString& text = {});
-    QString insert(EditorAssociatedBlock block, const QTextCursor& source);
+    QString insert(EditorAssociatedBlock block, const QTextCursor& source, std::function<bool(const QString&)> prepare = {});
+    QStringList insertMany(QList<EditorAssociatedBlock> values, const QTextCursor& source, const QString& beforeId = {});
     bool update(EditorAssociatedBlock value);
     bool remove(const QString& id);
     bool reorder(const QString& id, int direction);
     bool reattach(const QString& id, const QTextCursor& source);
     bool move(const QString& id, const QTextCursor& source, const QString& beforeId = {});
+    QString transferTo(DocumentBlockModel* target, const QString& id, const QTextCursor& destination,
+        bool copy, const QString& beforeId = {}, std::function<bool(QString*)> replayGuard = {});
     void beginTextSession(const QString& id);
     void editText(const QString& id, const QString& text);
     void endTextSession();
+    bool flushContents(QString* error = nullptr);
     bool undoAssociation(bool redo);
     void beginTextReplay();
     void endTextReplay();
@@ -63,6 +70,7 @@ public:
     void setError(const QString& message);
     void cloneIdentity();
 signals:
+    void contentsFlushRequested(QString* error);
     void changed();
     void dirtyChanged(bool dirty);
     void historyChanged();
@@ -73,7 +81,16 @@ private:
     QList<EditorAssociatedBlock> blocks, savedBlocks;
     QString identity, failure;
     quint64 generation = 0, nextStamp = 0, stamp = 0, savedStamp = 0;
-    struct Command { QList<EditorAssociatedBlock> before, after; int textStep; quint64 beforeStamp, afterStamp; };
+    struct PairedCommand {
+        QPointer<DocumentBlockModel> source, target;
+        std::function<bool(QString*)> guard;
+    };
+    struct Command {
+        QList<EditorAssociatedBlock> before, after;
+        int textStep;
+        quint64 beforeStamp, afterStamp;
+        QSharedPointer<PairedCommand> pair;
+    };
     QList<Command> commands;
     int applied = 0;
     struct AnchorState { QHash<QString, EditorAssociatedBlock> entries; quint64 stamp = 0; };
@@ -84,7 +101,9 @@ private:
     QString editing;
     int editingCommand = -1;
     void mutate(const QList<EditorAssociatedBlock>& next);
+    void appendCommand(const QList<EditorAssociatedBlock>& next, const QSharedPointer<PairedCommand>& pair = {});
+    bool replayPair(const QSharedPointer<PairedCommand>& pair, bool redo);
     void captureAnchors();
     void sourceChanged(int position, int removed, int added);
-    void publish(bool previouslyDirty);
+    void publish(bool previouslyDirty, bool advance = true);
 };

@@ -58,6 +58,8 @@ def dependency_identity(plan, policy):
     roots={key:Path(defines[key]) for key in FORMAL_DEPENDENCIES}
     roots['SuiteApp_DIR']=roots['SuiteApp_DIR'].parents[2]
     roots['fmt']=Path(defines['FETCHCONTENT_SOURCE_DIR_FMT'])
+    if defines.get('ZEROSLACK_TICKX_WIDGETS_ROOT'):
+        roots['ZEROSLACK_TICKX_WIDGETS_ROOT']=Path(defines['ZEROSLACK_TICKX_WIDGETS_ROOT'])
     result={}
     for key,root in roots.items():
         require(not Path(plan['sourceRoot']).is_relative_to(root),f'Dependency root would traverse the source workspace: {root}')
@@ -593,6 +595,22 @@ def verify_package_sources(path,receipt):
     return plan
 
 
+def verify_tickx_payload(package, receipt):
+    # Older releases predate Wave blocks; new candidates bind all six inputs.
+    if not receipt['configuration'].get('ZEROSLACK_TICKX_WIDGETS_ROOT'):
+        return
+    package=Path(package)
+    for name in ['wavewidgets.dll','WaveWorkbenchEla.dll','LICENSE','NOTICE','THIRD-PARTY-NOTICES.md','build-info.json']:
+        relative='components/tickx/'+name
+        expected=receipt.get('packageInputs',{}).get(relative)
+        require(expected and (package/relative).is_file() and digest(package/relative)==expected,
+                'Missing or changed accepted Wave block runtime: '+relative)
+    component=read_json(package/'components/tickx/build-info.json')
+    info=read_json(package/'build-info.json').get('nativeComponents',{}).get('tickx',{})
+    require(info.get('version')==component['version'] and info.get('revision')==component['revision'],
+            'Wave block component metadata mismatch')
+
+
 def verify_assembled_payload(package,receipt):
     report=receipt.get('reuse',{})
     if not report.get('packageSources'):return
@@ -832,6 +850,7 @@ def verify_package(package, origins=True, allow_extras=False):
     require(info.get('version')==version,'Package/program version mismatch')
     require(info.get('preparationEvidenceSha256')==binding['preparationSha256'],'Package metadata/evidence mismatch')
     verify_checksums(package,policy,allow_extras)
+    verify_tickx_payload(package,receipt)
     return receipt
 
 
@@ -845,6 +864,7 @@ def seal_package(package, preparation):
     require(info.get('version')==prepared_version(receipt),'Package/program version mismatch')
     require(info.get('preparationEvidenceSha256')==digest(preparation),'Package metadata/evidence mismatch')
     verify_assembled_payload(package,receipt)
+    verify_tickx_payload(package,receipt)
     dump(package/'release-gate.json',{'schema':'zeroslack.package-gate/v1','preparation':str(Path(preparation).absolute()),
                                     'preparationSha256':digest(preparation),'sourceManifestSha256':receipt['sourceManifestSha256'],'files':files})
 

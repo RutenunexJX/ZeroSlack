@@ -1,4 +1,7 @@
 <RCC>
+    <qresource prefix="/blocks">
+        <file alias="presets-v1.json">resources/block-presets.json</file>
+    </qresource>
     <qresource prefix="/backgrounds">
         <file alias="resting.png">resources/backgrounds/resting.png</file>
         <file alias="peekaboo.png">resources/backgrounds/peekaboo.png</file>

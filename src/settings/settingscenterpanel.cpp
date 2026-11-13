@@ -587,8 +587,9 @@ void SettingsCenterPanel::buildUi()
 
         for (const SettingsCenterFieldDescriptor& descriptor :
              category.fields) {
+            if (QStringList{"blockNotes.background","blockNotes.textColor","blockNotes.borderColor","blockNotes.style","blockNotes.fontFamily"}.contains(descriptor.id)) continue;
             if (category.id == QStringLiteral("font")
-                && (descriptor.id == QStringLiteral("font.family") || descriptor.id == QStringLiteral("blockNotes.fontFamily"))) {
+                && (descriptor.id == QStringLiteral("font.family") || descriptor.id == QStringLiteral("blockNotes.sizePx"))) {
                 auto* section = UiControls::label(descriptor.id.startsWith(QStringLiteral("blockNotes."))
                     ? tr("Block notes") : tr("Code"), pageContent);
                 UiTypography::apply(section, UiTypography::Role::Section);

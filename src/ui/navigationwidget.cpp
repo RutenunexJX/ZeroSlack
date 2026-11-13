@@ -58,8 +58,11 @@ void NavigationWidget::setActiveTab(NavigationTab tab, bool activate)
     QWidget* page=tab==DesignTab ? designTab : fileTab;
     if (pageRegistry) {
         if (activate) {
-            pageRegistry->restorePage(page,pageRegistry->regionGroup(QStringLiteral("left")));
-            pageRegistry->activatePage(page);
+            pageRegistry->restorePageInGroup(page,pageRegistry->regionGroup(QStringLiteral("left")));
+            if (auto* group=pageRegistry->groupForPage(page); group && group->window()!=window()) {
+                group->window()->raise();
+                group->window()->activateWindow();
+            }
         } else {
             if (auto* group=pageRegistry->groupForPage(page)) {
                 const QSignalBlocker block(group); group->setCurrentWidget(page);
@@ -103,6 +106,7 @@ void NavigationWidget::setWorkspaceRoot(
     savedDesignState = workspaceDesignStates.value(normalized);
     designExpandedIds.clear();
     designSearchLineEdit->clear();
+    searchLineEdit->clear();
     explicitlyTrackedPaths.clear();
     clearDesignHierarchy();
     populateFileTree();
@@ -426,14 +430,29 @@ void NavigationWidget::setupUI()
     tabWidget->setObjectName(QStringLiteral("navigationTabs"));
     tabWidget->setIconSize(QSize(RoundedIcons::SidebarSize, RoundedIcons::SidebarSize));
     auto* addDocument = UiControls::railButton(tabWidget);
-    addDocument->setObjectName(QStringLiteral("leftAddDocument")); addDocument->setIcon(RoundedIcons::icon(RoundedIcons::Add)); addDocument->setToolTip(QStringLiteral("New or Open Document"));
+    addDocument->setObjectName(QStringLiteral("leftAddDocument")); addDocument->setIcon(RoundedIcons::icon(RoundedIcons::Add)); addDocument->setToolTip(tr("Documents and Panels"));
     auto* documentMenu = UiControls::menu(addDocument);
+    documentMenu->setObjectName(QStringLiteral("leftAddMenu"));
+    const auto addGroup = [documentMenu](const QString& title) {
+        auto* heading = documentMenu->addAction(title);
+        heading->setEnabled(false);
+        auto font = documentMenu->font(); font.setBold(true); heading->setFont(font);
+    };
+    addGroup(tr("Documents"));
     for (const auto& entry : {qMakePair(QStringLiteral("New Markdown"), QStringLiteral("markdown")), qMakePair(QStringLiteral("New Block Document"), QStringLiteral("blocks")), qMakePair(QStringLiteral("Open File…"), QStringLiteral("open"))}) {
         auto* action = documentMenu->addAction(entry.first); action->setObjectName(QStringLiteral("leftDocument.") + entry.second);
         connect(action, &QAction::triggered, this, [this, id = entry.second] { emit documentActionRequested(id); });
     }
+    documentMenu->addSeparator();
+    addGroup(tr("Panels"));
+    auto* filesAction = documentMenu->addAction(RoundedIcons::icon(RoundedIcons::File), tr("Files"));
+    filesAction->setObjectName(QStringLiteral("leftPanel.files"));
+    connect(filesAction, &QAction::triggered, this, [this] { setActiveTab(FileTab); });
+    auto* designAction = documentMenu->addAction(RoundedIcons::icon(RoundedIcons::Hierarchy), tr("Design"));
+    designAction->setObjectName(QStringLiteral("leftPanel.design"));
+    connect(designAction, &QAction::triggered, this, [this] { setActiveTab(DesignTab); });
     addDocument->setMenu(documentMenu); addDocument->setPopupMode(QToolButton::InstantPopup);
-    addDocument->setAccessibleName(QStringLiteral("New or Open Document"));
+    addDocument->setAccessibleName(tr("Documents and Panels"));
     addDocument->setMinimumSize(addDocument->minimumSizeHint());
     tabWidget->setCornerWidget(addDocument, Qt::TopRightCorner);
     mainLayout->insertWidget(0, tabWidget);

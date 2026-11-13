@@ -19,7 +19,11 @@ public:
     bool attach(const QString& sidecar, QString* error);
     bool acceptMatchingGeneration(QString* error);
     QString importImage(const QString& path, QString* error);
+    QString importFile(const QString& path, QString* error);
+    QString importBytes(const QByteArray& bytes, const QString& suffix, QString* error);
     QByteArray assetBytes(const QString& asset, QString* error) const;
+    bool validateStorage(QString* error) const;
+    bool stageAsset(const QString& name, const QByteArray& bytes, QString* error);
     QByteArray pendingImage(const QString& asset) const { return pendingAssets.value(asset); }
     QString assetPath(const QString& asset) const;
     QString sourcePath() const { return source; }

@@ -145,6 +145,7 @@ int main(int argc, char* argv[])
     bool everyCategoryHasPage = true;
     bool everyFieldHasStableEditor = true;
     int generatedFieldCount = 0;
+    const QStringList legacyAppearance{"blockNotes.background","blockNotes.textColor","blockNotes.borderColor","blockNotes.style","blockNotes.fontFamily"};
     for (const SettingsCenterCategoryDescriptor& category :
          SettingsCenterSchema::categories()) {
         everyCategoryHasPage =
@@ -155,6 +156,11 @@ int main(int argc, char* argv[])
         for (const SettingsCenterFieldDescriptor& field :
              category.fields) {
             QWidget* editor = panel.fieldEditor(field.id);
+            if (legacyAppearance.contains(field.id)) {
+                everyFieldHasStableEditor = everyFieldHasStableEditor && !editor;
+                ++generatedFieldCount;
+                continue;
+            }
             everyFieldHasStableEditor =
                 everyFieldHasStableEditor
                 && editor
@@ -169,7 +175,7 @@ int main(int argc, char* argv[])
     check(everyFieldHasStableEditor
               && generatedFieldCount
                      == SettingsCenterSchema::fields().size(),
-          "every schema field generates one stable editor");
+          "every editable schema field has one stable editor; legacy RGB and free-form appearance remain storage-only");
 
     auto* scopeCombo =
         panel.findChild<QComboBox*>(

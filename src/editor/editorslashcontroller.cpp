@@ -75,6 +75,11 @@ bool EditorSlashController::trigger(QKeyEvent* event) {
     revision = editor->semanticDocumentRevision(); file = editor->documentFileName();
     auto* service = UserTemplateService::getInstance();
     snapshot = OrdinaryTemplatePlanner::catalog(service, file);
+    for (const auto& entry:QList<QStringList>{{"note","Text note","text"},{"image","Image","image"},{"reference","Object reference","reference"},{"code","Code block","code"},{"attachment","Attachment","attachment"},{"wave","Wave","wave"}}) {
+        UserTemplateRecord action; action.id="block:"+entry[0]; action.commandToken="/"+entry[0]; action.label=entry[1];
+        action.command={{"kind","block"},{"blockType",entry[2]}}; action.storageSource="block-action";
+        snapshot.append(action);
+    }
     catalogRevision = service->catalogRevision();
     modes->enter(EditorModeId::SlashSearch, EditorModeEntryReason::UserAction);
     searching = true; preedit = false; compositionCommit = false;

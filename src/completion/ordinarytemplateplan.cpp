@@ -85,33 +85,7 @@ struct Expansion {
 };
 }
 
-QList<UserTemplateRecord> OrdinaryTemplatePlanner::builtins() {
-    QList<UserTemplateRecord> result;
-    for (const auto& token : {";;a", ";;ac", ";;af", ";;r", ";;w", ";;l", ";;p"}) {
-        const auto item = CodeTemplateService::getInstance()->templateForCommand(token);
-        if (item.insertText.isEmpty()) continue;
-        UserTemplateRecord record;
-        record.id = "code:" + item.commandToken;
-        record.commandToken = "/" + item.commandToken.mid(2);
-        record.label = item.label;
-        record.description = item.description;
-        record.insertText = item.insertText;
-        record.templateSlots = item.templateSlots;
-        record.storageSource = "builtin";
-        record.command = {{"kind", "snippet"}, {"context","codeLine"}, {"extensions",QStringList{"sv","svh","v","vh"}}};
-        result.append(record);
-    }
-    QFile file(":/templates/editor.json");
-    if (file.open(QIODevice::ReadOnly)) {
-        for (const auto& value : QJsonDocument::fromJson(file.readAll()).array()) {
-            const auto parsed = UserTemplateService::fromJson(value.toObject());
-            if (parsed.valid) for (auto record : parsed.records) {
-                record.storageSource = "builtin"; result.append(record);
-            }
-        }
-    }
-    return result;
-}
+QList<UserTemplateRecord> OrdinaryTemplatePlanner::builtins() { return {}; }
 
 QList<UserTemplateRecord> OrdinaryTemplatePlanner::catalog(UserTemplateService* service, const QString& file) {
     auto result = builtins();
@@ -157,7 +131,7 @@ QString OrdinaryTemplatePlanner::validate(const QList<UserTemplateRecord>& catal
         if (!record.commandToken.startsWith('/')) continue;
         if (!QStringList{"any","code","codeLine","module"}.contains(record.command.value("context","any").toString())) return "Unsupported template location.";
         if (record.command.value("kind").toString() == "block") {
-            if (!QStringList{"text", "image", "reference"}.contains(record.command.value("blockType").toString()))
+            if (!QStringList{"text", "image", "reference", "code", "attachment", "wave"}.contains(record.command.value("blockType").toString()))
                 return "Unsupported block preset type.";
             continue;
         }

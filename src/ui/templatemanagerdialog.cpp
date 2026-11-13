@@ -16,7 +16,7 @@ QString reportText(const UserTemplateLoadReport &report)
     if (!report.failureReason.isEmpty())
         text << report.failureReason;
     for (const auto &issue : report.issues)
-        text << issue.reason;
+        text << QString("%1 · %2: %3").arg(issue.id,issue.field,issue.reason);
     text.removeDuplicates();
     return text.join('\n');
 }
@@ -64,6 +64,15 @@ TemplateManagerDialog::TemplateManagerDialog(UserTemplateService *s, const Simul
     auto *erase = UiControls::pushButton("Delete", left);
     buttons->addWidget(add);
     buttons->addWidget(erase);
+    auto* reloadButton=UiControls::pushButton("Reload",left);
+    reloadButton->setObjectName("templateReload"); buttons->addWidget(reloadButton);
+    connect(reloadButton,&QPushButton::clicked,this,[this] {
+        const auto report=service->reload();
+        if (!report.valid) { status(reportText(report)); return; }
+        const auto previous=selected.id; reload();
+        for (int row=0;row<records.size();++row) if (records[row].id==previous) { list->setCurrentRow(row); break; }
+        status("Templates reloaded from disk.");
+    });
     auto *import = UiControls::pushButton("Import legacy mappings…", left);
     leftLayout->addWidget(import);
     auto* importResource = UiControls::pushButton("Import resource…", left);
@@ -80,7 +89,7 @@ TemplateManagerDialog::TemplateManagerDialog(UserTemplateService *s, const Simul
     name->setPlaceholderText("/name");
     scope = choices({"This file", "Workspace", "User global"}, right);
     scope->setObjectName("templateScope");
-    kind = choices({"snippet", "block:text", "block:image", "block:reference", "operations", "task", "function", "call", "print", "driver"}, right);
+    kind = choices({"snippet", "block:text", "block:image", "block:reference", "block:code", "block:attachment", "block:wave", "operations", "task", "function", "call", "print", "driver"}, right);
     kind->setObjectName("templateKind");
     description = UiControls::lineEdit(right);
     aliases = UiControls::lineEdit(right);
@@ -256,9 +265,11 @@ TemplateManagerDialog::TemplateManagerDialog(UserTemplateService *s, const Simul
         if (path.isEmpty()) return;
         QFile input(path);
         if (!input.open(QIODevice::ReadOnly)) { status(input.errorString()); return; }
+        if (input.size()>8*1024*1024) { status("The template resource exceeds 8 MiB. Existing templates were preserved."); return; }
         QJsonParseError error;
         const auto json = QJsonDocument::fromJson(input.readAll(), &error);
-        if (error.error != QJsonParseError::NoError || !json.isObject()) { status("Choose an exported resource object."); return; }
+        if (error.error != QJsonParseError::NoError) { status(QString("Invalid resource JSON at byte %1: %2").arg(error.offset).arg(error.errorString())); return; }
+        if (!json.isObject()) { status("Choose an exported resource object."); return; }
         auto parsed = UserTemplateService::fromJson(json.object());
         if (!parsed.valid || parsed.records.size() != 1) { status(reportText(parsed)); return; }
         auto resource = parsed.records.first();

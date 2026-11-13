@@ -1,0 +1,21 @@
+{
+  "version": "1",
+  "presets": {
+    "Plain": {"font": "UI Sans", "light": "transparent", "dark": "transparent"},
+    "Paper": {"font": "Reading Serif", "light": "#f5f0e6", "dark": "#302d26"},
+    "Outline": {"font": "UI Sans", "light": "transparent", "dark": "transparent", "borderLight": "#bbc3c0", "borderDark": "#626c64"},
+    "Technical": {"font": "Engineering Mono", "light": "#edf1f5", "dark": "#282e35"}
+  },
+  "fonts": {
+    "UI Sans": ["Segoe UI", "Microsoft YaHei UI", "sans-serif"],
+    "Reading Serif": ["Georgia", "Source Han Serif SC", "Songti SC", "SimSun", "serif"],
+    "Engineering Mono": ["Cascadia Code", "Consolas", "Microsoft YaHei UI", "monospace"]
+  },
+  "tones": {
+    "Default": {},
+    "Neutral": {"light": "#f2f3ef", "dark": "#2c2e29"},
+    "Sand": {"light": "#f5f0e6", "dark": "#302d26"},
+    "Mist": {"light": "#edf1f5", "dark": "#282e35"},
+    "Sage": {"light": "#edf2ed", "dark": "#29322b"}
+  }
+}

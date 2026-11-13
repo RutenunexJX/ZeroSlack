@@ -95,7 +95,7 @@ const QByteArray timingDut = R"(module core #(parameter int W=8) (
 endmodule
 )";
 UserTemplateRecord containerRecord(const QString& token) {
-    for (const auto& record : UserTemplateService::simulationBuiltins())
+    for (const auto& record : simulationTemplateFixtures())
         if (record.commandToken == "@" + token) return record;
     return {};
 }
@@ -1091,6 +1091,7 @@ int main(int argc, char **argv) {
           profile.filePath("legacy.ini").toUtf8());
   UserTemplateService::getInstance()->setGlobalTemplateFilePath(
       profile.filePath("templates.json"));
+  if (!UserTemplateService::getInstance()->setRecords(simulationTemplateFixtures()).valid) return 3;
   if (!initializeUiStyleForTest())
     return 2;
   ApplicationThemeManager::instance().setAnimationsEnabled(false);

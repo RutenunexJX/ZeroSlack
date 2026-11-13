@@ -1,8 +1,10 @@
+Release 0.35.6 adds cross-file block movement, independent copies and cut/paste, named appearance presets, gutter placement, and editable Wave blocks using the accepted Tickx 0.15.10 component. User templates can be managed without recompilation; built-in code templates are cleared. The left add menu restores Files and Design. Functional acceptance is retained with separate release build and package evidence. Suite SDK/Runtime remains 1.0.2, native xIPs 2.16.2 and the independent asset adapter 2.14.2.
+
 Release 0.35.5 persists validated semantic workspace results, filters Design hierarchy to real instances, and separates selection from source navigation. Context menus and nested module diagrams share lightweight snapshot queries; instance parameter and port editing retain read-only and stale-source guards. QuestaSim waveform palettes are restored, and bottom tabs use a single compact shape. Functional acceptance combines valid prior results with targeted repairs and rechecks; release-specific build and package verification retain their own identities. Suite SDK/Runtime remains 1.0.2, native xIPs 2.16.2 and the independent asset adapter 2.14.2.
 
 Release 0.35.4 restores nested module diagrams and reorganizes Design roots, unifies dock tabs and sidebar icons, reduces the welcome page to recent workspaces, and improves Settings contrast. Inline blocks support shared editing, appearance settings, drag-out pages and gutter reattachment; Pinloom references validate capabilities before opening. Functional acceptance is retained with release-specific build and package checks. Suite SDK/Runtime remains 1.0.2, native xIPs 2.16.2 and the independent asset adapter 2.14.2.
 
-ZeroSlack v0.35.5 Windows package
+ZeroSlack v0.35.6 Windows package
 
 Release 0.35.3 aligns tab contents and smaller close marks, removes welcome animation resources, moves Run and simulation settings into the title row with the top selected in Design, creates untitled Markdown/block documents until first save, restores module block diagrams, removes redundant panel collapse controls, and gives floating windows visible borders. Scoped GUI and real Questa evidence is retained; the known baseline native drag-release failure remains recorded. Suite SDK/Runtime remains 1.0.2, native xIPs 2.16.2 and the independent asset adapter 2.14.2.
 

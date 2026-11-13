@@ -1,7 +1,1 @@
-[
-  {"id":"code:process","command":"/process","label":"Clocked process","body":"always_ff @(posedge ${clock}) begin\n    ${body}\nend${cursor}","editor":{"kind":"snippet","context":"module","extensions":["sv","svh","v","vh"],"inputs":{"clock":{"kind":"Signal","scope":"visible","default":"clk"},"body":{"kind":"Code","allowEmpty":true,"default":""}},"aliases":["sequential","clock"]}},
-  {"id":"code:wrap","command":"/wrap","label":"Begin / end around selection","body":"begin\n    ${body}\nend${cursor}","editor":{"kind":"snippet","context":"code","acceptsBody":true,"inputs":{"body":{"kind":"Code","allowEmpty":true,"default":""}}}},
-  {"id":"block:note","command":"/note","label":"Text note","editor":{"kind":"block","blockType":"text"}},
-  {"id":"block:image","command":"/image","label":"Image","editor":{"kind":"block","blockType":"image"}},
-  {"id":"block:reference","command":"/reference","label":"Object reference","editor":{"kind":"block","blockType":"reference"}}
-]
+[]

@@ -22,6 +22,11 @@ public:
     void apply(const QVariantMap& effectiveValues);
     BlockNoteAppearance appearance(const QVariantMap& overrides = {}) const;
     static BlockNoteAppearance resolve(const QVariantMap& settings, const QVariantMap& overrides = {});
+    static QVariantMap defaults(const QString& type);
+    static bool validPreset(const QVariantMap& appearance);
+    static QStringList presets();
+    static QStringList fonts();
+    static QStringList tones();
     static void format(QTextDocument* document, const BlockNoteAppearance& appearance);
     static qreal measure(const QString& text, qreal width, const BlockNoteAppearance& appearance);
     quint64 revision() const { return generation; }

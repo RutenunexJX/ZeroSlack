@@ -441,10 +441,14 @@ bool EditorSplitController::parkPage(QWidget* page)
 }
 bool EditorSplitController::restorePage(QWidget* page, QTabWidget* fallback, bool activate)
 {
+    auto* group=groupById(pages.value(page).returnGroup);
+    return restorePageInGroup(page,group ? group : fallback,activate);
+}
+bool EditorSplitController::restorePageInGroup(QWidget* page, QTabWidget* group, bool activate)
+{
     if (!page || !pages.contains(page)) return false;
     if (groupForPage(page)) return activate ? activatePage(page) : true;
     const auto entry=pages.value(page);
-    auto* group=groupById(entry.returnGroup); if (!group) group=fallback;
     if (!group || !tabGroups.contains(group)) return false;
     {
         const QSignalBlocker block(group);

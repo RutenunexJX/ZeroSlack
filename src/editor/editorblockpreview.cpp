@@ -128,6 +128,10 @@ void EditorBlockPreview::openReference(DocumentBlockModel* model, PinloomHostCli
 void EditorBlockPreview::request(const QString& id, Handler handler) {
     cancel(); if (!model || !model->find(id)) return;
     const auto block = *model->find(id); const auto documentId = model->documentId();
+    if (block.type=="attachment") {
+        QString issue; const auto bytes=DocumentBlockStore::get(model)->assetBytes(block.asset,&issue);
+        handler({block.caption,issue.isEmpty() ? QString("Attachment · %1 bytes · Use Export attachment to save a copy.").arg(bytes.size()) : issue,{},false}); return;
+    }
     consumer = new QObject(this); const auto serial = generation;
     const QPointer<EditorBlockPreview> self(this); const QPointer<QObject> lifetime = consumer;
     const auto current = [self,lifetime,serial,id,block,documentId] {

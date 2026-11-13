@@ -13,6 +13,7 @@
 #include <QUuid>
 #include <memory>
 #include <vector>
+#include <algorithm>
 
 namespace {
 QByteArray digest(const QByteArray& bytes) { return QCryptographicHash::hash(bytes, QCryptographicHash::Sha256); }
@@ -164,6 +165,18 @@ QString DocumentBlockStore::importImage(const QString& path, QString* error) {
     pendingAssets.insert(name, bytes); return name;
 }
 QString DocumentBlockStore::assetPath(const QString& asset) const { return root.isEmpty() || !assetName(asset) ? QString() : QDir(root).filePath(".zeroslack/editor-blocks/assets/" + asset); }
+QString DocumentBlockStore::importBytes(const QByteArray& bytes,const QString& suffix,QString* error) {
+    if (bytes.isEmpty()) { fail("The resource is empty; no block was inserted.",error); return {}; }
+    QString extension=suffix.toLower();
+    if (extension.isEmpty() || extension.size()>12 || std::any_of(extension.cbegin(),extension.cend(),[](QChar c) { return !c.isLetterOrNumber(); })) extension="bin";
+    const auto name=QString::fromLatin1(digest(bytes).toHex())+'.'+extension;
+    return stageAsset(name,bytes,error) ? name : QString();
+}
+QString DocumentBlockStore::importFile(const QString& path,QString* error) {
+    if (!QFileInfo(path).isFile()) { fail("Choose a readable file, not a folder.",error); return {}; }
+    QByteArray bytes; if(!readBytes(path,&bytes,error,50*1024*1024)) return {};
+    return importBytes(bytes,QFileInfo(path).suffix(),error);
+}
 QByteArray DocumentBlockStore::assetBytes(const QString& asset, QString* error) const {
     QByteArray bytes;
     if (!assetName(asset)) { if (error) *error = "Invalid image resource reference."; return {}; }
@@ -171,6 +184,25 @@ QByteArray DocumentBlockStore::assetBytes(const QString& asset, QString* error) 
     else if (assetPath(asset).isEmpty() || !readBytes(assetPath(asset), &bytes, error, 50 * 1024 * 1024)) return {};
     if (digest(bytes).toHex() != asset.left(64).toLatin1()) { if (error) *error = "Image resource is missing or changed."; return {}; }
     return bytes;
+}
+bool DocumentBlockStore::validateStorage(QString* error) const {
+    if (blocked()) { if (error) *error=blockReason; return false; }
+    if (sidecar.isEmpty()) return true;
+    QString issue;
+    const auto actual=fileRevision(sidecar,&issue);
+    if (!issue.isEmpty() || actual!=observed) {
+        if (error) *error="Association storage changed externally. Reload or resolve it before transferring blocks. "+issue;
+        return false;
+    }
+    return true;
+}
+bool DocumentBlockStore::stageAsset(const QString& name, const QByteArray& bytes, QString* error) {
+    if (!assetName(name) || bytes.size()>50*1024*1024 || digest(bytes).toHex()!=name.left(64).toLatin1())
+        return fail("The block resource is invalid or exceeds 50 MiB.",error);
+    const auto path=assetPath(name);
+    if (!path.isEmpty() && QFileInfo::exists(path) && fileRevision(path).toHex()!=name.left(64).toLatin1())
+        return fail("The destination resource changed externally. Both documents were preserved.",error);
+    pendingAssets.insert(name,bytes); return true;
 }
 bool DocumentBlockStore::writeAssets(const QString& targetRoot, const QJsonObject& metadata, QString* error) const {
     for (const auto& value : metadata.value("blocks").toArray()) {
@@ -186,6 +218,7 @@ bool DocumentBlockStore::writeAssets(const QString& targetRoot, const QJsonObjec
 bool DocumentBlockStore::save(const QString& file, const QString& workspace, const QByteArray& expectedSource,
     const QByteArray& nextSource, bool copyIdentity, const SourceWriter& writer, const Guard& revalidate, QString* error) {
     QString issue; if (error) error->clear();
+    if (!model->flushContents(error)) return false;
     const auto target = normalized(file), targetRoot = rootFor(target, workspace), targetSidecar = pathFor(target, workspace);
     if (blocked()) return fail(blockReason, error);
     if (!QDir().mkpath(QFileInfo(targetSidecar).absolutePath())) return fail("Cannot create the association directory; nothing was saved.", error);
@@ -251,6 +284,7 @@ bool DocumentBlockStore::relocate(const QString& file, const QString& workspace,
     return true;
 }
 QJsonObject DocumentBlockStore::recoveryState(QString* error, const QString& recoveryDirectory) {
+    if (!model->flushContents(error)) return {};
     if (!needed()) return {};
     const auto recoveryRoot = QDir(recoveryDirectory.isEmpty() ? QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) : recoveryDirectory)
         .filePath("editor-block-recovery/" + model->documentId());

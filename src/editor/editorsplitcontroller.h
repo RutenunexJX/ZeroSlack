@@ -70,6 +70,8 @@ public:
     bool takePage(QWidget* page);
     void unregisterPage(QWidget* page);
     bool restorePage(QWidget* page, QTabWidget* fallback = nullptr, bool activate = true);
+    // Restore parked pages to this group; an open page stays in its current group.
+    bool restorePageInGroup(QWidget* page, QTabWidget* group, bool activate = true);
     bool requestPageClose(QWidget* page);
     bool hasPageCloseHandler(QWidget* page) const;
     bool activatePage(QWidget* page, bool focus = true);
