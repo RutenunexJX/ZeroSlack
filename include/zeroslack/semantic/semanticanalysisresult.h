@@ -81,5 +81,9 @@ struct WorkspaceAnalysisResult {
     std::shared_ptr<WorkspaceRelationshipAnalysisResult> relationshipProjection;
     QString error;
     bool slangInvoked = false;
+    bool persistentCacheHit = false;
+    qint64 cacheReadMs = 0;
+    qint64 cacheValidationMs = 0;
+    qint64 cachePreparationMs = 0;
 };
 

@@ -1,0 +1,17 @@
+{
+  "schema": "zeroslack.native-layout-baseline/v1",
+  "version": "0.35.4",
+  "revision": "da14719f9e099f8e20243100501d2f86af9b1d97",
+  "sha256": "e074ba8305e738c187d76aa2439017dbfb5964a32e84e3a92efe5f6ace60f1d0",
+  "sourceSha256": {
+    "test_sv/linked_native_rails_test.cpp": "c0940e41e613a7ec29556a0cb4584de9dbb569edf880da61f0b19db55aa119ad",
+    "test_sv/fixtures/linked_rails_layout/default_native_observation.h": "8d63a40d61932bc5facd3d96eeaf592dd163260d967534da84bd09a3e9e9e9c9",
+    "src/ui/linkednativerails.cpp": "48e6561927d1eaec094cf5d17c6710346ac032e63891b063c1f49247752ae00d",
+    "src/ui/uitypography.h": "08efed1eaa57392feaee781e0ee175786a54bd177919e1bb59db17344dbc8254"
+  },
+  "evidence": "build/m17/baseline-capture/manifest.json",
+  "baselineMatchesCurrentByteForByte": true,
+  "previousFixturePreserved": "default-native.json",
+  "previousSha256": "07fd31225cc5d11be617bdbf3c4ec3b6e093e1035b8a7530e67d562fa7f4816d",
+  "scope": "Seven complete observation phases; all fields and mutation sensitivity remain strict. Captured from baseline product libraries with only a JSON output statement added to an isolated copy of the baseline test."
+}

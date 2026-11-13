@@ -328,6 +328,42 @@ private slots:
         for (int width : {280, 520, 960, 1250}) for (bool bounded : {false, true})
             QTest::newRow(qPrintable(QString("%1-%2").arg(width).arg(bounded ? "bounded" : "resizable"))) << width << bounded;
     }
+    void waveformSettingsAreTransactional() {
+        QTemporaryDir tools;
+        for(const auto* name:{"vsim.exe","vlog.exe"}) {
+            QFile file(tools.filePath(name));QVERIFY(file.open(QIODevice::WriteOnly));
+        }
+        QWidget host; QVBoxLayout layout(&host);
+        auto* workbench=new simdock::Workbench(&host);layout.addWidget(workbench);
+        workbench->setSimulator(tools.filePath("vsim.exe"));host.resize(760,680);host.show();
+        auto* settings=workbench->findChild<QToolButton*>("openSettings");QVERIFY(settings);
+        for(const auto& palette:simdock::wavePalettes()) {
+            const auto before=workbench->waveTheme();
+            for(bool save:{false,true}) {
+                QTimer::singleShot(0,workbench,[&,save] {
+                    auto* dialog=workbench->findChild<QDialog*>("settingsDialog");QVERIFY(dialog);
+                    QTimer::singleShot(5000,dialog,&QDialog::reject);
+                    auto* colors=dialog->findChild<QComboBox*>("waveThemeSelector");QVERIFY(colors);
+                    colors->setCurrentIndex(colors->findData(palette.id));
+                    dialog->findChild<QToolButton*>("waveThemePreviewToggle")->click();
+                    auto* preview=dialog->findChild<QWidget*>("waveThemePreview");QVERIFY(preview&&preview->isVisible());
+                    QCOMPARE(workbench->waveTheme(),before);
+                    QVERIFY(!workbench->controller()->session()->alive());
+                    capture(dialog,"wave-preview-"+palette.id);
+                    if(save) dialog->findChild<QPushButton*>("saveSettings")->click(); else dialog->reject();
+                });
+                settings->click();
+                QCOMPARE(workbench->waveTheme(),save?palette.theme:before);
+            }
+            simdock::Workbench reopened(&host);
+            QVERIFY(reopened.restoreState(workbench->saveState()).isEmpty());
+            QCOMPARE(reopened.waveTheme(),palette.theme);
+        }
+        auto unknown=workbench->saveState();auto preferences=unknown["preferences"].toMap();
+        preferences["waveform/theme"]="unrecognized-theme";unknown["preferences"]=preferences;
+        QVERIFY(workbench->restoreState(unknown).isEmpty());
+        QCOMPARE(workbench->waveTheme(),simdock::WaveTheme::QuestaDefault);
+    }
     void hostThemeAuthority() {
         const auto palette = qApp->palette(); const auto font = qApp->font(); const auto sheet = qApp->styleSheet();
         const auto identity = qApp->applicationName(); const auto org = qApp->organizationName();
@@ -361,7 +397,8 @@ private slots:
                 QTimer::singleShot(5000, dialog, &QDialog::reject);
                 dialogFits(dialog, "host-settings-" + theme);
                 QVERIFY(!dialog->findChild<QWidget*>("themeSelector"));
-                QVERIFY(!dialog->findChild<QWidget*>("waveThemeSelector"));
+                auto* colors=dialog->findChild<QComboBox*>("waveThemeSelector");
+                QVERIFY(colors); QCOMPARE(colors->currentData().toString(),QStringLiteral("nord"));
                 QVERIFY(setHostTheme(widget, !dark));
                 QCOMPARE(widget->palette().color(QPalette::Window).lightness() < 128, !dark);
                 QVERIFY(setHostTheme(widget, dark));
@@ -398,7 +435,10 @@ private slots:
         for(const auto* name:{"workbenchSection","openWorkspace","projectList","sourceList","duration","dutSelector"})
             QVERIFY2(!widget->findChild<QWidget*>(name),name);
         QVERIFY(!widget->findChild<QWidget*>("stopSimulation"));
-        QCOMPARE(widget->findChild<QPushButton*>("startSimulation")->text(),QString("Run"));
+        auto* run = widget->findChild<QPushButton*>("startSimulation"); QVERIFY(run);
+        QCOMPARE(run->text(),QStringLiteral("Run · tb"));
+        QCOMPARE(run->property("simulationAction").toString(),QStringLiteral("Run"));
+        QCOMPARE(run->property("simulationTarget").toString(),QStringLiteral("tb"));
         for(const auto* name:{"startSimulation","openSettings"})
             QVERIFY2(reachable(widget->findChild<QWidget*>(name),widget),name);
         capture(&host,QString("host-%1-compact").arg(width));
@@ -447,7 +487,7 @@ private slots:
             QVERIFY(dialog->findChild<QWidget*>("simulationIncludes"));QVERIFY(dialog->findChild<QWidget*>("simulationDefinitionSources"));
             const auto simulator=qEnvironmentVariable("SIMDOCK_TEST_QUESTA");if(simulator.isEmpty()){dialog->reject();return;}
             dialog->findChild<QLineEdit*>("simulatorPath")->setText(simulator);
-            QVERIFY(!dialog->findChild<QWidget*>("waveThemeSelector"));
+            QVERIFY(dialog->findChild<QComboBox*>("waveThemeSelector"));
             auto* save=dialog->findChild<QPushButton*>("saveSettings");QVERIFY(reachable(save,dialog));QTest::mouseClick(save,Qt::LeftButton);
         });
         QTest::mouseClick(settings,Qt::LeftButton);

@@ -19,6 +19,7 @@ struct ModuleBlockDiagramQuery {
     QString rootIdentity;
     QString instancePath;
     QString configurationIdentity;
+    bool allowDefinitionChoice = false;
 };
 
 enum class ModuleBlockDiagramNotFoundReason {
@@ -82,6 +83,10 @@ struct ModuleBlockDiagramReport {
     int resolvedInstanceCount = 0;
     int unresolvedInstanceCount = 0;
     QString initialFocusId;
+    QList<ModuleBlockDiagramNode> ancestors;
+    QList<DesignHierarchyNode> candidates;
+    SemanticSnapshotToken semantic;
+    std::shared_ptr<const DesignHierarchyReport> hierarchy;
 };
 
 class ModuleBlockDiagramService

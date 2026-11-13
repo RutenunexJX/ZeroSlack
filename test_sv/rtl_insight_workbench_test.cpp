@@ -37,6 +37,11 @@
 #include "semantic_fixture_records.h"
 #include "workspacechrome.h"
 #include "mainwindow.h"
+#include "uicontrols.h"
+#include <ElaTabWidget.h>
+#include <QLabel>
+#include <QWindow>
+#include <QScreen>
 #include <QSettings>
 #include <QSignalSpy>
 
@@ -128,7 +133,109 @@ private slots:
     void toolPageDetachesIntoWindow();
     void sharedCanvasExportsSvgPngAndPdf();
     void legacyBottomDockDoesNotCarryStateWhenDisabled();
+    void bottomToolTabsKeepHostAndPageState();
+    void moduleDiagramDropsSupersededLayouts();
 };
+
+void RtlInsightWorkbenchTest::bottomToolTabsKeepHostAndPageState()
+{
+    ApplicationThemeManager::instance().applyToApplication();
+    MainWindow window;
+    window.resize(1280,800);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    const auto expected=qEnvironmentVariable("ZEROSLACK_EXPECTED_DPR").toDouble();
+    if(expected>0) QCOMPARE(window.devicePixelRatioF(),expected);
+    auto* registry=window.findChild<EditorSplitController*>(); QVERIFY(registry);
+    auto* bottom=registry->regionGroup("bottom"); QVERIFY(bottom);
+    auto* bar=bottom->tabBar(); QVERIFY(bar->property("bottomToolTabs").toBool());
+    QList<QWidget*> pages;
+    for(int i=0;i<6;++i) {
+        auto* page=new QLabel(QString("Content %1").arg(i)); pages.append(page);
+        const QString id=QString("bottom-contract:%1").arg(i);
+        const QString title=QString("Long compilation output %1 (12)").arg(i);
+        bottom->addTab(page,QIcon(":/icons/text-document.svg"),title);
+        QVERIFY(registry->registerPage(page,id,"tool",[registry,page]{return registry->parkPage(page);}));
+        bar->setTabData(bottom->indexOf(page),id);
+        UiControls::TabPresentation presentation;
+        presentation.viewId=id;presentation.documentId=id;presentation.title=title;
+        presentation.dirty=i==0;presentation.conflict=i==1;presentation.readOnly=i==2;presentation.locked=i==3;
+        UiControls::setTabPresentation(bottom,page,presentation);
+    }
+    registry->activatePage(pages.first());
+    QTRY_VERIFY(bar->isVisible());
+    const QString output=qEnvironmentVariable("ZEROSLACK_UI_REVIEW_DIR");
+    for(bool dark:{false,true}) {
+        ApplicationThemeManager::instance().setMode(dark?ThemeMode::Dark:ThemeMode::Light);
+        for(int width:{1280,800,1280}) {
+            window.resize(width,800); QApplication::processEvents();
+            const int height=bar->height();
+            for(auto* page:pages) {
+                const int index=bottom->indexOf(page); bottom->setCurrentIndex(index);
+                QApplication::processEvents();
+                QCOMPARE(bar->height(),height);
+                QVERIFY(!bar->tabText(index).isEmpty());
+                QCOMPARE(bar->tabData(index).toString(),registry->pageId(page));
+                for(auto side:{QTabBar::LeftSide,QTabBar::RightSide}) if(auto* close=bar->tabButton(index,side);close&&close->isVisible()) {
+                    QVERIFY(bar->rect().contains(close->geometry()));
+                    QVERIFY(close->width()>=16 && close->height()>=16);
+                    QCOMPARE(bar->tabAt(close->geometry().center()),index);
+                }
+            }
+            if(!output.isEmpty()) QVERIFY(window.grab().save(output+QString("/bottom-%1-%2.png").arg(dark?"dark":"light").arg(width)));
+        }
+    }
+    auto* first=pages.first();
+    const QString id=registry->pageId(first);
+    const auto state=UiControls::tabPresentation(first);
+    bar->moveTab(bottom->indexOf(first),bottom->count()-1);
+    QCOMPARE(bar->tabData(bottom->indexOf(first)).toString(),id);
+    const auto layout=registry->savePageLayout();
+    for(const auto& region:{"left","main","right","bottom"}) {
+        auto* host=registry->regionGroup(region);QVERIFY(registry->movePage(first,host));
+        QCOMPARE(host->tabBar()->property("bottomToolTabs").toBool(),QString(region)=="bottom");
+        QCOMPARE(host->tabBar()->tabData(host->indexOf(first)).toString(),id);
+        QCOMPARE(UiControls::tabPresentation(first).dirty,state.dirty);
+    }
+    auto* ela=qobject_cast<ElaTabWidget*>(bottom);QVERIFY(ela);
+    auto* floating=ela->floatHostedTab(first,window.mapToGlobal(QPoint(140,140)));QVERIFY(floating);
+    QTRY_VERIFY(floating->isVisible());
+    QVERIFY(!floating->tabBar()->property("bottomToolTabs").toBool());
+    QVERIFY(floating->transferHostedTab(first,ela));
+    QCOMPARE(bar->tabData(bottom->indexOf(first)).toString(),id);
+    QVERIFY(registry->requestPageClose(first));QVERIFY(!registry->groupForPage(first));
+    QVERIFY(registry->restorePage(first,bottom));QCOMPARE(registry->groupForPage(first),bottom);
+    QVERIFY(registry->restorePageLayout(layout).isEmpty());
+    QCOMPARE(registry->pageById(id),first);
+    QCOMPARE(bar->tabData(bottom->indexOf(first)).toString(),id);
+    QVERIFY(bar->property("bottomToolTabs").toBool());
+    window.close();
+}
+
+void RtlInsightWorkbenchTest::moduleDiagramDropsSupersededLayouts()
+{
+    SignalTraceTestFixture fixture;
+    QVERIFY(fixture.build("module leaf; endmodule\nmodule top; leaf child(); endmodule\n"));
+    const auto small=ModuleBlockDiagramService(fixture.context.token).buildModuleBlockDiagram({{},"top",fixture.file});
+    QVERIFY(small.found);QVERIFY(small.nodes.size()==2);
+    auto large=small;
+    for(int i=0;i<10000;++i) {
+        auto child=small.nodes.last();child.nodeId=i+100;child.parentNodeId=small.nodes.first().nodeId;
+        child.stableId=QString("obsolete-%1").arg(i);child.instanceDisplayName=child.stableId;
+        large.nodes.append(std::move(child));
+    }
+    auto view=std::make_unique<ModuleBlockDiagramView>();view->resize(960,720);view->show();
+    view->setReport(large,"obsolete");view->setReport(small,"current");
+    QTRY_VERIFY(view->layoutReady());
+    QVERIFY(!view->nodeRect(small.nodes.last().stableId).isEmpty());
+    QVERIFY(view->nodeRect("obsolete-9999").isEmpty());
+    view->setReport(large,"closing");
+    QElapsedTimer elapsed;elapsed.start();view.reset();
+    QVERIFY(elapsed.elapsed()<1000);
+    ModuleBlockDiagramView reopened;reopened.setReport(small,"reopened");reopened.show();
+    QTRY_VERIFY(reopened.layoutReady());
+    QVERIFY(!reopened.nodeRect(small.nodes.last().stableId).isEmpty());
+}
 
 void RtlInsightWorkbenchTest::stableSymbolIdIgnoresSourceOffsets()
 {
@@ -415,7 +522,14 @@ void RtlInsightWorkbenchTest::moduleDiagramAdaptsAndNavigatesInstances()
     QSet<QString> paths;
     for(const auto& node:report.nodes){paths.insert(node.instancePath);QVERIFY(tree.nodeById.contains(node.stableId));
         const auto& same=tree.nodes[tree.nodeById[node.stableId]];QCOMPARE(node.configurationIdentity,same.configurationId);QCOMPARE(node.definitionCodeLink.line,same.definitionLine);}
-    QVERIFY(paths.contains("top.left.g[0].u"));QVERIFY(paths.contains("top.right.g[1].u"));QVERIFY(!paths.contains("top.left.g[1].u"));
+    QVERIFY(!paths.contains("top.left.g[0].u"));QVERIFY(paths.contains("top.right.g[1].u"));QVERIFY(!paths.contains("top.left.g[1].u"));
+    QCOMPARE(report.nodes.size(),3); QCOMPARE(report.ancestors.size(),1);
+    QCOMPARE(report.ancestors.first().instancePath,QString("top"));
+    ModuleBlockDiagramView view; view.resize(1000,700); view.show(); view.setReport(report,fixture.directory.path());
+    QTRY_VERIFY(view.layoutReady()); QVERIFY(view.up()); QTRY_VERIFY(view.layoutReady());
+    QVERIFY(!view.nodeRect(tree.nodes[tree.nodesByPath["top.left.g[0].u"].first()].id).isEmpty());
+    QVERIFY(view.back()); QCOMPARE(view.focusId(),report.initialFocusId);
+    QVERIFY(view.forward()); QCOMPARE(view.focusId(),report.ancestors.first().stableId);
     QCOMPARE(report.initialFocusId,tree.nodes[tree.nodesByPath["top.right"].first()].id);
     query.configurationIdentity="stale-configuration";QVERIFY(!ModuleBlockDiagramService(fixture.context.token).buildModuleBlockDiagram(query).found);
     query.configurationIdentity.clear();query.instancePath.clear();QVERIFY(!ModuleBlockDiagramService(fixture.context.token).buildModuleBlockDiagram(query).found);
@@ -568,17 +682,37 @@ void RtlInsightWorkbenchTest::realWindowChromeButtons()
     for (auto* button : buttons) QVERIFY(button);
     window.activateWindow();
     SetForegroundWindow(reinterpret_cast<HWND>(window.internalWinId()));
+    const auto moveNativeCursor = [&window](QWidget* target, const QPoint& point) {
+        const auto local = target->mapTo(&window, point);
+        const auto scale = window.devicePixelRatioF();
+        POINT nativePoint{qRound(local.x() * scale), qRound(local.y() * scale)};
+        if (!ClientToScreen(reinterpret_cast<HWND>(window.internalWinId()), &nativePoint))
+            return false;
+        return SetCursorPos(nativePoint.x, nativePoint.y) != 0;
+    };
     const QString reviewDir = qEnvironmentVariable("ZEROSLACK_UI_REVIEW_DIR");
     if (!reviewDir.isEmpty()) QDir().mkpath(reviewDir);
     for (auto* button : QList<QAbstractButton*>{window.findChild<QToolButton*>(QStringLiteral("projectRailButton")), buttons[0], buttons[1]}) {
         QVERIFY(button);
-        QTest::mouseMove(title, QPoint(180, 18));
+        // These native hover checks depend on the real cursor. Qt's synthetic
+        // mouseMove need not update it (and can retain a preceding drag state).
+        QVERIFY(moveNativeCursor(title, QPoint(180,18)));
         QTest::qWait(50);
         const QColor rest = button->grab().toImage().pixelColor(6, 6);
-        QTest::mouseMove(button, button->rect().center());
+        QVERIFY(moveNativeCursor(button, button->rect().center()));
         QTest::qWait(100);
-        QVERIFY2(button->grab().toImage().pixelColor(6, 6) != rest, qPrintable(button->objectName()));
+        POINT pointer{}; GetCursorPos(&pointer);
+        const auto hoveredWindow = WindowFromPoint(pointer);
+        qInfo() << "native-hover-window" << quintptr(window.internalWinId())
+            << "foreground" << quintptr(GetForegroundWindow()) << "at-pointer" << quintptr(hoveredWindow)
+            << "hit" << SendMessage(hoveredWindow,WM_NCHITTEST,0,MAKELPARAM(pointer.x,pointer.y))
+            << "widgetAt" << QApplication::widgetAt(QCursor::pos());
+        qInfo() << "hover-evidence" << button->objectName() << "active" << window.isActiveWindow()
+            << "checked" << button->isChecked() << "underMouse" << button->underMouse()
+            << "cursor" << button->mapFromGlobal(QCursor::pos()) << "bounds" << button->rect()
+            << "rest" << rest << "hover" << button->grab().toImage().pixelColor(6,6);
         if (!reviewDir.isEmpty()) window.grab().save(reviewDir + "/" + button->objectName() + "-hover.png");
+        QVERIFY2(button->grab().toImage().pixelColor(6, 6) != rest, qPrintable(button->objectName()));
     }
     for (int i = 0; i < 3; ++i) {
         qInfo("minimize button");

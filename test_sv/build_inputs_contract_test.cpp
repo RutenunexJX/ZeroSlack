@@ -204,14 +204,21 @@ private slots:
         DesignHierarchyNode root; root.id="root"; root.rootId="root"; root.projectId="project"; root.projectName="Project"; root.moduleType="top"; root.instanceName="top"; root.isTop=true; root.expanded=true;
         DesignHierarchyNode child; child.id="child"; child.parentId="root"; child.rootId="root"; child.instanceName="u"; child.moduleType="leaf";
         report.nodes={root,child}; navigation.updateDesignHierarchy(report); navigation.setActiveTab(NavigationWidget::DesignTab);
-        auto* design=navigation.findChild<QTreeWidget*>("navigationDesignTree"); QVERIFY(design);
-        QTRY_COMPARE(design->topLevelItemCount(),1); QCOMPARE(design->columnCount(),1); QVERIFY(design->isHeaderHidden());
+        auto* design=navigation.findChild<QTreeView*>("navigationDesignTree"); QVERIFY(design);
+        QTRY_COMPARE(design->model()->rowCount(),1); QCOMPARE(design->model()->columnCount(),1); QVERIFY(design->isHeaderHidden());
         QSignalSpy activation(&navigation,&NavigationWidget::designProjectActivated);
-        auto* row=design->topLevelItem(0); const QRect bounds=design->visualItemRect(row);
-        QTest::mouseClick(design->viewport(),Qt::LeftButton,{},bounds.center()); QVERIFY(!row->isExpanded()); QVERIFY(activation.isEmpty());
+        QSignalSpy navigationRequests(&navigation,&NavigationWidget::designNodeDoubleClicked);
+        const auto row=design->model()->index(0,0); const QRect bounds=design->visualRect(row);
+        const bool wasExpanded=design->isExpanded(row);
+        QTest::mouseClick(design->viewport(),Qt::LeftButton,{},bounds.center()); QCOMPARE(design->isExpanded(row),wasExpanded); QVERIFY(activation.isEmpty());
         QTest::mouseClick(design->viewport(),Qt::LeftButton,{},QPoint(bounds.right()-12,bounds.center().y()));
-        QCOMPARE(activation.size(),1); QVERIFY(!row->isExpanded());
-        QCOMPARE(row->child(0)->text(0),QString("u [leaf]"));
+        QVERIFY(activation.isEmpty()); QVERIFY(navigationRequests.isEmpty());
+        QTest::mouseClick(design->viewport(),Qt::LeftButton,{},QPoint(bounds.left()+10,bounds.center().y()));
+        QCOMPARE(design->isExpanded(row),!wasExpanded); QVERIFY(navigationRequests.isEmpty());
+        QTest::mouseDClick(design->viewport(),Qt::LeftButton,{},bounds.center());
+        QCOMPARE(navigationRequests.size(),1); QCOMPARE(design->isExpanded(row),!wasExpanded);
+        design->expand(row);QTRY_COMPARE(design->model()->rowCount(row),1);
+        QCOMPARE(design->model()->index(0,0,row).data().toString(),QString("u [leaf]"));
     }
 };
 

@@ -280,6 +280,12 @@ void PanelLayoutController::buildDrawer()
     escapeShortcut->setObjectName(
         QStringLiteral("bottomToolDrawerEscapeShortcut"));
     escapeShortcut->setContext(Qt::WidgetWithChildrenShortcut);
+    const auto updateEscapeOwner = [this,escapeShortcut](QWidget* page) {
+        escapeShortcut->setEnabled(page && page->property("toolPage").toBool()
+            && pageRegistry->regionForGroup(pageRegistry->groupForPage(page)) == QStringLiteral("bottom"));
+    };
+    connect(pageRegistry,&EditorSplitController::pageActivated,this,updateEscapeOwner);
+    updateEscapeOwner(pageRegistry->activeGroup() ? pageRegistry->activeGroup()->currentWidget() : nullptr);
     connect(escapeShortcut,
             &QShortcut::activated,
             this,

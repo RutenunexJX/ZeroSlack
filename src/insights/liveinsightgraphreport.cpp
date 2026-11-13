@@ -23,6 +23,7 @@ LiveInsightGraphReportPtr buildLiveInsightGraphReport(
         query.rootIdentity = input.rootIdentity;
         query.instancePath = input.instancePath;
         query.configurationIdentity = input.configurationIdentity;
+        query.allowDefinitionChoice = input.instancePath.isEmpty() && input.rootIdentity.isEmpty();
         query.isCancelled = cancelled;
         report->value = ModuleBlockDiagramService(input.semantic).buildModuleBlockDiagram(query);
         break;

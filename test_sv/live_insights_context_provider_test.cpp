@@ -556,11 +556,14 @@ void LiveInsightsContextProviderTest::
     view->show();
     QCoreApplication::processEvents();
 
-    // The section header owns the name, the full-view entry and freshness, so
-    // the body drops its copies and keeps only what the header has no room for.
+    // The shared page tab owns the name; the content keeps its full-view action.
     QVERIFY(!view->kindButton(LiveInsightKind::Hotspot)->isVisibleTo(view));
     QVERIFY(!view->kindStatusLabel(LiveInsightKind::Hotspot)->isVisibleTo(view));
-    QVERIFY(!view->openFullViewButton()->isVisibleTo(view));
+    QVERIFY(view->openFullViewButton()->isVisibleTo(view));
+    QSignalSpy fullView(view, &LiveInsightsContextView::openFullViewRequested);
+    view->openFullViewButton()->click();
+    QCOMPARE(fullView.size(), 1);
+    QCOMPARE(fullView.first().first().value<LiveInsightKind>(), LiveInsightKind::Hotspot);
     QVERIFY(!view->findChild<QWidget*>(QStringLiteral("liveInsightsFollowEditor")));
     QVERIFY(!view->findChild<QWidget*>(QStringLiteral("liveInsightsPin")));
 

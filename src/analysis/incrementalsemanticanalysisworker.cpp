@@ -309,6 +309,11 @@ WorkspaceAnalysisResult IncrementalSemanticAnalysisWorker::analyze(
                 current.impact = SemanticChangeImpact::FullFallback;
                 current.fallbackReason = QStringLiteral("Preprocessor state can affect later ordered compilation-unit sources");
             }
+            if (current.impact == SemanticChangeImpact::TriviaOnly
+                && !SemanticSourceRemapper::canRemapSnapshot(*baseSnapshot, file)) {
+                current.impact = SemanticChangeImpact::FullFallback;
+                current.fallbackReason = QStringLiteral("Signal role evidence requires semantic refresh after source changes");
+            }
         }
         classifications.insert(key, current);
     }

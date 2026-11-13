@@ -13,6 +13,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QComboBox>
 #include <QPushButton>
 #include <QSignalBlocker>
 #include "moduleblockdiagramview.h"
@@ -109,6 +110,7 @@ bool RtlInsightWorkbench::setViewKind(InsightWorkbenchViewKind kind)
         });
     }
     if (blockView) blockView->setVisible(moduleSurface);
+    if (!moduleSurface && moduleInstancePicker) moduleInstancePicker->hide();
     const bool nativeSurface=kind!=InsightWorkbenchViewKind::Block && (specializedViews
         || (kind!=InsightWorkbenchViewKind::StateTransition && !buildOverrides.contains(static_cast<int>(kind))));
     if (nativeSurface && (!surface || currentKind != kind)) {
@@ -392,6 +394,29 @@ void RtlInsightWorkbench::buildUi()
     InsightVisualStyle::applyLabel(statusLabel);
     root->addWidget(statusLabel);
 
+    moduleInstancePicker = UiControls::comboBox(this);
+    moduleInstancePicker->setObjectName(QStringLiteral("moduleInstancePicker"));
+    moduleInstancePicker->setAccessibleName(tr("Hierarchy instance"));
+    moduleInstancePicker->hide(); root->addWidget(moduleInstancePicker);
+    connect(moduleInstancePicker, &QComboBox::activated, this, [this](int row) {
+        if (row < 1 || !reportSession) return;
+        const auto snapshot = reportSession->snapshot(LiveInsightKind::Module);
+        if (snapshot.stale || snapshot.phase != LiveInsightPhase::Ready || snapshot.publishedKey != reportKey
+            || snapshot.publishedGeneration != appliedReportGeneration) return;
+        const auto publication = snapshot.payload.value(QStringLiteral("graphReport")).value<LiveInsightGraphReportPtr>();
+        if (!publication || publication->mode != LiveInsightGraphMode::Module) return;
+        const auto& candidates = std::get<ModuleBlockDiagramReport>(publication->value).candidates;
+        if (row > candidates.size()) return;
+        const auto selected = candidates[row-1];
+        if (moduleTargetHandler) moduleTargetHandler(selected);
+        else {
+            auto context = currentContext;
+            context.fileName = selected.definitionFile; context.moduleName = selected.moduleType;
+            context.rootIdentity = selected.rootId; context.instancePath = selected.instancePath;
+            context.configurationIdentity = selected.configurationId; setContext(context);
+        }
+    });
+
     canvasValue = new InsightCanvas(this);
     canvasValue->setActivationHandler(
         [this](const InsightGraphNode& node) {
@@ -514,6 +539,7 @@ void RtlInsightWorkbench::applyGraphSnapshot(const LiveInsightSnapshot& snapshot
         const bool ready = snapshot.phase == LiveInsightPhase::Ready && !snapshot.stale && snapshot.publishedKey == reportKey;
         blockView->setSourceNavigationEnabled(ready);
         if (!ready) {
+            moduleInstancePicker->hide();
             statusLabel->setText(snapshot.phase == LiveInsightPhase::Error ? snapshot.errorText : tr("Updating module…"));
             statusLabel->show();
             return;
@@ -523,6 +549,14 @@ void RtlInsightWorkbench::applyGraphSnapshot(const LiveInsightSnapshot& snapshot
         if (!publication || publication->mode != LiveInsightGraphMode::Module) return;
         const auto& report = std::get<ModuleBlockDiagramReport>(publication->value);
         appliedReportGeneration = snapshot.publishedGeneration;
+        moduleInstancePicker->clear();
+        if (!report.candidates.isEmpty()) {
+            moduleInstancePicker->addItem(tr("Select an instance…"));
+            for (const auto& candidate : report.candidates)
+                moduleInstancePicker->addItem(candidate.instancePath + QStringLiteral(" · ")
+                    + candidate.definitionFile + QStringLiteral(" · ") + candidate.configurationId.left(8));
+        }
+        moduleInstancePicker->setVisible(!report.candidates.isEmpty());
         if (!report.found) { statusLabel->setText(report.notFoundReasonDisplayName); statusLabel->show(); blockView->setSourceNavigationEnabled(false); return; }
         blockView->setReport(report, currentContext.workspaceId);
         statusLabel->clear(); statusLabel->hide();
@@ -555,6 +589,8 @@ void RtlInsightWorkbench::applyGraphSnapshot(const LiveInsightSnapshot& snapshot
 
 void RtlInsightWorkbench::setModuleNavigationHandler(std::function<void(const ModuleBlockDiagramNode&, bool)> handler)
 { moduleNavigationHandler = std::move(handler); }
+void RtlInsightWorkbench::setModuleTargetHandler(std::function<void(const DesignHierarchyNode&)> handler)
+{ moduleTargetHandler = std::move(handler); }
 
 void RtlInsightWorkbench::fitNewSurface()
 {

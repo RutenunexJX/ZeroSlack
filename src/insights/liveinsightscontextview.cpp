@@ -5,6 +5,7 @@
 #include "applicationthememanager.h"
 #include "insightvisualstyle.h"
 #include "liveinsightsession.h"
+#include "hierarchyservice.h"
 
 #include <QButtonGroup>
 #include <QFrame>
@@ -655,7 +656,16 @@ void LiveInsightsContextView::renderSurface()
         return;
     surfaceRenderPending = false;
     refreshEmptyState(context);
-    surfaceValue->setContext(context);
+    auto surfaceContext = context;
+    surfaceContext.selectModule = [owner=QPointer<LiveInsightsContextView>(this)](const DesignHierarchyNode& node) {
+        if (!owner) return;
+        TargetCandidate candidate;
+        candidate.fileName = node.definitionFile; candidate.moduleName = node.moduleType;
+        candidate.label = node.instancePath; candidate.instancePath = node.instancePath;
+        candidate.rootIdentity = node.rootId; candidate.configurationIdentity = node.configurationId;
+        owner->applyTargetCandidate(candidate);
+    };
+    surfaceValue->setContext(surfaceContext);
     rememberTarget(context);
 }
 

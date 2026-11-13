@@ -3,6 +3,7 @@
 #include "../core/workspacesimulationcontroller.h"
 #include "uistyle.h"
 #include "uiwindowchrome.h"
+#include "uicontrols.h"
 #include <ElaLineEdit.h>
 #include <ElaPlainTextEdit.h>
 #include <ElaPushButton.h>
@@ -14,10 +15,62 @@
 #include <QPointer>
 #include <QStandardPaths>
 #include <QVBoxLayout>
+#include <QComboBox>
+#include <QToolButton>
+#include <QPainter>
+#include <QPainterPath>
 
 namespace simdock {
+namespace {
+class WavePreview final : public QWidget {
+public:
+    explicit WavePreview(QWidget* parent) : QWidget(parent) {
+        setObjectName(QStringLiteral("waveThemePreview"));
+        setAccessibleName(QStringLiteral("Questa waveform color preview"));
+        setMinimumSize(240, 116);
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    }
+    WaveTheme theme = WaveTheme::QuestaDefault;
+    QSize sizeHint() const override { return QSize(360, 116); }
+protected:
+    void paintEvent(QPaintEvent*) override {
+        const auto& colors = wavePalette(theme);
+        QPainter painter(this); painter.setRenderHint(QPainter::Antialiasing);
+        painter.setPen(Qt::NoPen); painter.setBrush(QColor(colors.background));
+        painter.drawRoundedRect(rect().adjusted(0,0,-1,-1),6,6);
+        painter.setFont(Ui::codeFont());
+        const int left=82, right=width()-12;
+        const qreal step=qMax(1, right-left)/8.0;
+        painter.setPen(QColor(colors.grid));
+        for(int i=0;i<=8;++i) painter.drawLine(QPointF(left+i*step,8),QPointF(left+i*step,height()-8));
+        const QStringList names{QStringLiteral("clk"),QStringLiteral("rst_n"),QStringLiteral("data")};
+        const QStringList signalColors{colors.clock,colors.reset,colors.data};
+        for(int row=0;row<3;++row) {
+            const qreal y=25+row*33;
+            painter.setPen(QColor(colors.text));
+            painter.drawText(QRectF(12,y-10,62,22),Qt::AlignVCenter,names.at(row));
+            painter.setPen(QPen(QColor(signalColors.at(row)),1.5));
+            QPainterPath wave;
+            wave.moveTo(left,y+6);
+            if(row==0) {
+                for(int i=0;i<8;++i) {
+                    const qreal level=i%2 ? y+6 : y-6;
+                    wave.lineTo(left+i*step,level); wave.lineTo(left+(i+1)*step,level);
+                }
+            } else if(row==1) {
+                wave.lineTo(left+2*step,y+6); wave.lineTo(left+2*step,y-6); wave.lineTo(right,y-6);
+            } else {
+                wave.lineTo(left+3*step-4,y+6); wave.lineTo(left+3*step+4,y-6); wave.lineTo(right,y-6);
+                wave.moveTo(left,y-6); wave.lineTo(left+3*step-4,y-6); wave.lineTo(left+3*step+4,y+6); wave.lineTo(right,y+6);
+                painter.drawText(QRectF(left+3*step+10,y-10,80,20),Qt::AlignVCenter,QStringLiteral("0x2A"));
+            }
+            painter.drawPath(wave);
+        }
+    }
+};
+}
 SettingsDialog::SettingsDialog(const QString& executable, QWidget* parent, bool simulatorLocked,
-    WorkspaceSimulationController* controller, std::function<void()> configureWorkspace) : ElaDialog(parent)
+    WorkspaceSimulationController* controller, std::function<void()> configureWorkspace, WaveTheme selectedTheme) : ElaDialog(parent)
 {
     setWindowTitle(QStringLiteral("Simulation settings"));
     UiWindowChrome::ensureWindowBoundary(this);
@@ -43,7 +96,25 @@ SettingsDialog::SettingsDialog(const QString& executable, QWidget* parent, bool 
     row->addWidget(m_path, 1);
     row->addWidget(browse);
     Ui::formRow(form, QStringLiteral("Questa executable"), row);
+    auto* colors = new QHBoxLayout;
+    m_waveTheme = UiControls::comboBox(this);
+    m_waveTheme->setObjectName(QStringLiteral("waveThemeSelector"));
+    for (const auto& palette : wavePalettes()) m_waveTheme->addItem(palette.name, palette.id);
+    m_waveTheme->setCurrentIndex(m_waveTheme->findData(wavePalette(selectedTheme).id));
+    auto* previewToggle = UiControls::toolButton(this);
+    previewToggle->setObjectName(QStringLiteral("waveThemePreviewToggle"));
+    previewToggle->setText(QStringLiteral("Preview")); previewToggle->setCheckable(true);
+    colors->addWidget(m_waveTheme,1); colors->addWidget(previewToggle);
+    Ui::formRow(form, QStringLiteral("Questa waveform colors"), colors);
     layout->addLayout(form);
+    auto* preview = new WavePreview(this); preview->theme=waveTheme(); preview->hide();
+    layout->addWidget(preview);
+    connect(m_waveTheme, &QComboBox::currentIndexChanged, this, [this,preview] {
+        preview->theme=waveTheme(); preview->update();
+    });
+    connect(previewToggle, &QToolButton::toggled, this, [this,preview](bool visible) {
+        preview->setVisible(visible); adjustSize();
+    });
     m_path->setEnabled(!simulatorLocked);
     browse->setEnabled(!simulatorLocked);
     if (simulatorLocked) {
@@ -128,5 +199,6 @@ SettingsDialog::SettingsDialog(const QString& executable, QWidget* parent, bool 
     });
 }
 QString SettingsDialog::executable() const { return m_path->text().trimmed(); }
+WaveTheme SettingsDialog::waveTheme() const { return waveThemeFromId(m_waveTheme->currentData().toString()); }
 
 }

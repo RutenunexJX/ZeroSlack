@@ -5,11 +5,15 @@
 #include <zeroslack/semantic/semanticsharddirectory.h>
 #include <memory>
 #include <mutex>
+#include <condition_variable>
 
 #include <QHash>
 #include <QList>
 #include <QString>
 #include <QStringList>
+
+struct DesignHierarchyReport;
+class HierarchyService;
 
 class SemanticIndexSnapshot
 {
@@ -100,6 +104,15 @@ public:
     qsizetype logicalBytes() const;
 
 private:
+    friend class HierarchyService;
+    struct HierarchyCache {
+        std::mutex mutex;
+        std::condition_variable changed;
+        QHash<QString, std::shared_ptr<const DesignHierarchyReport>> reports;
+        QSet<QString> running;
+        std::uint64_t builds = 0;
+    };
+    std::shared_ptr<HierarchyCache> m_hierarchyCache = std::make_shared<HierarchyCache>();
     // Numeric handles belong only to this publication. The legacy engine is
     // a read projection of this owner; public clients use stable keys.
     friend class SymbolRelationshipEngine;
@@ -158,7 +171,10 @@ private:
     void removeFileContent(const QString& file);
     void replaceRelationshipShard(const QString& owner, const QList<SemanticRelationship>& records);
     void rebuildDiagnosticView(int maxDiagnostics);
-    void resetViews() { m_flatViews = std::make_shared<FlatViews>(); }
+    void resetViews() {
+        m_flatViews = std::make_shared<FlatViews>();
+        m_hierarchyCache = std::make_shared<HierarchyCache>();
+    }
     QList<SemanticSymbolRecord> sortedDefinitionRecords(
         const QList<SemanticSymbolRecord>& records,
         const SemanticQueryContext& context) const;

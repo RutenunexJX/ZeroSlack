@@ -2742,10 +2742,8 @@ MyCodeEditor* TabManager::createView(
         return nullptr;
 
     splitController->registerPage(editorPointer, {}, QStringLiteral("code"));
-    const int index =
-        group->addTab(editorPointer, QString());
-    group->setCurrentIndex(index);
-    splitController->setActiveGroup(group);
+    group->addTab(editorPointer, QString());
+    splitController->activatePage(editorPointer, false);
     // A newly opened document can introduce a basename conflict for tabs
     // that were already present. Refresh every title so both sides adopt the
     // same shortest unique suffix, then apply the active grouping once.

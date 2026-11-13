@@ -9,6 +9,7 @@
 #include <QFileDialog>
 #include <QDir>
 #include <QDirIterator>
+#include <zeroslack/semantic/semanticworkspacecache.h>
 #include <QDateTime>
 #include <QFileInfo>
 #include <QElapsedTimer>
@@ -805,12 +806,20 @@ void WorkspaceManager::applySemanticWatchPaths(const QString& root,
     for (const auto& paths : {preparedWatchPaths.files, preparedWatchPaths.directories,
                              semanticWatchPaths.files, semanticWatchPaths.directories})
         for (const auto& path : paths) previous.insert(SemanticInputCapture::pathKey(path));
+    const auto withoutCache = [&](const QStringList& paths) {
+        QStringList filtered;
+        for (const auto& path : paths)
+            if (!SemanticWorkspaceCache::ownsPath(root, path)) filtered.append(path);
+        return filtered;
+    };
+    const auto watchFiles = withoutCache(files);
+    const auto watchDirectories = withoutCache(directories);
     bool extendsCoverage = false;
-    for (const auto& paths : {files, directories})
+    for (const auto& paths : {watchFiles, watchDirectories})
         for (const auto& path : paths)
             extendsCoverage |= !previous.contains(SemanticInputCapture::pathKey(path));
-    semanticWatchPaths.files = files;
-    semanticWatchPaths.directories = directories;
+    semanticWatchPaths.files = watchFiles;
+    semanticWatchPaths.directories = watchDirectories;
     applyCombinedWatchPaths();
     if (extendsCoverage) {
         // An include may have changed between capture and watch installation.
@@ -1000,6 +1009,7 @@ void WorkspaceManager::launchPendingDirectoryScan()
                         return result;
                     }
                     entries.next();
+                    if (SemanticWorkspaceCache::ownsPath(request.path,entries.filePath())) continue;
                     children.append(directoryMemberKey(entries.fileInfo()));
                 }
                 children.sort(Qt::CaseSensitive);
@@ -1069,6 +1079,7 @@ void WorkspaceManager::launchPendingDirectoryScan()
                 continue;
             }
             const QString path = normalized(frame.entries->next());
+            if (SemanticWorkspaceCache::ownsPath(request.path,path)) continue;
             const QFileInfo entry = frame.entries->fileInfo();
             result.membership[SemanticInputCapture::pathKey(entry.absolutePath())]
                 .append(directoryMemberKey(entry));

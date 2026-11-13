@@ -15,7 +15,23 @@
 #include <QMenu>
 #include <QSignalBlocker>
 #include <QTabBar>
+#include <QScopedValueRollback>
 #include <QTreeWidgetItemIterator>
+
+namespace {
+class DesignTreeView final : public QTreeView {
+public:
+    using QTreeView::QTreeView;
+    bool mouseActivation = false;
+protected:
+    bool viewportEvent(QEvent* event) override {
+        const bool mouse = event->type() == QEvent::MouseButtonPress
+            || event->type() == QEvent::MouseButtonRelease || event->type() == QEvent::MouseButtonDblClick;
+        QScopedValueRollback<bool> guard(mouseActivation, mouse);
+        return QTreeView::viewportEvent(event);
+    }
+};
+}
 
 NavigationWidget::NavigationWidget(QWidget *parent)
     : QWidget(parent)
@@ -471,7 +487,7 @@ void NavigationWidget::setupDesignTab()
     designTab = new QWidget();
     designTabLayout = new QVBoxLayout(designTab);
     designTabLayout->setContentsMargins(2, 2, 2, 2); designTabLayout->setSpacing(4);
-    designTreeWidget = new QTreeView(designTab);
+    designTreeWidget = new DesignTreeView(designTab);
     designTreeWidget->setObjectName(QStringLiteral("navigationDesignTree"));
     designTreeWidget->setHeaderHidden(true);
     designTreeWidget->setFrameShape(QFrame::NoFrame);
@@ -482,7 +498,8 @@ void NavigationWidget::setupDesignTab()
     designSearchModel = new DesignHierarchyModel(this);
     setDesignTreeModel(designModel);
     designTreeWidget->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
-    new NavigationRowStyle(designTreeWidget, true);
+    auto* designStyle = new NavigationRowStyle(designTreeWidget, true);
+    designStyle->activateDesign = [this](const QModelIndex& index) { onDesignTreeDoubleClicked(index); };
     designTreeWidget->header()->setStretchLastSection(true);
     designTabLayout->addWidget(designTreeWidget);
     designStateLabel = new QLabel(designTab);
@@ -586,8 +603,9 @@ void NavigationWidget::setupConnections()
     fileTreeWidget->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(fileTreeWidget, &QTreeWidget::customContextMenuRequested,
             this, &NavigationWidget::onFileTreeContextMenuRequested);
-    connect(designTreeWidget, &QTreeView::clicked, this, &NavigationWidget::onDesignTreeDoubleClicked);
-    connect(designTreeWidget, &QTreeView::activated, this, &NavigationWidget::onDesignTreeDoubleClicked);
+    connect(designTreeWidget, &QTreeView::activated, this, [this](const QModelIndex& index) {
+        if (!static_cast<DesignTreeView*>(designTreeWidget)->mouseActivation) onDesignTreeDoubleClicked(index);
+    });
     designTreeWidget->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(designTreeWidget, &QTreeView::customContextMenuRequested, this, &NavigationWidget::onDesignTreeContextMenuRequested);
 }

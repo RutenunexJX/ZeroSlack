@@ -991,7 +991,7 @@ int main()
          true},
         {ActionIds::NavigationDesignSetTop,
          "navigation.design.setTop",
-         "Add as Design Project",
+         "Reveal in Design",
          ActionScope::Hierarchy,
          ActionRequirements::Workspace
              | ActionRequirements::Hierarchy,

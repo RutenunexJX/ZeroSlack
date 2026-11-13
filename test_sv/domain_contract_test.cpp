@@ -51,11 +51,15 @@ private slots:
         ModuleBlockDiagramQuery query;
         query.fileName = file;
         query.moduleName = QStringLiteral("top");
-        const auto report = service->buildModuleBlockDiagram(query);
+        auto report = service->buildModuleBlockDiagram(query);
         QVERIFY(report.found);
         QCOMPARE(report.root.moduleDisplayName, QStringLiteral("top"));
         QCOMPARE(SemanticIndex::getInstance()->snapshotToken().snapshot, globalBefore.snapshot);
         service.reset();
+        QVERIFY(!lifetime.expired());
+        QVERIFY(report.semantic.snapshot);
+        QVERIFY(report.hierarchy);
+        report = {};
         QVERIFY(lifetime.expired());
     }
 };

@@ -13,6 +13,8 @@ class SemanticIndexSnapshot;
 class SemanticSourceRemapper
 {
 public:
+    static bool canRemapSnapshot(const SemanticIndexSnapshot& snapshot,
+                                 const QString& fileName);
     static std::shared_ptr<const SemanticIndexSnapshot> remapSnapshot(
         std::shared_ptr<const SemanticIndexSnapshot> snapshot,
         const QString& fileName,

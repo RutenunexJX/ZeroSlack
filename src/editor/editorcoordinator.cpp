@@ -1315,13 +1315,14 @@ EditorCoordinator::executeRegisteredExposeSignalAction(
 }
 
 EditorActionContext EditorCoordinator::actionContextFor(
-    const EditorSemanticContext& context) const
+    const EditorSemanticContext& context, bool resolveHierarchy) const
 {
     EditorActionContextQuery query;
     if (actionContextQueryProvider)
         query = actionContextQueryProvider(context);
     else
         query.editorContext = context;
+    query.resolveHierarchy = resolveHierarchy;
     return actionContextService
         ? actionContextService->resolve(query)
         : EditorActionContext();
@@ -1345,7 +1346,7 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
         && !sourceContext.symbolName.trimmed().isEmpty();
     ExposeSignalToTopService exposeService;
     const EditorActionContext actionContext =
-        actionContextFor(context);
+        actionContextFor(context, false);
     EditorSemanticContext resolvedContext = context;
     if (actionContext.hierarchyBound()) {
         resolvedContext.hierarchyInstance =
@@ -1614,10 +1615,8 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
     append(QString::fromLatin1(
                ActionIds::PinloomToggleBindingMarkers));
 
-    QString organizeReason;
-    const bool organizeReady =
-        editor->canOrganizeSignalDeclarationsAt(
-            cursorPosition, &organizeReason);
+    const QString organizeReason = QStringLiteral("Place the cursor inside a module with current syntax information.");
+    const bool organizeReady = editor->syntaxDocument() && !context.moduleName.trimmed().isEmpty();
     append(QString::fromLatin1(
                ActionIds::RefactorOrganizeSignalDeclarations),
            !context.moduleName.trimmed().isEmpty(),
@@ -1626,12 +1625,20 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
                ? organizeReason
                : QStringLiteral("The editor is read-only."));
 
-    const EditorStructuralContextMenuState structural =
-        editor->structuralContextMenuState(cursorPosition);
+    const bool moduleSubject = std::any_of(menuState.items.cbegin(), menuState.items.cend(), [](const auto& item) {
+        return item.action == SourceSymbolAction::ShowModuleBlockDiagram && item.enabled;
+    });
+    EditorStructuralContextMenuState structural;
+    if (moduleSubject)
+        structural.instanceSlotsAvailable = editor->instanceSlotsAvailableAt(cursorPosition);
+    else
+        structural = editor->structuralContextMenuState(cursorPosition);
     append(QStringLiteral("refactor.createSignalDefinition"),
            structural.signalDefinitionAvailable);
     append(QStringLiteral("refactor.editInstanceSlots"),
-           structural.instanceSlotsAvailable);
+           structural.instanceSlotsAvailable,
+           editable,
+           editable ? QString() : QStringLiteral("The editor is read-only."));
     append(QStringLiteral("refactor.exposeSignalToTop"),
            symbolAvailable,
            exposeReady,
@@ -1646,6 +1653,8 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
     const auto execute =
         [this,
          editor = QPointer<MyCodeEditor>(editor),
+         menuDocumentRevision = editor->semanticDocumentRevision(),
+         menuDocumentFile = editor->documentFileName(),
          context,
          cursorPosition,
          menuState,
@@ -1660,6 +1669,18 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
             const QString& actionId) {
             if (!editor)
                 return;
+            if (actionId == QStringLiteral("refactor.editInstanceSlots")) {
+                QString reason;
+                if (editor->isReadOnly())
+                    reason = QStringLiteral("The editor is read-only.");
+                else if (editor->semanticDocumentRevision() != menuDocumentRevision
+                         || editor->documentFileName() != menuDocumentFile)
+                    reason = QStringLiteral("The source changed. Reopen the menu to edit the current instance.");
+                if (!reason.isEmpty()) {
+                    if (statusMessageHandler) statusMessageHandler(reason, 5000);
+                    return;
+                }
+            }
             if (actionId == QString::fromLatin1(ActionIds::PinloomLinkSelection)) {
                 WorkspaceEditDocumentManager documents(tabManager);
                 const auto origin = documents.snapshot(pinloomOriginFile.toUtf8().toStdString());

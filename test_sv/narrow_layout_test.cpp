@@ -934,7 +934,8 @@ private slots:
                 QCoreApplication::processEvents();
                 const auto rect=design->visualRect(design->currentIndex());
                 if(!rect.isValid() || !design->viewport()->rect().contains(rect.center()))return false;
-                QTest::mouseClick(design->viewport(),Qt::LeftButton,Qt::NoModifier,rect.center());return true;
+                QTest::mouseClick(design->viewport(),Qt::LeftButton,Qt::NoModifier,rect.center());
+                QTest::mouseDClick(design->viewport(),Qt::LeftButton,Qt::NoModifier,rect.center());return true;
             };
             QVERIFY(activateCurrent());
             const auto project=designModel->node(design->currentIndex()).rootId;QVERIFY(!project.isEmpty());

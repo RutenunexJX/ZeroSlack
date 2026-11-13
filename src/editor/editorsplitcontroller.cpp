@@ -1082,7 +1082,9 @@ void EditorSplitController::configureGroup(QTabWidget* group)
     const bool leftLabels = regionForGroup(group) == QStringLiteral("left") && !isFloatingGroup(group);
     if (isFloatingGroup(group)) UiWindowChrome::ensureWindowBoundary(group->window());
     group->tabBar()->setProperty("currentLabelTabs", leftLabels);
-    if (leftLabels) group->tabBar()->setFocusPolicy(Qt::StrongFocus);
+    const bool bottomTools = regionForGroup(group) == QStringLiteral("bottom") && !isFloatingGroup(group);
+    group->tabBar()->setProperty("bottomToolTabs", bottomTools);
+    if (leftLabels || bottomTools) group->tabBar()->setFocusPolicy(Qt::StrongFocus);
     group->tabBar()->setExpanding(false);
     group->tabBar()->setUsesScrollButtons(true);
 #ifdef ZEROSLACK_ENABLE_ELA

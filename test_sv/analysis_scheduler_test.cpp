@@ -10,6 +10,8 @@
 #include <QTemporaryDir>
 #include <QTextCursor>
 #include <QThread>
+#include <QThreadPool>
+#include <QPersistentModelIndex>
 #include <QTabWidget>
 #include <QtTest/QTest>
 
@@ -29,6 +31,7 @@
 #include "mycodeeditor.h"
 #include "navigationmanager.h"
 #include "navigationwidget.h"
+#include "designhierarchymodel.h"
 #include <QTreeWidget>
 #include "navigationservice.h"
 #include "semanticchangeclassifier.h"
@@ -3099,18 +3102,21 @@ void runDesignHierarchyTopologyFingerprint()
     navigation.connectToWorkspaceManager(&workspace);
     navigation.connectToDesignProjects(workbench.designService());
     index.setSnapshot(topologySnapshot(0, QStringLiteral("child")));
-    expect("topology explicit Design project activates", navigation.setDesignTop("top", topFile).isEmpty());
-    expect("topology project context follows the Design service", !workbench.designService()->activeProjectId().isEmpty()
-        && workspace.projectSnapshot().activeDesignProjectId == workbench.designService()->activeProjectId());
+    expect("topology module is revealed in automatic Design", navigation.setDesignTop("top", topFile).isEmpty());
+    expect("automatic Design does not create manual projects", workbench.designRoots().isEmpty()
+        && workbench.designService()->activeProjectId().isEmpty());
     navigation.setActiveView(NavigationManager::DesignHierarchyView);
     QSignalSpy refreshed(&navigation, &NavigationManager::dataRefreshed);
     expect("initial visible Design hierarchy becomes ready", waitUntil([&] { return !refreshed.isEmpty(); }, 5000));
-    auto* designTree = view.findChild<QTreeWidget*>(QStringLiteral("navigationDesignTree"));
-    auto* originalRow = designTree && designTree->topLevelItemCount() ? designTree->topLevelItem(0) : nullptr;
-    expect("active Design has a concrete navigation row", originalRow != nullptr);
-    if (!originalRow) return;
-    originalRow->setExpanded(true);
-    designTree->setCurrentItem(originalRow);
+    auto* designTree = view.findChild<QTreeView*>(QStringLiteral("navigationDesignTree"));
+    auto* model = designTree ? qobject_cast<DesignHierarchyModel*>(designTree->model()) : nullptr;
+    expect("active Design has a concrete navigation row", model && waitUntil([&] {
+        return view.selectDesignModule(QStringLiteral("top"), topFile) && designTree->currentIndex().isValid();
+    }, 5000));
+    if (!model || !designTree->currentIndex().isValid()) return;
+    const QPersistentModelIndex originalRow = designTree->currentIndex();
+    const QString originalId = originalRow.data(Qt::UserRole).toString();
+    designTree->setExpanded(originalRow, true);
     QStringList refreshDetails;
     QObject::connect(
         &navigation,
@@ -3131,18 +3137,17 @@ void runDesignHierarchyTopologyFingerprint()
         return index.snapshotRevision();
     };
     publishText(10, QStringLiteral("child"));
-    expect("non-topology snapshot generation causes zero hierarchy rebuild",
+    expect("source-only publication preserves the Design structure",
            waitUntil([&] { return !refreshDetails.isEmpty(); }, 5000)
                && refreshDetails.last().contains(
-                   QStringLiteral("hierarchyRebuild=0")));
+                   QStringLiteral("structureChanged=0")));
     expect("source-only Design publication refreshes navigation anchors",
-           designTree && designTree->topLevelItemCount() > 0
-               && designTree->topLevelItem(0)->toolTip(0).contains(QStringLiteral(":11")));
+           originalRow.isValid() && originalRow.data(Qt::ToolTipRole).toString().contains(QStringLiteral(":11")));
     expect("source-only publication preserves row identity expansion and selection",
-           designTree->topLevelItem(0)==originalRow && originalRow->isExpanded()
-               && designTree->currentItem()==originalRow);
+           model->indexForId(originalId)==originalRow && designTree->isExpanded(originalRow)
+               && designTree->currentIndex()==originalRow);
     QSignalSpy navigationRequest(&navigation, &NavigationManager::instanceNavigationRequested);
-    designTree->itemDoubleClicked(originalRow,0);
+    designTree->activated(originalRow);
     expect("actual Design row dispatches the updated definition anchor",
            navigationRequest.size()==1 && EditorFileIdentity::same(navigationRequest.first().at(0).toString(),topFile)
                && navigationRequest.first().at(1).toInt()==11);
@@ -3151,17 +3156,17 @@ void runDesignHierarchyTopologyFingerprint()
     const auto newest=publishText(30,QStringLiteral("child"));
     expect("latest source publication updates the visible anchor", waitUntil([&] {
         return !refreshDetails.isEmpty() && refreshDetails.last().contains(QString("snapshot=%1 ").arg(newest));
-    },5000) && designTree->topLevelItem(0)->toolTip(0).contains(":31"));
+    },5000) && originalRow.data(Qt::ToolTipRole).toString().contains(":31"));
     expect("superseded Design result never reaches the visible tree",
            std::none_of(refreshDetails.cbegin(),refreshDetails.cend(),[&](const QString& detail) {
                return detail.contains(QString("snapshot=%1 ").arg(superseded));
            }));
     refreshDetails.clear();
     publishText(30, QStringLiteral("other"));
-    expect("real instance topology change causes one hierarchy rebuild",
+    expect("real instance topology change is reported",
            waitUntil([&] { return !refreshDetails.isEmpty(); }, 5000)
                && refreshDetails.last().contains(
-                   QStringLiteral("hierarchyRebuild=1")));
+                   QStringLiteral("structureChanged=1")));
 }
 
 void runRelationshipReplacementUsesEvidenceOwner()
@@ -3815,6 +3820,9 @@ struct EditIdleFixture {
             return scheduler.semanticStatus(fileName).state == DocumentSemanticState::Current;
         }, 30000);
         expect("EditIdle fixture starts with a Current baseline", ready);
+        if (ready)
+            expect("EditIdle baseline waits for preceding cold-cache IO",
+                   QThreadPool::globalInstance()->waitForDone(5000));
         QObject::connect(&scheduler, &AnalysisScheduler::semanticAnalysisTelemetry,
                          &scheduler, [this](const SemanticAnalysisTelemetry& telemetry) {
             if (telemetry.reason != SemanticAnalysisReason::EditIdle)

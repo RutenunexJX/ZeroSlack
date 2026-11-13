@@ -133,6 +133,7 @@ def verify_contracts(config_path):
         verify_qt_gui_runner(config, root, env, check)
         from test_release_reuse import verify_release_reuse
         verify_release_reuse(root, check)
+        verify_required_target_mapping(root, check)
         return _verify(config, root, source, build, scripts, env, proof, check)
     except Exception as error:
         proof.update(status='failed', error=str(error))
@@ -141,6 +142,36 @@ def verify_contracts(config_path):
         restore_log_access(root)
         proof['completedUtc'] = stamp()
         dump(root/'result.json', proof)
+
+
+def verify_required_target_mapping(root, check):
+    from release_gate import verify_required_target
+    work = root/'required-target'; work.mkdir()
+    artifact = work/'runtime'/'layout.exe'; artifact.parent.mkdir()
+    artifact.write_bytes(b'isolated target identity fixture')
+    other = work/'layout.exe'; other.write_bytes(b'different root artifact')
+    targets = work/'targets.json'
+    config = {'targets':str(targets)}
+    rule = {'name':'required-layout', 'target':'layout'}
+    row = {'name':'layout', 'type':'EXECUTABLE', 'artifact':str(artifact)}
+    identity = {str(artifact):digest(artifact)}
+    dump(targets, [row])
+    check(verify_required_target(rule, config, identity) == artifact.resolve(),
+          'required layout accepts the unique configured artifact in a runtime subdirectory')
+    for label, entries, binaries in [
+        ('missing target', [], identity),
+        ('duplicate target', [row,row], identity),
+        ('wrong tested artifact', [row], {str(other):digest(other)}),
+        ('changed tested artifact', [row], {str(artifact):'0'*64}),
+        ('missing artifact', [{**row,'artifact':str(work/'absent.exe')}], identity),
+    ]:
+        dump(targets, entries)
+        try:
+            verify_required_target(rule, config, binaries)
+        except PolicyError:
+            check(True, 'required layout rejects '+label)
+        else:
+            check(False, 'required layout rejects '+label)
 
 
 def _verify(config, root, source, build, scripts, env, proof, check):

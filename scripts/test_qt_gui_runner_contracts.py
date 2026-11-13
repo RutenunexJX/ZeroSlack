@@ -40,12 +40,12 @@ sys.exit(7 if failed else 0)
 
 def verify_qt_gui_runner(config, root, base_env, check):
     host = json.loads((Path(config['build'])/'Testing/ManagedCommands/simdock_workbench_host.json').read_text(encoding='utf8'))['command']
-    filters = ['hostIsolationAndState','hostThemeAuthority','responsiveGeometry','resizePreservesState',
+    filters = ['hostIsolationAndState','waveformSettingsAreTransactional','hostThemeAuthority','responsiveGeometry','resizePreservesState',
                'narrowWorkspaceActions','rapidContextsAndOwnedWorker','existingTestbenchWorkflow','destroyWithOpenDialog']
     encoded = [arg for arg in host if arg.startswith('-DQT_TEST_ARGUMENTS=')]
     check(len(encoded)==1 and encoded[0].split('=',1)[1].split(';')==filters
           and not any(arg in host for arg in filters),
-          'Qt protocol: generated SimDock host command retains all eight original method filters in one argument')
+          'Qt protocol: generated SimDock host command retains all eight original methods plus waveform settings in one argument')
     work=root/'qt-protocol';work.mkdir()
     child=work/'child.py';child.write_text(CHILD,encoding='utf8')
     wrapper=Path(config['source'])/'cmake/run_qt_gui_test.cmake'

@@ -168,11 +168,12 @@ void Workbench::openSettings()
 {
     QPointer<Workbench> owner(this);
     QPointer<SettingsDialog> dialog = new SettingsDialog(m_simulator, this, m_controller->busy(),
-        m_controller, m_configureWorkspace);
+        m_controller, m_configureWorkspace, waveTheme());
     const auto result = dialog->exec();
     if (!owner || !dialog) return;
     if (result == QDialog::Accepted) {
         setSimulator(dialog->executable());
+        setPreference(QStringLiteral("waveform/theme"), wavePalette(dialog->waveTheme()).id);
     }
     delete dialog; updateControls();
 }

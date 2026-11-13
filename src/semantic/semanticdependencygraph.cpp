@@ -537,6 +537,20 @@ SemanticDependencyGraph SemanticDependencyGraph::build(
     return graph;
 }
 
+SemanticDependencyGraph SemanticDependencyGraph::fromFacts(const ProjectSnapshot& project,
+    QHash<QString, SemanticFileDependencyFacts> facts, QHash<QString, QStringList> observed,
+    const std::function<bool()>& cancelled)
+{
+    SemanticDependencyGraph graph;
+    graph.graphProject=project; graph.projectIdentity=projectKey(project);
+    for(auto it=facts.cbegin();it!=facts.cend();++it) {
+        if(cancelled && cancelled()) return {};
+        graph.originalPathByKey.insert(it.key(),it->fileName);
+    }
+    graph.factsByFile=std::move(facts); graph.observedIncludes=std::move(observed);
+    graph.rebuildEdges(); return graph;
+}
+
 SemanticDependencyGraph SemanticDependencyGraph::withUpdatedFile(
     const ProjectSnapshot& project,
     const QString& fileName,

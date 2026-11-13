@@ -5,6 +5,8 @@
 #include "semanticindexsnapshot.h"
 #include "effectivevalueservice.h"
 #include "relationshipanalysisworker.h"
+#include <zeroslack/semantic/semanticworkspacecache.h>
+#include <QtConcurrent/QtConcurrent>
 
 #include <QDir>
 #include <QElapsedTimer>
@@ -169,6 +171,7 @@ void SymbolAnalyzer::waitForPublicationRetirements()
 
 void SymbolAnalyzer::clearSemanticIndex()
 {
+    if (cacheWriteCancellation) cacheWriteCancellation->store(true);
     cancelSemanticInputCheck();
     ++workspaceEpoch;
     ++workspaceAnalysisGeneration;
@@ -314,6 +317,16 @@ void SymbolAnalyzer::publishPendingWorkspaceAnalysis()
     const qint64 effectiveFactsMs = timer.elapsed() - snapshotInstallMs;
     index->setWorkspaceFileAnalysisBands(result.fileAnalysisBands);
     rememberWorkspace(result.publishedState);
+    if (result.publishedState && !result.reusedWorkspace) {
+        if (cacheWriteCancellation) cacheWriteCancellation->store(true);
+        // Pure value work owns no GUI object. Publication never joins cache IO;
+        // a failed or superseded write leaves the previous atomic file intact.
+        cacheWriteCancellation=std::make_shared<std::atomic_bool>(false);
+        (void)QtConcurrent::run([state=result.publishedState, bands=result.fileAnalysisBands,
+                                  cancellation=cacheWriteCancellation] {
+            SemanticWorkspaceCache::store(*state,bands,[cancellation] { return cancellation->load(); });
+        });
+    }
     const std::uint64_t committedRevision = index->snapshotRevision();
     auto stillCurrent = [&] {
         return !shutdownStarted
@@ -354,6 +367,9 @@ void SymbolAnalyzer::publishPendingWorkspaceAnalysis()
     telemetry.diagnosticsSuppressed = result.diagnosticsSuppressed;
     telemetry.slangInvoked = result.slangInvoked;
     telemetry.detail = QStringLiteral("Committed semantic publication revision=%1").arg(committedRevision);
+    if (result.persistentCacheHit)
+        telemetry.detail += QStringLiteral(" disk-cache=hit read=%1ms validate=%2ms prepare=%3ms")
+            .arg(result.cacheReadMs).arg(result.cacheValidationMs).arg(result.cachePreparationMs);
     emit semanticAnalysisTelemetry(telemetry);
     if (!stillCurrent())
         return;

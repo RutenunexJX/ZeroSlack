@@ -783,12 +783,17 @@ bool MainWindow::openLiveInsightFromSourceAction(
         return false;
 
     LiveInsightToolContext context = activeLiveInsightToolContext();
+    const auto editorModule = context.moduleName;
     if (!fileName.trimmed().isEmpty())
         context.fileName = fileName;
     if (kind == LiveInsightKind::Module) {
         context.moduleName = !symbolName.trimmed().isEmpty()
             ? symbolName
             : moduleName;
+        context.fileName = fileName;
+        if (context.moduleName != editorModule) {
+            context.instancePath.clear(); context.rootIdentity.clear(); context.configurationIdentity.clear();
+        }
         context.signalName.clear();
         context.signalAccessPath.clear();
     } else {

@@ -199,7 +199,8 @@ void PinloomCodeLinkHover::showCard()
     layout->addWidget(detailsLabel);
     image = new PinloomPreviewImageLabel(body);
     image->setObjectName(QStringLiteral("pinloomHoverImage"));
-    image->setMinimumHeight(80);
+    // Short editor panes keep the card actions visible by shrinking the preview.
+    image->setMinimumHeight(image->fontMetrics().height() * 2);
     image->setMaximumHeight(180);
     layout->addWidget(image, 1);
     image->activated = [this] {

@@ -106,7 +106,14 @@ struct Host {
     bool simulation() {
         return panel()->isVisible();
     }
-    void runLog() { click(window.get(), "bottomPanelButton_simulationLog"); }
+    void showPanel(const QString& id) {
+        PanelLayoutController* panels = nullptr;
+        for (auto* child : window->children())
+            if (auto* candidate = dynamic_cast<PanelLayoutController*>(child))
+                panels = candidate;
+        if (!panels || !panels->restorePanel(id)) qFatal("Missing registered panel: %s",qPrintable(id));
+    }
+    void runLog() { showPanel(QStringLiteral("simulationLog")); }
 };
 }
 
@@ -139,20 +146,20 @@ class SimulationWorkspaceUiTest : public QObject {
         auto* manager=f.window->findChild<NavigationManager*>(); QVERIFY(manager);
         QVERIFY(manager->setDesignTop(module,file).isEmpty());
         f.navigation()->setActiveTab(NavigationWidget::DesignTab);
-        auto* tree=child<QTreeWidget>(f.navigation(),"navigationDesignTree");
-        QTRY_VERIFY_WITH_TIMEOUT(tree->topLevelItemCount()>0,15000);
+        auto* tree=child<QTreeView>(f.navigation(),"navigationDesignTree");
+        QTRY_VERIFY_WITH_TIMEOUT(tree->model()->rowCount()>0,15000);
         QVERIFY(f.navigation()->selectDesignModule(module,file));
-        auto* row=tree->currentItem(); QVERIFY(row);
+        const QPersistentModelIndex row=tree->currentIndex(); QVERIFY(row.isValid());
         bool chosen=false;
         QTimer::singleShot(0,tree,[&] {
             auto* menu=qobject_cast<QMenu*>(QApplication::activePopupWidget()); QVERIFY(menu);
             auto* action=menu->findChild<QAction*>("setSimulationTop"); QVERIFY(action && action->isEnabled());
             menu->setActiveAction(action); chosen=true; QTest::keyClick(menu,Qt::Key_Return);
         });
-        tree->customContextMenuRequested(tree->visualItemRect(row).center());
+        tree->customContextMenuRequested(tree->visualRect(row).center());
         QVERIFY(chosen);
         QCOMPARE(f.panel()->controller()->target().top,module);
-        QTRY_VERIFY(row->data(0,NavigationRowStyle::SimulationRole).toBool());
+        QTRY_VERIFY(row.data(NavigationRowStyle::SimulationRole).toBool());
     }
     void capture(Host& f, const QString& name) {
         const auto output = qEnvironmentVariable("ZEROSLACK_SIMULATION_UI_REPORT");
@@ -321,8 +328,8 @@ private slots:
         f.navigation()->setSearchFilter(NavigationWidget::DesignTab,"dut");
         auto* search=child<QLineEdit>(f.window.get(),"navigationDesignSearchLineEdit");
         f.navigation()->setActiveTab(NavigationWidget::DesignTab); QTRY_VERIFY(search->isVisible());
-        QCOMPARE(search->text(),QString()); QCOMPARE(f.navigation()->searchFilter(NavigationWidget::DesignTab),QString("dut"));
-        search->setText("extra"); QCOMPARE(f.navigation()->searchFilter(NavigationWidget::DesignTab),QString("dut"));
+        QCOMPARE(search->text(),QString("dut")); QCOMPARE(f.navigation()->searchFilter(NavigationWidget::DesignTab),QString("dut"));
+        search->setText("extra"); QCOMPARE(f.navigation()->searchFilter(NavigationWidget::DesignTab),QString("extra"));
         f.navigation()->setActiveTab(NavigationWidget::FileTab);
         QCOMPARE(child<QLineEdit>(f.window.get(),"navigationSearchLineEdit")->text(),QString("dut"));
         QCOMPARE(search->text(),QString("extra"));
@@ -361,7 +368,8 @@ private slots:
         f.log()->verticalScrollBar()->setValue(0);
         auto cursor = f.log()->textCursor(); cursor.setPosition(5); cursor.setPosition(15, QTextCursor::KeepAnchor); f.log()->setTextCursor(cursor);
         const auto selection = cursor.selectedText(); const auto position = f.log()->verticalScrollBar()->value();
-        click(f.window.get(), "bottomPanelButton_activity");
+        f.showPanel(QStringLiteral("activity"));
+        QVERIFY(!f.log()->isVisible());
         session->logText("hidden output\n"); QTRY_VERIFY(f.log()->toPlainText().contains("hidden output"));
         f.runLog(); QCOMPARE(f.log()->textCursor().selectedText(), selection); QCOMPARE(f.log()->verticalScrollBar()->value(), position);
         f.log()->copy(); QCOMPARE(QApplication::clipboard()->text(), QString(selection).replace(QChar::ParagraphSeparator, QLatin1Char('\n')));
@@ -497,7 +505,9 @@ private slots:
         QVERIFY(controller->preparing());
         QCOMPARE(controller->target().top, QString("tb_manual"));
         QVERIFY(!f.sessions()->openWorkspace(f.other));
-        QCOMPARE(child<QAbstractButton>(f.panel(),"startSimulation")->text(),QString("Cancel"));
+        auto* cancel=child<QAbstractButton>(f.panel(),"startSimulation");
+        QCOMPARE(cancel->text(),QString::fromUtf8("Cancel · tb_manual"));
+        QCOMPARE(cancel->property("simulationTarget").toString(),QString("tb_manual"));
         click(f.panel(),"startSimulation");
         QCOMPARE(finished.size(), 1);
         QCOMPARE(finished.takeFirst()[1].toString(), QString("Preparation cancelled"));

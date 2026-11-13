@@ -260,6 +260,13 @@ void LiveInsightToolPage::renderContext()
         context.signalName = currentContext.signalName;
         context.signalAccessPath = currentContext.signalAccessPath;
         workbench->setModuleNavigationHandler(currentContext.navigateModule);
+        workbench->setModuleTargetHandler([this](const DesignHierarchyNode& selected) {
+            if (currentContext.selectModule) { currentContext.selectModule(selected); return; }
+            auto context = currentContext;
+            context.fileName = selected.definitionFile; context.moduleName = selected.moduleType;
+            context.rootIdentity = selected.rootId; context.instancePath = selected.instancePath;
+            context.configurationIdentity = selected.configurationId; setContext(context);
+        });
         workbench->setContext(context);
         if (workbench->moduleView() && !pendingNativeState.isEmpty()) {
             workbench->moduleView()->restoreViewState(pendingNativeState); pendingNativeState.clear();

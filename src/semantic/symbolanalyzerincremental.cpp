@@ -1,4 +1,5 @@
 #include "symbolanalyzer.h"
+#include <zeroslack/semantic/semanticworkspacecache.h>
 
 #include "incrementalsemanticanalysisworker.h"
 #include "semanticindexsnapshot.h"
@@ -209,9 +210,13 @@ void SymbolAnalyzer::startSemanticAnalysisAsync(
             };
             if (workerStartGate)
                 workerStartGate(cancelled);
-            WorkspaceAnalysisResult result =
-                IncrementalSemanticAnalysisWorker::analyze(
-                request, baseSnapshot, graph, cancelled, retained ? retained->input : nullptr, retained);
+            auto restored = request.reason == SemanticAnalysisReason::WorkspaceOpen
+                    && (!retained || !retained->input)
+                ? SemanticWorkspaceCache::restore(request,fileAnalysisBands,cancelled)
+                : std::optional<WorkspaceAnalysisResult>{};
+            WorkspaceAnalysisResult result = restored ? std::move(*restored)
+                : IncrementalSemanticAnalysisWorker::analyze(
+                    request, baseSnapshot, graph, cancelled, retained ? retained->input : nullptr, retained);
             result.basePublication = basePublication;
             result.deliveryGeneration = deliveryGeneration;
             result.workspaceEpoch = epoch;
@@ -220,7 +225,7 @@ void SymbolAnalyzer::startSemanticAnalysisAsync(
                 return cancellation->load(std::memory_order_relaxed)
                     || (externalCancellation && externalCancellation());
             };
-            result.fileAnalysisBands = fileAnalysisBands;
+            if (!result.persistentCacheHit) result.fileAnalysisBands = fileAnalysisBands;
             if (result.preparedSnapshot && !result.preparedEffectiveFactsState) {
                 result.preparedEffectiveFactsState =
                     EffectiveValueService::prepareDocumentFactsState(
@@ -253,7 +258,7 @@ void SymbolAnalyzer::startSemanticAnalysisAsync(
                     result.preparedRelationshipState->snapshot = result.preparedSnapshot;
             }
             result.preparedAnalysisBandReport = preparedBandReport(
-                result.preparedSnapshot, fileAnalysisBands);
+                result.preparedSnapshot, result.fileAnalysisBands);
             if (request.relationshipProjectionRequested && result.preparedSnapshot && !result.cancelled) {
                 ProjectSnapshot projectionProject = request.project;
                 if (!request.triggerFile.isEmpty()

@@ -14,6 +14,10 @@
 #include "liveinsighttoolpage.h"
 #include "rtlinsightworkbench.h"
 #include "moduleblockdiagramview.h"
+#include "moduleblockdiagramservice.h"
+#include "editorcoordinator.h"
+#include "editorsemanticcontextservice.h"
+#include "mycodeeditor.h"
 #include "tabfileio.h"
 #include "applicationthememanager.h"
 #include "workspaceconfigurationservice.h"
@@ -27,8 +31,23 @@
 #include <QScreen>
 #include <QScrollBar>
 #include <QStandardPaths>
+#include <QCryptographicHash>
+#include <QScopeGuard>
+#include <QMenu>
+#include <QSemaphore>
+#include <future>
 
 namespace {
+class MeasuredApplication : public QApplication {
+public:
+    using QApplication::QApplication;
+    std::function<void(QObject*, QEvent*)> afterEvent;
+    bool notify(QObject* receiver, QEvent* event) override {
+        const auto result = QApplication::notify(receiver, event);
+        if (afterEvent) afterEvent(receiver, event);
+        return result;
+    }
+};
 bool put(const QString& path, const QByteArray& bytes) {
     QDir().mkpath(QFileInfo(path).absolutePath()); QFile file(path);
     return file.open(QIODevice::WriteOnly) && file.write(bytes) == bytes.size();
@@ -48,6 +67,10 @@ QLineEdit* search(NavigationWidget& widget) { return widget.findChild<QLineEdit*
 void clickName(QTreeView* view, const QModelIndex& index) {
     view->scrollTo(index); QTest::qWait(10); const auto rect = view->visualRect(index);
     QTest::mouseClick(view->viewport(), Qt::LeftButton, Qt::NoModifier, {rect.left()+65, rect.center().y()});
+}
+void activateName(QTreeView* view, const QModelIndex& index) {
+    clickName(view,index); const auto rect=view->visualRect(index);
+    QTest::mouseDClick(view->viewport(),Qt::LeftButton,Qt::NoModifier,{rect.left()+65,rect.center().y()});
 }
 DesignHierarchyReport wideReport(int count) {
     DesignHierarchyReport report;
@@ -71,6 +94,267 @@ void capture(QWidget& widget, const QString& name) {
 class DesignInlineSelectionTest : public QObject {
     Q_OBJECT
 private slots:
+    void measuredSemanticAndModuleWorkflow() {
+        QTemporaryDir data; QVERIFY(data.isValid());
+        const auto configured = qEnvironmentVariable("ZEROSLACK_WORKFLOW_FIXTURE");
+        const auto workspace = configured.isEmpty() ? data.filePath("workspace") : configured;
+        const auto source = workspace + "/hierarchy.sv";
+        QByteArray ports, connections;
+        for (int i = 0; i < 24; ++i) {
+            if (i) { ports += ','; connections += ','; }
+            ports += "input logic p" + QByteArray::number(i);
+            connections += ".p" + QByteArray::number(i) + "(1'b0)";
+        }
+        const auto text = "module leaf(" + ports + "); endmodule\nmodule branch(" + ports
+            + "); leaf a(" + connections + "); leaf b(" + connections
+            + "); endmodule\nmodule top; branch left(" + connections
+            + "); branch right(" + connections + "); endmodule\n";
+        if (!QFile::exists(source)) QVERIFY(put(source, text));
+        QFile fixture(source); QVERIFY(fixture.open(QIODevice::ReadOnly)); QCOMPARE(fixture.readAll(), text);
+        qputenv("ZEROSLACK_SESSION_STORAGE_PATH", data.filePath("session.ini").toUtf8());
+        qputenv("ZEROSLACK_EDITING_TIME_STORAGE_PATH", data.filePath("editing.json").toUtf8());
+        MainWindow window;
+        int slangCalls=0, cacheHits=0;
+        QJsonArray semanticTimings;
+        connect(window.analysisScheduler.get(),&AnalysisScheduler::semanticAnalysisTelemetry,&window,[&](const auto& telemetry) {
+            if(telemetry.stage==SemanticAnalysisStage::Worker && telemetry.slangInvoked) ++slangCalls;
+            if(telemetry.stage==SemanticAnalysisStage::Publication) {
+                if(telemetry.detail.contains("disk-cache=hit")) ++cacheHits;
+                semanticTimings.append(QJsonObject{{"workerMs",telemetry.workerMs},{"publicationMs",telemetry.publicationMs},
+                    {"detail",telemetry.detail}});
+            }
+        });
+        window.tabManager->setCrashRecoveryService(std::make_unique<CrashRecoveryService>(data.filePath("recovery")));
+        window.workspaceManager->setRecentWorkspacePersistenceEnabledForTesting(false);
+        window.resize(1400,900); window.show();
+        QElapsedTimer elapsed; elapsed.start();
+        QVERIFY(window.workspaceManager->openWorkspace(workspace));
+        auto* nav = window.findChild<NavigationWidget*>(); QVERIFY(nav);
+        nav->setActiveTab(NavigationWidget::DesignTab);
+        auto* model = qobject_cast<DesignHierarchyModel*>(tree(*nav)->model()); QVERIFY(model);
+        QTRY_VERIFY_WITH_TIMEOUT(model->report() && model->report()->nodesByPath.contains("top.right.b"),30000);
+        QCOMPARE(model->report()->nodes.size(),7);
+        QJsonObject measurements{{"openToDesignMs", elapsed.nsecsElapsed()/1e6},
+            {"designNodes", model->report()->nodes.size()}, {"workspace", workspace},
+            {"sourceSha256", QString::fromLatin1(QCryptographicHash::hash(text,QCryptographicHash::Sha256).toHex())}};
+        QVERIFY(window.tabManager->openFileInTab(source));
+        QTRY_VERIFY_WITH_TIMEOUT(!window.analysisScheduler->isSemanticAnalysisActive(),10000);
+        auto* editor = window.tabManager->getCurrentEditor(); QVERIFY(editor);
+        const int position = editor->toPlainText().indexOf("top;");
+        auto cursor = editor->textCursor(); cursor.setPosition(position); cursor.select(QTextCursor::WordUnderCursor); editor->setTextCursor(cursor);
+        const auto context = editor->editorSemanticContextForPosition(position,true);
+        QMenu menu;
+        auto* app = static_cast<MeasuredApplication*>(qApp);
+        double menuPaintMs = -1, graphPaintMs = -1, layoutDeliveredMs = -1;
+        app->afterEvent = [&](QObject* receiver,QEvent* event) {
+            if (receiver == &menu && event->type() == QEvent::Paint && menuPaintMs < 0)
+                menuPaintMs = elapsed.nsecsElapsed()/1e6;
+        };
+        const auto clearProbe = qScopeGuard([&] { app->afterEvent = {}; });
+        elapsed.restart();
+        emit editor->sourceSymbolContextMenuRequested(&menu,context);
+        measurements["menuPreparationMs"] = elapsed.nsecsElapsed()/1e6;
+        menu.popup(editor->mapToGlobal(QPoint(100,100)));
+        QTRY_VERIFY_WITH_TIMEOUT(menuPaintMs >= 0,5000);
+        measurements["menuFirstPaintMs"] = menuPaintMs;
+        menu.close(); QCOMPARE(editor->textCursor().selectedText(),QString("top"));
+        ModuleBlockDiagramQuery query; query.moduleName = "top"; query.fileName = source;
+        elapsed.restart();
+        const auto hierarchy = HierarchyService(SemanticIndex::getInstance()->snapshotToken()).automaticDesignHierarchy();
+        measurements["hierarchyMs"] = elapsed.nsecsElapsed()/1e6;
+        elapsed.restart();
+        const auto report = ModuleBlockDiagramService(SemanticIndex::getInstance()->snapshotToken()).buildModuleBlockDiagram(query);
+        measurements["reportMs"] = elapsed.nsecsElapsed()/1e6;
+        measurements["reportNodes"] = report.nodes.size(); QVERIFY(report.found);
+        QCOMPARE(report.nodes.size(),7);
+        QCOMPARE(HierarchyService::automaticBuildCountForTesting(SemanticIndex::getInstance()->snapshotToken()),std::uint64_t(1));
+        // Hold the actual global publication's hierarchy builder. Menu opening
+        // must not join it, and a concurrent hierarchy query must share its work.
+        const auto original = SemanticIndex::getInstance()->snapshotToken();
+        const auto fresh = std::make_shared<SemanticIndexSnapshot>(original.snapshot->withAdditionalRelationships({}));
+        SemanticIndex::getInstance()->setSnapshot(fresh);
+        const auto blockedToken = SemanticIndex::getInstance()->snapshotToken();
+        QSemaphore entered, release;
+        std::atomic_int checks{0};
+        auto first = std::async(std::launch::async,[&] {
+            return HierarchyService(blockedToken).sharedDesignHierarchy({},[&] {
+                if (++checks == 3) { entered.release(); release.tryAcquire(1,3000); }
+                return false;
+            });
+        });
+        const auto releaseBuilder = qScopeGuard([&] { release.release(); if(first.valid()) first.wait();
+            SemanticIndex::getInstance()->setSnapshot(original.snapshot); });
+        QTRY_VERIFY_WITH_TIMEOUT(entered.available()>0,2000);
+        auto second = std::async(std::launch::async,[blockedToken] { return HierarchyService(blockedToken).sharedDesignHierarchy(); });
+        menuPaintMs = -1;
+        app->afterEvent = [&](QObject* receiver,QEvent* event) {
+            if (receiver==&menu && event->type()==QEvent::Paint && menuPaintMs<0) menuPaintMs=elapsed.nsecsElapsed()/1e6;
+        };
+        elapsed.restart(); emit editor->sourceSymbolContextMenuRequested(&menu,context); menu.popup(editor->mapToGlobal(QPoint(100,100)));
+        QTRY_VERIFY_WITH_TIMEOUT(menuPaintMs>=0,1000); menu.close();
+        QVERIFY2(menuPaintMs<1000,"Menu waited for the deliberately blocked hierarchy builder");
+        measurements["menuWhileHierarchyBlockedMs"]=menuPaintMs;
+        const int instanceTypePosition = editor->toPlainText().indexOf("leaf a(");
+        QVERIFY(instanceTypePosition >= 0);
+        cursor.setPosition(instanceTypePosition); cursor.select(QTextCursor::WordUnderCursor); editor->setTextCursor(cursor);
+        const auto instanceContext = editor->editorSemanticContextForPosition(instanceTypePosition,true);
+        QVERIFY(editor->instanceSlotsAvailableAt(instanceTypePosition));
+        QMenu instanceMenu;
+        menuPaintMs = -1;
+        app->afterEvent = [&](QObject* receiver,QEvent* event) {
+            if (receiver==&instanceMenu && event->type()==QEvent::Paint && menuPaintMs<0) menuPaintMs=elapsed.nsecsElapsed()/1e6;
+        };
+        elapsed.restart(); emit editor->sourceSymbolContextMenuRequested(&instanceMenu,instanceContext);
+        instanceMenu.popup(editor->mapToGlobal(QPoint(100,100)));
+        QTRY_VERIFY_WITH_TIMEOUT(menuPaintMs>=0,1000); instanceMenu.close();
+        QVERIFY2(menuPaintMs<1000,"Instance menu waited for the deliberately blocked hierarchy builder");
+        auto* instanceAction = instanceMenu.findChild<QAction*>("refactor.editInstanceSlots");
+        QVERIFY(instanceAction && instanceAction->isEnabled() && instanceAction->property("executable").toBool());
+        QCOMPARE(editor->textCursor().selectedText(),QString("leaf"));
+        measurements["instanceMenuWhileHierarchyBlockedMs"]=menuPaintMs;
+        release.release(); first.wait(); second.wait();
+        QVERIFY(first.get()==second.get()); QCOMPARE(HierarchyService::automaticBuildCountForTesting(blockedToken),std::uint64_t(1));
+        SemanticIndex::getInstance()->setSnapshot(original.snapshot);
+        ModuleBlockDiagramView graph; graph.resize(1000,700);
+        auto* canvas = graph.findChild<QWidget*>("moduleBlockCanvas"); QVERIFY(canvas);
+        app->afterEvent = [&](QObject* receiver,QEvent* event) {
+            if (graph.layoutReady() && layoutDeliveredMs < 0)
+                layoutDeliveredMs = elapsed.nsecsElapsed()/1e6;
+            if (receiver == canvas && event->type() == QEvent::Paint && graph.layoutReady() && graphPaintMs < 0)
+                graphPaintMs = elapsed.nsecsElapsed()/1e6;
+        };
+        QTimer heartbeat;
+        QElapsedTimer eventGap; eventGap.start();
+        double maximumEventGapMs=0; int heartbeatCount=0;
+        connect(&heartbeat,&QTimer::timeout,&graph,[&] {
+            maximumEventGapMs=qMax(maximumEventGapMs,eventGap.nsecsElapsed()/1e6);
+            eventGap.restart(); ++heartbeatCount;
+        });
+        heartbeat.start(1);
+        elapsed.restart(); graph.setReport(report,workspace); graph.show();
+        QTRY_VERIFY_WITH_TIMEOUT(graph.layoutReady(),10000);
+        measurements["layoutObservedMs"] = elapsed.nsecsElapsed()/1e6;
+        QTRY_VERIFY_WITH_TIMEOUT(graphPaintMs >= 0,10000);
+        heartbeat.stop();
+        measurements["layoutDeliveredMs"] = layoutDeliveredMs;
+        measurements["maximumUiHeartbeatGapMs"] = maximumEventGapMs;
+        measurements["uiHeartbeatCount"] = heartbeatCount;
+        measurements["graphFirstPaintMs"] = graphPaintMs;
+        measurements["reportMeasurementPath"] = "direct immutable-snapshot service, followed by native view";
+        measurements["dpr"] = graph.devicePixelRatioF();
+        measurements["slangCalls"] = slangCalls;
+        measurements["persistentCacheHits"] = cacheHits;
+        measurements["semanticTimings"] = semanticTimings;
+        const auto output = qEnvironmentVariable("ZEROSLACK_DESIGN_REPORT");
+        if (!output.isEmpty()) QVERIFY(put(output+"/workflow.json",QJsonDocument(measurements).toJson()));
+        qInfo().noquote() << QJsonDocument(measurements).toJson(QJsonDocument::Compact);
+        capture(graph,"measured-module"); app->afterEvent = {};
+    }
+    void realInstanceSlotMenuPreservesEntrypointsAndGuards() {
+        QTemporaryDir data; QVERIFY(data.isValid());
+        const auto workspace = data.filePath("workspace");
+        const auto source = workspace + "/slots.sv";
+        const QByteArray bytes =
+            "module leaf #(parameter WIDTH=2)(input logic clk); endmodule\n"
+            "module top; logic clk;\n"
+            "  leaf #(.WIDTH(2)) u_leaf(.clk(clk));\n"
+            "  leaf empty();\n"
+            "endmodule\n";
+        const QString text = QString::fromUtf8(bytes);
+        QVERIFY(put(source,bytes));
+        qputenv("ZEROSLACK_SESSION_STORAGE_PATH",data.filePath("session.ini").toUtf8());
+        qputenv("ZEROSLACK_EDITING_TIME_STORAGE_PATH",data.filePath("editing.json").toUtf8());
+        MainWindow window;
+        window.tabManager->setCrashRecoveryService(std::make_unique<CrashRecoveryService>(data.filePath("recovery")));
+        window.workspaceManager->setRecentWorkspacePersistenceEnabledForTesting(false);
+        window.resize(1200,800); window.show(); window.activateWindow();
+        QVERIFY(window.workspaceManager->openWorkspace(workspace));
+        QTRY_VERIFY_WITH_TIMEOUT(!window.analysisScheduler->isSemanticAnalysisActive()
+            && SemanticIndex::getInstance()->getCachedFileContent(source)==text,30000);
+        QVERIFY(window.tabManager->openFileInTab(source));
+        auto* editor = window.tabManager->getCurrentEditor(); QVERIFY(editor);
+        const auto populate = [&](QMenu& menu,int position) {
+            auto cursor=editor->textCursor(); cursor.setPosition(position); cursor.select(QTextCursor::WordUnderCursor);
+            editor->setTextCursor(cursor); editor->setFocus();
+            emit editor->sourceSymbolContextMenuRequested(&menu,editor->editorSemanticContextForPosition(position,true));
+            return menu.findChild<QAction*>("refactor.editInstanceSlots");
+        };
+        const QList<QPair<QString,int>> entries{
+            {"module-type",text.indexOf("leaf #(.WIDTH")},
+            {"instance-name",text.indexOf("u_leaf")},
+            {"port-connection",text.indexOf(".clk(clk)")+1}
+        };
+        for(const auto& entry:entries) {
+            QVERIFY(entry.second>=0); QMenu menu;
+            auto* action=populate(menu,entry.second); QVERIFY(action);
+            QVERIFY2(action->isEnabled()&&action->property("executable").toBool(),qPrintable(entry.first));
+            const auto selection=editor->textCursor().selectedText(); QVERIFY(!selection.isEmpty());
+            if(entry.first=="module-type") {
+                auto* diagram=menu.findChild<QAction*>("insight.moduleBlockDiagram");
+                QVERIFY(diagram&&diagram->isEnabled());
+            }
+            action->trigger();
+            QVERIFY(editor->templateSlotModeActive());
+            QCOMPARE(editor->textCursor().selectedText(),QString("2"));
+            QTest::keyClick(editor,Qt::Key_Tab);
+            QCOMPARE(editor->textCursor().selectedText(),QString("clk"));
+            QTest::keyClick(editor,Qt::Key_Escape);
+            QVERIFY(!editor->templateSlotModeActive());
+            QCOMPARE(editor->toPlainText(),text);
+            QTRY_VERIFY(editor->hasFocus());
+            qInfo().noquote()<<"instance-menu-entry"<<entry.first<<"enabled and executed; parameter/port slots preserved";
+        }
+        for(int position:{text.indexOf("module leaf")+7,text.indexOf("logic clk")+6,text.indexOf("empty()")}) {
+            QVERIFY(position>=0); QMenu menu; auto* action=populate(menu,position); QVERIFY(action);
+            QVERIFY(!action->isEnabled()); QVERIFY(!action->property("executable").toBool());
+        }
+        const int position=entries.first().second;
+        editor->setReadOnly(true);
+        { QMenu menu; auto* action=populate(menu,position); QVERIFY(action);
+          QVERIFY(!action->isEnabled()); QVERIFY(action->property("visibleReason").toString().contains("read-only")); }
+        editor->setReadOnly(false);
+        { QMenu menu; auto* action=populate(menu,position); QVERIFY(action&&action->isEnabled());
+          editor->setReadOnly(true); action->trigger();
+          QVERIFY(!editor->templateSlotModeActive()); QCOMPARE(editor->toPlainText(),text); }
+        editor->setReadOnly(false);
+        { QMenu menu; auto* action=populate(menu,position); QVERIFY(action&&action->isEnabled());
+          auto changed=editor->textCursor(); changed.setPosition(0); changed.insertText("// newer source\n");
+          const auto updated=editor->toPlainText(); action->trigger();
+          QVERIFY(!editor->templateSlotModeActive()); QCOMPARE(editor->toPlainText(),updated);
+          editor->undo(); QCOMPARE(editor->toPlainText(),text); }
+        { QMenu menu; auto* action=populate(menu,position); QVERIFY(action&&action->isEnabled()); action->trigger();
+          QVERIFY(editor->templateSlotModeActive()); QTest::keyClicks(editor,"4");
+          QVERIFY(editor->toPlainText().contains("WIDTH(4)")); QTest::keyClick(editor,Qt::Key_Escape);
+          editor->undo(); QCOMPARE(editor->toPlainText(),text);
+          editor->redo(); QVERIFY(editor->toPlainText().contains("WIDTH(4)"));
+          editor->undo(); QCOMPARE(editor->toPlainText(),text); }
+        qInfo()<<"instance-menu-guards invalid/read-only/stale source and edit undo/redo passed";
+        window.close();
+    }
+    void portReferencesCannotBecomeHierarchyEdges() {
+        QTemporaryDir files; QVERIFY(files.isValid());
+        const auto source=files.filePath("hierarchy.sv");
+        const auto top=module("top",source), leaf=module("leaf",source);
+        auto real=instance("u",top,"leaf",leaf.stableKey);
+        QList<SemanticSymbolRecord> records{top,leaf,real};
+        QList<SemanticRelationship> relationships;
+        for(int i=0;i<128;++i) {
+            auto port=instance(QString("arbitrary_%1").arg(i),top,"leaf",leaf.stableKey);
+            port.usageRole=SymbolTaxonomy::SymbolUsageRole::Reference;
+            port.collectorKind=SymbolTaxonomy::CollectorKind::InstPin;
+            records.append(port);
+            SemanticRelationship edge; edge.fromStableKey=top.stableKey; edge.toStableKey=port.stableKey;
+            edge.type=SymbolRelationshipEngine::INSTANTIATES; edge.toAccessPath=port.name; relationships.append(edge);
+        }
+        const auto snapshot=std::make_shared<SemanticIndexSnapshot>(SemanticIndexSnapshot::fromSymbolRecords(records,relationships));
+        const SemanticSnapshotToken token{snapshot,1};
+        const auto hierarchy=HierarchyService(token).automaticDesignHierarchy();
+        QCOMPARE(hierarchy.nodes.size(),2); QVERIFY(hierarchy.nodesByPath.contains("top.u"));
+        QCOMPARE(snapshot->getSymbolRecordsByDeclarationKind(SymbolTaxonomy::DeclarationKind::Instance).size(),129);
+        QCOMPARE(snapshot->relationships().size(),128);
+        const auto graph=ModuleBlockDiagramService(token).buildModuleBlockDiagram({{},"top",source});
+        QCOMPARE(graph.nodes.size(),2); QCOMPARE(graph.nodes[1].stableId,hierarchy.nodes[hierarchy.nodesByPath["top.u"].first()].id);
+    }
     void removedSelectionAndWorkspaceSwitchDiscardStaleSearch() {
         QTemporaryDir files; QVERIFY(files.isValid());
         NavigationWidget widget; widget.resize(360,620); widget.setWorkspaceRoot(files.filePath("a"));
@@ -174,7 +458,11 @@ private slots:
         const auto rect = view->visualRect(root);
         QTest::mouseClick(view->viewport(), Qt::LeftButton, Qt::NoModifier, {rect.left()+10, rect.center().y()});
         QVERIFY(view->isExpanded(root)); QCOMPARE(navigate.size(), 0);
-        clickName(view, root); QCOMPARE(navigate.size(), 1); QVERIFY(view->isExpanded(root));
+        clickName(view, root); QCOMPARE(navigate.size(), 0); QVERIFY(view->isExpanded(root));
+        activateName(view, root); QCOMPARE(navigate.size(), 1); QVERIFY(view->isExpanded(root));
+        QTest::keyClick(view,Qt::Key_Return); QCOMPARE(navigate.size(),2);
+        QTest::mouseClick(view->viewport(),Qt::RightButton,Qt::NoModifier,{rect.left()+65,rect.center().y()});
+        QCOMPARE(navigate.size(),2);
         widget.setDesignHierarchyPending(true); QVERIFY(view->isEnabled()); widget.setDesignHierarchyPending(false);
         widget.setSearchFilter(NavigationWidget::FileTab, "unrelated-files-query");
         const auto selected = model->index(5, 0, root); view->setCurrentIndex(selected); view->scrollTo(selected);
@@ -188,7 +476,8 @@ private slots:
         search(widget)->setText("u_48"); search(widget)->setText("no-such-instance"); search(widget)->clear(); QTest::qWait(180);
         QCOMPARE(view->model(), model); QCOMPARE(widget.searchFilter(NavigationWidget::FileTab), "unrelated-files-query");
         search(widget)->setText("u_49"); QTRY_VERIFY(!view->property("designSearchPending").toBool());
-        clickName(view, view->model()->index(0,0)); QCOMPARE(view->model(), model);
+        clickName(view, view->model()->index(0,0)); QVERIFY(view->model()!=model); QCOMPARE(navigate.size(),2);
+        activateName(view, view->model()->index(0,0)); QCOMPARE(view->model(), model); QCOMPARE(navigate.size(),3);
         QCOMPARE(model->node(view->currentIndex()).instancePath, "top.u_49"); QVERIFY(view->isExpanded(root));
         capture(widget, QString("design-%1-%2").arg(dark ? "dark" : "light").arg(width));
     }
@@ -264,7 +553,7 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(model->report() && model->report()->nodesByPath.contains("top.right.u"),30000);
         auto* split=window.tabManager->editorSplitController();
         split->setActiveGroup(split->regionActiveGroup("left"));
-        QVERIFY(nav->selectDesignInstance("top.right",true));clickName(treeView,treeView->currentIndex());
+        QVERIFY(nav->selectDesignInstance("top.right",true));activateName(treeView,treeView->currentIndex());
         QTRY_COMPARE(window.tabManager->getCurrentDocument().fileName,branch);
         QCOMPARE(split->regionForGroup(split->groupForPage(window.tabManager->getCurrentEditor())),QString("main"));
 
@@ -355,7 +644,7 @@ private slots:
 };
 
 int main(int argc,char** argv) {
-    QStandardPaths::setTestModeEnabled(true);QApplication app(argc,argv);app.setQuitOnLastWindowClosed(false);
+    QStandardPaths::setTestModeEnabled(true);MeasuredApplication app(argc,argv);app.setQuitOnLastWindowClosed(false);
     QCoreApplication::setOrganizationName("ZeroSlackDesignInlineTest");QCoreApplication::setApplicationName("ZeroSlackDesignInlineTest");
     QTemporaryDir profile;
     QSettings::setDefaultFormat(QSettings::IniFormat);QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,profile.path());

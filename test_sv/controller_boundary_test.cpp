@@ -454,11 +454,11 @@ int main(int argc, char* argv[])
     check(containsAll(
               panelLayoutSource,
               {QStringLiteral(
-                   "bottomToolDrawerButtonBar"),
+                   "bottomActualTabBars"),
                QStringLiteral(
-                   "bottomPanelButton_%1"),
+                   "setRegionTabStrip(QStringLiteral(\"bottom\"), bars)"),
                QStringLiteral(
-                   "QStackedWidget"),
+                   "registerRegion(QStringLiteral(\"bottom\"),bottomContentHost)"),
                QStringLiteral(
                    "setBottomCollapsed(true)"),
                QStringLiteral(
@@ -470,7 +470,7 @@ int main(int argc, char* argv[])
                    QStringLiteral(
                        "\"actionId\", item.actionId")}),
           QStringLiteral(
-              "bottom drawer uses fixed buttons without a legacy page menu"));
+              "bottom drawer uses shared page tabs without a legacy page menu"));
     check(containsAll(
               mainWindowSource,
               {QStringLiteral(

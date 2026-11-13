@@ -9,6 +9,7 @@
 #include "liveinsightscontextprovider.h"
 #include "liveinsighttoolpage.h"
 #include "rtlinsightworkbench.h"
+#include "moduleblockdiagramview.h"
 #include "actionregistry.h"
 #include "navigationmanager.h"
 #include "testuistyle.h"
@@ -240,8 +241,13 @@ private slots:
         target.projectId="other-project";page.setContext(target);QTRY_VERIFY(!panel->busy() && !detachedPanel->busy());
         QCOMPARE(detachedPanel->currentObject().projectId,QString("other-project"));
         detached->close();QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);
-        LiveInsightToolPage module(LiveInsightKind::Module);module.setContext(target);int openings=0;
-        module.setDesignHandler([&]{++openings;});auto* button=module.findChild<QPushButton*>("openExistingDesign");QVERIFY(button && button->isEnabled());button->click();QCOMPARE(openings,1);
+        LiveInsightToolPage module(LiveInsightKind::Module);module.resize(900,600);module.show();module.setContext(target);
+        auto* moduleWorkbench=module.workbenchForTest();QVERIFY(moduleWorkbench);
+        auto* diagram=moduleWorkbench->moduleView();QVERIFY(diagram);
+        QTRY_VERIFY(diagram->layoutReady());
+        QVERIFY(!diagram->focusId().isEmpty());
+        QVERIFY(diagram->nodeRect(diagram->focusId()).isValid());
+        QCOMPARE(module.contextForTest().projectId,target.projectId);
     }
     void cancellationSwitchAndDestruction() {
         QString source="module top(input wire s);\n";for(int i=0;i<500;++i)source+=QString("wire n%1;assign n%1=s;\n").arg(i);source+="endmodule\n";

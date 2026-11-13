@@ -1,8 +1,11 @@
 #include "hierarchyservice.h"
 #include "semanticdependencygraph.h"
+#include "semanticindexsnapshot.h"
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFileInfo>
+#include <QScopeGuard>
+#include <chrono>
 #include <algorithm>
 
 namespace {
@@ -48,6 +51,62 @@ QString HierarchyService::definitionIdentity(const SymbolStableKey& key)
 }
 
 DesignHierarchyReport HierarchyService::automaticDesignHierarchy(
+    const QSet<QString>& fileScope, const std::function<bool()>& cancelled) const
+{
+    const auto report = sharedDesignHierarchy(fileScope, cancelled);
+    return report ? *report : DesignHierarchyReport();
+}
+
+std::uint64_t HierarchyService::automaticBuildCountForTesting(const SemanticSnapshotToken& token)
+{
+    if (!token.snapshot) return 0;
+    const auto cache = token.snapshot->m_hierarchyCache;
+    const std::lock_guard lock(cache->mutex);
+    return cache->builds;
+}
+
+std::shared_ptr<const DesignHierarchyReport> HierarchyService::sharedDesignHierarchy(
+    const QSet<QString>& fileScope, const std::function<bool()>& cancelled) const
+{
+    const auto token = semanticIndex()->snapshotToken();
+    if (!token.snapshot) return {};
+    const auto stopped = [&] { return cancelled && cancelled(); };
+    if (stopped()) return {};
+    QSet<QString> scope;
+    for (const auto& file : fileScope) scope.insert(fileKey(file));
+    const auto files = token.snapshot->symbolFiles();
+    const QSet<QString> publishedFiles(files.cbegin(), files.cend());
+    // An explicit complete scope and the publication's full scope are identical.
+    // Preserve a disjoint scope as distinct from the unrestricted query.
+    if (!scope.isEmpty() && (publishedFiles - scope).isEmpty()) scope.clear();
+    QStringList keys = scope.values(); std::sort(keys.begin(), keys.end());
+    QString key = QString::number(token.revision) + ':';
+    for (const auto& file : keys) key += QString::number(file.size()) + ':' + file;
+    const auto cache = token.snapshot->m_hierarchyCache;
+    std::unique_lock lock(cache->mutex);
+    for (;;) {
+        if (stopped()) return {};
+        if (const auto found = cache->reports.constFind(key); found != cache->reports.cend()) return found.value();
+        if (!cache->running.contains(key)) break;
+        cache->changed.wait_for(lock, std::chrono::milliseconds(10));
+    }
+    cache->running.insert(key); ++cache->builds;
+    lock.unlock();
+    const auto release = qScopeGuard([&] {
+        const std::lock_guard guard(cache->mutex);
+        cache->running.remove(key); cache->changed.notify_all();
+    });
+    auto report = std::make_shared<DesignHierarchyReport>(
+        HierarchyService(token).buildAutomaticDesignHierarchy(scope, cancelled));
+    if (stopped()) return {};
+    lock.lock();
+    if (cache->reports.size() >= 4) cache->reports.erase(cache->reports.begin());
+    cache->reports.insert(key, report);
+    lock.unlock();
+    return report;
+}
+
+DesignHierarchyReport HierarchyService::buildAutomaticDesignHierarchy(
     const QSet<QString>& fileScope, const std::function<bool()>& cancelled) const
 {
     DesignHierarchyReport report;
@@ -124,6 +183,7 @@ DesignHierarchyReport HierarchyService::automaticDesignHierarchy(
     };
     for (const auto& record : semanticIndex()->getSymbolRecordsByDeclarationKind(SymbolTaxonomy::DeclarationKind::Instance)) {
         if (stopped()) return {};
+        if (!SymbolTaxonomy::isInstanceDeclaration(semanticMetadataForSymbolRecord(record))) continue;
         const auto owner = ownerId(record);
         if (owner.isEmpty()) continue;
         Edge edge;
@@ -151,6 +211,10 @@ DesignHierarchyReport HierarchyService::automaticDesignHierarchy(
         query.types = {SymbolRelationshipEngine::INSTANTIATES};
         for (const auto& relationship : relationshipService.findRelationships(query)) {
             const auto& target = relationship.toSymbolRecord;
+            // Port references also use Instance as their declaration kind.
+            // Only an instance declaration or its resolved definition owns a child.
+            if (!definition(target)
+                && !SymbolTaxonomy::isInstanceDeclaration(semanticMetadataForSymbolRecord(target))) continue;
             Edge edge;
             edge.type = definition(target) ? target.name : target.type.resolvedTypeName;
             if (edge.type.isEmpty()) edge.type = target.type.rawTypeText;

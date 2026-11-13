@@ -20,6 +20,7 @@
 #include "workspaceeditdocumentmanager.h"
 #include "workspaceedittransactionservice.h"
 #include "navigationmanager.h"
+#include "navigationwidget.h"
 #include "navigationservice.h"
 #include "../src/simulation/simdock/ui/workbench.h"
 #include "testuistyle.h"
@@ -102,15 +103,23 @@ void workflowCases(const QString& root) {
     check(workbench.setContext(real).isEmpty(), "real Design workbench opens the fixture workspace");
     check(!scanned.isEmpty() || scanned.wait(10000), "Design workbench source scan completes");
     NavigationService navigationService(index);
+    NavigationWidget navigationView; navigationView.show();
     NavigationManager navigation;
+    navigation.setNavigationWidget(&navigationView);
+    navigation.connectToTabManager(&tabs);
     navigation.setNavigationService(&navigationService);
     navigation.connectToWorkspaceManager(&workspace);
     navigation.connectToDesignProjects(workbench.designService());
-    check(navigation.setDesignTop("top",top).isEmpty(), "production navigation creates and activates the Design project");
-    check(!workbench.designService()->activeProjectId().isEmpty()
-          && workspace.projectSnapshot().activeDesignProjectId==workbench.designService()->activeProjectId()
-          && workspace.projectSnapshot().activeDesignTopModule=="top",
-          "workspace action context follows the active Design project");
+    check(navigation.setDesignTop("top",top).isEmpty(), "production navigation reveals the automatic Design root");
+    auto* tree = navigationView.findChild<QTreeView*>("navigationDesignTree");
+    check(tree && QTest::qWaitFor([&] { return tree->currentIndex().isValid(); },10000),
+          "automatic Design root is visible before activation");
+    if (tree && tree->currentIndex().isValid())
+        QTest::mouseDClick(tree->viewport(),Qt::LeftButton,{},tree->visualRect(tree->currentIndex()).center());
+    check(QTest::qWaitFor([&] { return !workspace.projectSnapshot().activeDesignProjectId.isEmpty()
+          && workspace.projectSnapshot().activeDesignTopModule=="top"; },10000)
+          && workbench.designRoots().isEmpty(),
+          "workspace action context follows the selected automatic Design root");
     const auto snapshot=index->snapshot();
     for (const auto& name : inputFiles) {
         const auto resolved=snapshot->cachedFileSource(name);
@@ -121,7 +130,7 @@ void workflowCases(const QString& root) {
           && !snapshot->cachedFileSource(QDir(real).filePath("Absent.sv")).exists, "empty source is distinct from missing source");
     auto* hierarchy=HierarchyService::getInstance();
     const QSet<QString> originalFiles(order.cbegin(),order.cend());
-    const auto design=hierarchy->explicitDesignHierarchy(workbench.designRoots(),workbench.designService()->activeProjectId(),originalFiles);
+    const auto design=hierarchy->automaticDesignHierarchy(originalFiles);
     QString sourcePath,sinkPath;
     for (const auto& node : design.nodes) {
         if (node.instanceName=="u_source") sourcePath=node.instancePath;

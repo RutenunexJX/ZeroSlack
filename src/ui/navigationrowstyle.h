@@ -21,6 +21,7 @@ public:
     static constexpr int MissingTypeRole = Qt::UserRole + 47;
     static constexpr int SimulationRole = Qt::UserRole + 48;
     std::function<void(const QString&)> activateProject;
+    std::function<void(const QModelIndex&)> activateDesign;
 
     explicit NavigationRowStyle(QTreeView* view, bool design)
         : QStyledItemDelegate(view), tree(view), design(design) {
@@ -70,7 +71,14 @@ protected:
     bool eventFilter(QObject* watched, QEvent* event) override {
         if (watched != tree->viewport()) return false;
         if (design) {
-            if (event->type() == QEvent::MouseButtonDblClick) return true;
+            if (event->type() == QEvent::MouseButtonDblClick) {
+                auto* mouse = static_cast<QMouseEvent*>(event);
+                const auto index = tree->indexAt(mouse->position().toPoint());
+                if (mouse->button() == Qt::LeftButton && index.isValid()
+                    && !disclosureRect(tree->visualRect(index), index).contains(mouse->position().toPoint())
+                    && activateDesign) activateDesign(index);
+                return true;
+            }
             if (event->type() == QEvent::Hide || event->type() == QEvent::Leave
                 || event->type() == QEvent::UngrabMouse) { pressed = QPersistentModelIndex(); pressedAction = false; }
             if (event->type() == QEvent::MouseButtonPress || event->type() == QEvent::MouseButtonRelease) {

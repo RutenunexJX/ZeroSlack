@@ -412,6 +412,7 @@ struct MyCodeEditorState
     EditorStructuralContextMenuState structuralContextMenuState(
         const MyCodeEditor* editor,
         int cursorPosition) const;
+    bool instanceSlotsAvailableAt(int cursorPosition) const;
     bool editInstanceSlotsAt(MyCodeEditor* editor,
                              int cursorPosition,
                              QString* message = nullptr);

@@ -192,6 +192,7 @@ void SymbolAnalyzer::cancelWorkspaceAnalysisAndInvalidate()
 
 void SymbolAnalyzer::requestCancelAllAnalyses()
 {
+    if (cacheWriteCancellation) cacheWriteCancellation->store(true);
     cancelSemanticInputCheck();
     const auto pendingRequest = pendingCompatibilityRequest;
     ++workspaceAnalysisGeneration;

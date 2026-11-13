@@ -46,27 +46,27 @@ template<class Base> class WorkspaceTabBar final : public Base {
 public:
     explicit WorkspaceTabBar(QWidget* parent = nullptr) : Base(parent) {
         QObject::connect(this, &QTabBar::currentChanged, this, [this] {
-            if (currentLabels()) refreshPresentation();
+            if (flatTabs()) refreshPresentation();
         });
         QObject::connect(this, &QTabBar::tabMoved, this, [this] {
             clearClick();
-            if (currentLabels()) refreshPresentation();
+            if (flatTabs()) refreshPresentation();
         });
     }
 protected:
     QSize tabSizeHint(int index) const override {
-        if (currentLabels()) {
-            const auto text = index == this->currentIndex() ? presentationTitle(index) : QString();
+        if (flatTabs()) {
+            const auto text = showsTitle(index) ? presentationTitle(index) : QString();
             return QSize(iconWidth(index) + (text.isEmpty() ? 0 : textGap + labelMetrics().horizontalAdvance(text))
-                         + (index == this->currentIndex() ? buttonExtent(index) : 0), tabHeight());
+                         + (showsTitle(index) ? buttonExtent(index) : 0), tabHeight());
         }
         auto hint = Base::tabSizeHint(index);
         if (this->property("compactIconTabs").toBool()) hint.setWidth(this->iconSize().width() + 24);
         return hint;
     }
     QSize minimumTabSizeHint(int index) const override {
-        if (currentLabels()) {
-            if (index != this->currentIndex()) return QSize(iconWidth(index), tabHeight());
+        if (flatTabs()) {
+            if (!showsTitle(index)) return QSize(iconWidth(index), tabHeight());
             const QString text = presentationTitle(index);
             QTextBoundaryFinder boundary(QTextBoundaryFinder::Grapheme, text);
             int end = 0;
@@ -101,7 +101,7 @@ protected:
         return hint;
     }
     void paintEvent(QPaintEvent* event) override {
-        if (currentLabels()) { paintNavigation(); return; }
+        if (flatTabs()) { paintNavigation(); return; }
         Base::paintEvent(event);
         const QVariant boundary = this->property("temporaryTabBoundary");
         if (!boundary.isValid() || boundary.toInt() < 0) return;
@@ -134,17 +134,18 @@ protected:
     }
     void mouseMoveEvent(QMouseEvent* event) override {
         Base::mouseMoveEvent(event);
-        if (currentLabels()) { syncTabButtons(); this->update(); }
+        if (flatTabs()) { syncTabButtons(); this->update(); }
     }
     void keyPressEvent(QKeyEvent* event) override {
         if (currentLabels()) clearClick();
         Base::keyPressEvent(event);
     }
     bool event(QEvent* event) override {
-        if (event->type() == QEvent::DynamicPropertyChange
-            && static_cast<QDynamicPropertyChangeEvent*>(event)->propertyName() == "currentLabelTabs")
-            refreshPresentation();
-        if (currentLabels()) {
+        if (event->type() == QEvent::DynamicPropertyChange) {
+            const auto name=static_cast<QDynamicPropertyChangeEvent*>(event)->propertyName();
+            if (name == "currentLabelTabs" || name == "bottomToolTabs") refreshPresentation();
+        }
+        if (flatTabs()) {
             if (event->type() == QEvent::Hide || event->type() == QEvent::WindowDeactivate
                 || (event->type() == QEvent::UngrabMouse && pressedTarget >= 0)) { pressedTarget = -1; clearClick(); }
             if (event->type() == QEvent::Enter || event->type() == QEvent::Leave
@@ -155,12 +156,15 @@ protected:
         }
         return Base::event(event);
     }
-    void tabInserted(int index) override { clearClick(); Base::tabInserted(index); if (currentLabels()) refreshPresentation(); }
-    void tabRemoved(int index) override { clearClick(); Base::tabRemoved(index); if (currentLabels()) refreshPresentation(); }
-    void tabLayoutChange() override { Base::tabLayoutChange(); if (currentLabels()) syncTabButtons(); }
+    void tabInserted(int index) override { clearClick(); Base::tabInserted(index); if (flatTabs()) refreshPresentation(); }
+    void tabRemoved(int index) override { clearClick(); Base::tabRemoved(index); if (flatTabs()) refreshPresentation(); }
+    void tabLayoutChange() override { Base::tabLayoutChange(); if (flatTabs()) syncTabButtons(); }
 private:
     static constexpr int textGap = 6;
     bool currentLabels() const { return this->property("currentLabelTabs").toBool(); }
+    bool bottomTools() const { return this->property("bottomToolTabs").toBool(); }
+    bool flatTabs() const { return currentLabels() || bottomTools(); }
+    bool showsTitle(int index) const { return bottomTools() || index == this->currentIndex(); }
     QSize navigationIconSize() const { return QSize(RoundedIcons::SidebarSize, RoundedIcons::SidebarSize); }
     UiControls::TabPresentation presentation(int index) const {
         auto* owner = qobject_cast<QTabWidget*>(this->property("elaHostedTabOwner").template value<QObject*>());
@@ -177,7 +181,7 @@ private:
     QFont labelFont() const {
         QFont font = this->font();
         font.setPixelSize(qMax(14, font.pixelSize()));
-        font.setWeight(QFont::DemiBold);
+        font.setWeight(bottomTools() ? QFont::Normal : QFont::DemiBold);
         return font;
     }
     QFontMetrics labelMetrics() const { return QFontMetrics(labelFont()); }
@@ -197,7 +201,7 @@ private:
             for (const auto side : {QTabBar::LeftSide, QTabBar::RightSide}) {
                 auto* button = this->tabButton(index, side);
                 if (!button) continue;
-                if (currentLabels()) {
+                if (flatTabs()) {
                     const QRect tab = this->tabRect(index);
                     const QSize size = button->sizeHint().boundedTo(QSize(ElaTabBarMetrics::CloseExtent,ElaTabBarMetrics::CloseExtent));
                     button->resize(size);
@@ -213,7 +217,7 @@ private:
         }
     }
     void refreshPresentation() {
-        if (currentLabels())
+        if (flatTabs())
             for (auto* scroll : this->template findChildren<QToolButton*>(QString(), Qt::FindDirectChildrenOnly))
                 scroll->setAutoRaise(true);
         // Refresh Qt's cached tab geometry without changing the authoritative titles.
@@ -258,9 +262,9 @@ private:
                 painter.setBrush(active ? selected : hover);
                 painter.drawRoundedRect(pill, 8, 8);
             }
-            const QString text = active ? displayText(i,rect.width()) : QString();
+            const QString text = showsTitle(i) ? displayText(i,rect.width()) : QString();
             const QSize icon = navigationIconSize();
-            const int x = active ? rect.left()+10+buttonExtent(i,QTabBar::LeftSide)
+            const int x = showsTitle(i) ? rect.left()+10+buttonExtent(i,QTabBar::LeftSide)
                 : rect.left()+(rect.width()-icon.width()-statusWidth(i))/2;
             const QRect iconRect(QPoint(x,rect.top()+(rect.height()-icon.height())/2),icon);
             const auto tabIcon = this->tabIcon(i);
@@ -307,7 +311,8 @@ private:
                 painter.restore();
             }
             if (!text.isEmpty()) {
-                painter.setPen(this->isTabEnabled(i)?textColor:this->palette().color(QPalette::Disabled,QPalette::Text));
+                painter.setPen(this->isTabEnabled(i) ? (active ? textColor : tokens.textSecondary)
+                    : this->palette().color(QPalette::Disabled,QPalette::Text));
                 ElaTabBarMetrics::drawText(painter,iconRect.right()+1+statusWidth(i)+textGap,QRectF(rect).center().y(),text);
             }
             if (active && keyboardFocus()) {

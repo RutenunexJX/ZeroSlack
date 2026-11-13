@@ -175,7 +175,7 @@ private:
         MyCodeEditor* editor,
         const EditorSemanticContext& context) const;
     EditorActionContext actionContextFor(
-        const EditorSemanticContext& context) const;
+        const EditorSemanticContext& context, bool resolveHierarchy = true) const;
     void handleExposeSignalToTopRequested(
         const EditorSemanticContext& context) const;
     void handleActiveEditorChanged(MyCodeEditor* editor);

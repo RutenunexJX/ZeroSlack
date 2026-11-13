@@ -1,4 +1,5 @@
 #include "applicationthememanager.h"
+#include "symbolanalyzer.h"
 #include "editorinsertpaletteservice.h"
 #include "mycodeeditor.h"
 #include "testuistyle.h"
@@ -40,6 +41,12 @@ class SaveObserver : public QObject {
 public:
     explicit SaveObserver(MainWindow& owner) : window(owner) {
         clock.start();
+        connect(window.findChild<SymbolAnalyzer*>(), &SymbolAnalyzer::semanticAnalysisFailed,this,
+            [](const SemanticAnalysisRequest& request,const QString& error) {
+                std::printf("TB_SEMANTIC_FAILED generation=%llu %s\n",
+                    static_cast<unsigned long long>(request.generation),error.toUtf8().constData());
+                std::fflush(stdout);
+            });
         connect(window.tabManager.get(), &TabManager::fileSaveFailed, this,
             [this](const QString& file, const QString& reason) { record("fileSaveFailed", file, reason); });
         connect(window.tabManager.get(), &TabManager::fileSaved, this,

@@ -170,13 +170,25 @@ def verify_managed_result(rule, result_path, config, policy_hash):
     return result
 
 
+def verify_required_target(rule, config, binaries):
+    targets = [row for row in read_json(config['targets'])
+               if row.get('name') == rule['target'] and row.get('type') == 'EXECUTABLE']
+    require(len(targets) == 1, f"{rule['name']}: mapped executable target is missing or ambiguous")
+    executable = Path(targets[0]['artifact']).resolve()
+    require(executable.is_file(), f"{rule['name']}: mapped executable artifact is missing")
+    identities = {Path(path).resolve(): value for path, value in binaries.items()}
+    require(executable in identities and digest(executable) == identities[executable],
+            f"{rule['name']}: tested program does not match mapped target")
+    return executable
+
+
 def verify_required_result(rule, result_path, build, policy_hash):
-    result = verify_managed_result(rule, result_path, read_json(Path(build)/'managed-test-config.json'), policy_hash)
+    config = read_json(Path(build)/'managed-test-config.json')
+    result = verify_managed_result(rule, result_path, config, policy_hash)
     require(result['exitCode']==0 and not result['timeout'], f"{rule['name']}: required process failed ({result['exitCode']})")
     require(result['binaries'], f"{rule['name']}: binary identity missing")
     require(all(digest(name)==value for name,value in result['binaries'].items()), f"{rule['name']}: required binary hash mismatch")
-    executable = Path(build)/(rule['target']+'.exe')
-    require(str(executable) in result['binaries'] or executable.as_posix() in result['binaries'], f"{rule['name']}: tested program does not match mapped target")
+    verify_required_target(rule, config, result['binaries'])
     require(digest(result['log'])==result['logSha256'], f"{rule['name']}: required log hash mismatch")
     qt_root = Path(result['qtGuiDirectory'])
     logs = list(qt_root.glob('**/test.log')) if qt_root.exists() else []

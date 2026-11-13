@@ -611,6 +611,13 @@ NavigationManager::executeActionRoute(
             invocation.parameters
                 .value(QStringLiteral("line"), -1)
                 .toInt();
+        if (route == QStringLiteral("navigation.design.goInstantiation")) {
+            node.instanceFile = path;
+            node.instanceLine = line;
+        } else {
+            node.definitionFile = path;
+            node.definitionLine = line;
+        }
         navigateToDesignNodeFile(
             path, line, node);
         actionResult.output.insert(

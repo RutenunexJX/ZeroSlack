@@ -8,6 +8,8 @@
 #include "navigationwidget.h"
 #include "semantic_fixture_records.h"
 #include "semanticindexsnapshot.h"
+#include "slangmanager.h"
+#include "designhierarchymodel.h"
 #include "../src/simulation/simdock/ui/workbench.h"
 #include "shareddocument.h"
 #include "tabmanager.h"
@@ -386,7 +388,7 @@ int main(int argc, char** argv)
         QDir(workspace).absoluteFilePath(
             QStringLiteral("route_definition.sv"));
     expect("action-route revision fixture is written",
-           writeText(routeSource, "abcd")
+           writeText(routeSource, "module top;\nchild u_child();\nendmodule\n")
                && writeText(hierarchyDefinitionTarget,
                             "\n\n\nmodule child; endmodule\n"));
     WorkspaceManager workspaceManager;
@@ -395,7 +397,24 @@ int main(int argc, char** argv)
             false);
     expect("action-route workspace opens",
            workspaceManager.openWorkspace(workspace));
+    expect("action-route workspace scan completes",
+           QTest::qWaitFor([&] { return !workspaceManager.isWorkspaceScanActive(); },10000));
+    SemanticIndex projectIndex;
+    SlangManager fixtureParser;
+    const QHash<QString,QString> hierarchyContents{
+        {routeSource,"module top;\nchild u_child();\nendmodule\n"},
+        {hierarchyDefinitionTarget,"\n\n\nmodule child; endmodule\n"}};
+    const auto parsed = fixtureParser.analyzeOverlayWorkspace(hierarchyContents,
+        {routeSource,hierarchyDefinitionTarget},{},{},{},{true,true,true});
+    expect("action hierarchy uses actual parsed declarations",parsed.error.isEmpty() && parsed.diagnostics.isEmpty());
+    projectIndex.setSnapshot(std::make_shared<SemanticIndexSnapshot>(
+        SemanticIndexSnapshot::fromSymbolRecords(parsed.symbols,{},{},hierarchyContents)));
+    NavigationService projectNavigation(&projectIndex);
+    NavigationWidget designView;
+    designView.resize(400,500); designView.show();
     NavigationManager navigationManager;
+    navigationManager.setNavigationService(&projectNavigation);
+    navigationManager.setNavigationWidget(&designView);
     navigationManager.connectToWorkspaceManager(
         &workspaceManager);
     SemanticAnalysisTelemetry hierarchyTelemetry;
@@ -408,18 +427,18 @@ int main(int argc, char** argv)
         [](const EditorLocation& location) {
             return QFileInfo::exists(location.filePath);
         });
+    const auto hierarchy = HierarchyService(&projectIndex).automaticDesignHierarchy(
+        {routeSource,hierarchyDefinitionTarget});
     DesignHierarchyNode hierarchyNode;
-    hierarchyNode.id = QStringLiteral("top/u_child");
-    hierarchyNode.rootModule = QStringLiteral("top");
-    hierarchyNode.instanceName = QStringLiteral("u_child");
-    hierarchyNode.instancePath =
-        QStringLiteral("top/u_child");
-    hierarchyNode.moduleType =
-        QStringLiteral("child");
-    hierarchyNode.instanceFile = routeSource;
-    hierarchyNode.instanceLine = 17;
-    hierarchyNode.definitionFile = hierarchyDefinitionTarget;
-    hierarchyNode.definitionLine = 4;
+    for (const auto& node : hierarchy.nodes)
+        if (node.instanceName == "u_child") hierarchyNode = node;
+    expect("actual instance identity is available",!hierarchyNode.id.isEmpty());
+    designView.setActiveTab(NavigationWidget::DesignTab);
+    auto* designTree = designView.findChild<QTreeView*>("navigationDesignTree");
+    expect("automatic Design projection is ready",designTree && QTest::qWaitFor([&] {
+        auto* model = qobject_cast<DesignHierarchyModel*>(designTree->model());
+        return model && model->indexForId(hierarchyNode.id).isValid();
+    },10000));
 
     const QList<DesignHierarchyContextAction>
         hierarchyActions =
@@ -505,6 +524,8 @@ int main(int argc, char** argv)
                 ActionIds::
                     NavigationDesignGoInstantiation),
             hierarchyNode);
+    QTest::qWaitFor([&] { return navigatedHierarchyFile == hierarchyNode.instanceFile
+        && navigatedHierarchyLine == hierarchyNode.instanceLine; },5000);
     expect("hierarchy instantiation Action preserves instance context",
            instantiationNavigation.succeeded
                && navigatedHierarchyFile
@@ -604,23 +625,17 @@ int main(int argc, char** argv)
                && temporaryEditorFailureReason
                       == missingTemporaryResult.failureReason);
 
+    auto missingDefinition = hierarchyNode;
+    missingDefinition.moduleType = QStringLiteral("missing_module");
     const ActionExecutionResult unavailableProject =
         navigationManager.requestDesignNodeAction(
             QString::fromLatin1(
                 ActionIds::NavigationDesignSetTop),
-            hierarchyNode);
-    expect("Add Design Project rejects a missing project service",
+            missingDefinition);
+    expect("Reveal in Design rejects a missing current definition",
            unavailableProject.handled && !unavailableProject.succeeded
-               && unavailableProject.failureReason.contains(QStringLiteral("service"))
-               && navigationManager.selectedDesignTopModule().isEmpty());
-    SemanticIndex projectIndex;
-    projectIndex.setSnapshot(std::make_shared<SemanticIndexSnapshot>(
-        SemanticIndexSnapshot::fromSymbolRecords({
-            SemanticFixtureRecordBuilder(QStringLiteral("child"),
-                SymbolTaxonomy::DeclarationKind::Module)
-                .withFile(hierarchyDefinitionTarget).record()
-        })));
-    NavigationService projectNavigation(&projectIndex);
+               && !unavailableProject.failureReason.isEmpty()
+               && navigationManager.selectedDesignTopModule() == hierarchyNode.rootModule);
     simdock::Workbench projectWorkbench;
     QSignalSpy projectScan(&projectWorkbench, &simdock::Workbench::scanFinished);
     const QString projectContextIssue = projectWorkbench.setContext(workspace);
@@ -630,8 +645,10 @@ int main(int argc, char** argv)
     projectWorkbench.markDesignMigrationCompleted();
     expect("Design action definition belongs to the completed workspace scan",
            QTest::qWaitFor([&] { return workspaceManager.getSystemVerilogFiles().contains(hierarchyDefinitionTarget); }, 5000));
-    navigationManager.setNavigationService(&projectNavigation);
     navigationManager.connectToDesignProjects(projectWorkbench.designService());
+    navigationManager.requestDesignNodeAction(
+        QString::fromLatin1(ActionIds::NavigationDesignGoDefinition),hierarchyNode);
+    QTest::qWaitFor([&] { return navigationManager.selectedDesignTopModule() == hierarchyNode.rootModule; },5000);
     const ActionExecutionResult setTopResult =
         navigationManager.requestDesignNodeAction(
             QString::fromLatin1(ActionIds::NavigationDesignSetTop),
@@ -643,27 +660,25 @@ int main(int argc, char** argv)
         topNodeActions =
             navigationManager
                 .designNodeContextActions(topNode);
-    expect("Add Design Project Action persists selection and preserves root availability",
+    expect("Reveal in Design selects the automatic instance without creating manual roots",
            setTopResult.succeeded
-               && navigationManager
-                      .selectedDesignTopModule()
-                      == hierarchyNode.moduleType
+               && designTree->currentIndex().data(Qt::UserRole).toString() == hierarchyNode.id
+               && navigationManager.selectedDesignTopModule() == hierarchyNode.rootModule
                && !topNodeActions.isEmpty()
                && !topNodeActions.first().enabled
                && topNodeActions.value(1).enabled
                && topNodeActions.value(2).enabled
                && topNodeActions.value(3).enabled
-               && projectWorkbench.designRoots().size() == 1
-               && EditorFileIdentity::same(projectWorkbench.designRoots().first().file,
-                                           hierarchyDefinitionTarget)
-               && !projectWorkbench.designService()->activeProjectId().isEmpty());
-    const QString createdProject = projectWorkbench.designService()->activeProjectId();
+               && projectWorkbench.designRoots().isEmpty()
+               && workspaceManager.projectSnapshot().activeDesignProjectId == hierarchyNode.rootId);
+    const QString createdProject = workspaceManager.projectSnapshot().activeDesignProjectId;
     const auto repeatedProject = navigationManager.requestDesignNodeAction(
         QString::fromLatin1(ActionIds::NavigationDesignSetTop), hierarchyNode);
-    expect("Repeated Add Design Project reuses the persisted project",
+    expect("Repeated Reveal in Design preserves selection and automatic root identity",
            repeatedProject.succeeded
-               && projectWorkbench.designRoots().size() == 1
-               && projectWorkbench.designService()->activeProjectId() == createdProject);
+               && projectWorkbench.designRoots().isEmpty()
+               && designTree->currentIndex().data(Qt::UserRole).toString() == hierarchyNode.id
+               && workspaceManager.projectSnapshot().activeDesignProjectId == createdProject);
     navigationManager.connectToDesignProjects(nullptr);
     navigationManager.setNavigationService(NavigationService::getInstance());
 

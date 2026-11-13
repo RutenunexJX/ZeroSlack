@@ -4450,12 +4450,6 @@ MyCodeEditorState::structuralContextMenuState(
     const DeclareSignalProposal signalProposal =
         signalDefinitionProposalAt(
             editor, cursorPosition, &signalFacts);
-    const TSInstantiationTarget target =
-        syntax.instantiationAt(cursorPosition);
-    const bool hasInstanceSlots =
-        target.ok()
-        && (!target.parameterActuals.isEmpty()
-            || !target.portActuals.isEmpty());
     state.signalDefinitionAvailable =
         signalFacts.acceptedForProposal()
         && signalFacts.request.identifierAcceptedBySyntax
@@ -4464,8 +4458,15 @@ MyCodeEditorState::structuralContextMenuState(
         && !hasDeclareSignalIssue(
             signalProposal,
             DeclareSignalIssueCode::ExistingDeclaration);
-    state.instanceSlotsAvailable = hasInstanceSlots;
+    state.instanceSlotsAvailable = instanceSlotsAvailableAt(cursorPosition);
     return state;
+}
+
+bool MyCodeEditorState::instanceSlotsAvailableAt(int cursorPosition) const
+{
+    const TSInstantiationTarget target = syntax.instantiationAt(cursorPosition);
+    return target.ok()
+        && (!target.parameterActuals.isEmpty() || !target.portActuals.isEmpty());
 }
 
 bool MyCodeEditorState::handleMousePress(

@@ -331,7 +331,16 @@ private slots:
         SettingsDialog dialog(simulator.filePath("vsim.exe"), nullptr, false, &controller,
                               [&] { configured = true; });
         QVERIFY(!dialog.findChild<QWidget*>("themeSelector"));
-        QVERIFY(!dialog.findChild<QWidget*>("waveThemeSelector"));
+        auto* themes=dialog.findChild<QComboBox*>("waveThemeSelector");
+        QVERIFY(themes); QCOMPARE(themes->count(),4);
+        QCOMPARE(themes->currentData().toString(),QStringLiteral("default"));
+        auto* preview=dialog.findChild<QWidget*>("waveThemePreview");
+        QVERIFY(preview && preview->isHidden());
+        auto* toggle=dialog.findChild<QToolButton*>("waveThemePreviewToggle");
+        QVERIFY(toggle); toggle->click(); QVERIFY(!preview->isHidden());
+        themes->setCurrentIndex(themes->findData(QStringLiteral("nord")));
+        QCOMPARE(dialog.waveTheme(),WaveTheme::Nord);
+        QVERIFY(!preview->grab().isNull());
         auto* includes = dialog.findChild<QPlainTextEdit*>("simulationIncludes");
         auto* mappings = dialog.findChild<QPlainTextEdit*>("simulationDefinitionSources");
         auto* configuration = dialog.findChild<QPushButton*>("simulationWorkspaceConfiguration");

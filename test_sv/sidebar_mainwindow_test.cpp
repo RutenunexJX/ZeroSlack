@@ -446,6 +446,9 @@ private slots:
         QTest::mouseClick(tree->viewport(),Qt::LeftButton,{},QPoint(parentRect.left()+10,parentRect.center().y()));
         QVERIFY(!tree->isExpanded(parentRow)); QCOMPARE(navigation.size(),0);
         QTest::mouseClick(tree->viewport(),Qt::LeftButton,{},QPoint(parentRect.left()+65,parentRect.center().y()));
+        QCOMPARE(navigation.size(),0);
+        QVERIFY(!tree->isExpanded(parentRow));
+        QTest::mouseDClick(tree->viewport(),Qt::LeftButton,{},QPoint(parentRect.left()+65,parentRect.center().y()));
         QTRY_COMPARE(navigation.size(),1);
         QTRY_COMPARE(h.window->tabManager->getCurrentDocument().fileName,h.workspace+"/rtl/design.sv");
         QCOMPARE(h.window->workspaceManager->getProjectModel()->snapshot().activeDesignProjectId,parent);

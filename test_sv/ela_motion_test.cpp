@@ -219,11 +219,19 @@ private slots:
         for (auto* table : settings.findChildren<QTableView*>())
             QCOMPARE(table->verticalScrollBar()->property("smoothWheelEnabled").toBool(), true);
         NavigationWidget navigation;
-        const auto trees = navigation.findChildren<QTreeWidget*>();
-        QVERIFY(trees.size() >= 2);
+        const auto trees = navigation.findChildren<QTreeView*>();
+        QCOMPARE(trees.size(), 2);
         for (auto* tree : trees) {
-            QCOMPARE(tree->isAnimated(), true);
-            QCOMPARE(tree->verticalScrollBar()->property("smoothWheelEnabled").toBool(), true);
+            if (tree->objectName() == QStringLiteral("navigationDesignTree")) {
+                // The virtual Design model exposes children in batches.
+                QCOMPARE(tree->isAnimated(), false);
+                QCOMPARE(tree->verticalScrollMode(), QAbstractItemView::ScrollPerPixel);
+                QVERIFY(!qobject_cast<QTreeWidget*>(tree));
+            } else {
+                QCOMPARE(tree->objectName(), QStringLiteral("navigationFileTree"));
+                QCOMPARE(tree->isAnimated(), true);
+                QCOMPARE(tree->verticalScrollBar()->property("smoothWheelEnabled").toBool(), true);
+            }
         }
         std::unique_ptr<QTreeWidget> tree(UiControls::treeWidget());
         UiControls::enableTreeTransitions(tree.get());

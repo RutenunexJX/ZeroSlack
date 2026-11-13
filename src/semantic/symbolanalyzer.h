@@ -223,6 +223,7 @@ private:
     // cancelling join. A future's result may be absent after cancellation.
     std::optional<SemanticAnalysisRequest> workspaceAnalysisRequest;
     std::shared_ptr<std::atomic_bool> workspaceAnalysisCancelFlag;
+    std::shared_ptr<std::atomic_bool> cacheWriteCancellation;
     WorkspaceWorkerStartGateForTesting workspaceWorkerStartGateForTesting;
     QTimer* workspacePublicationTimer = nullptr;
     std::unique_ptr<WorkspaceAnalysisResult> pendingWorkspacePublication;

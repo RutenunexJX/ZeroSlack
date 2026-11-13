@@ -24,8 +24,10 @@ class QLabel;
 class QLineEdit;
 class QPushButton;
 class QToolButton;
+class QComboBox;
 class ModuleBlockDiagramView;
 struct ModuleBlockDiagramNode;
+struct DesignHierarchyNode;
 
 class ZEROSLACK_API RtlInsightWorkbench final : public QWidget
 {
@@ -47,6 +49,7 @@ public:
     void setContext(const InsightViewContext& context);
     InsightViewContext context() const;
     bool refresh();
+    void setModuleTargetHandler(std::function<void(const DesignHierarchyNode&)> handler);
     void setNavigationHandler(
         std::function<bool(const QString&, int, int)> handler);
 
@@ -103,6 +106,8 @@ private:
     InsightGraphCore core;
     InsightCanvas* canvasValue = nullptr;
     ModuleBlockDiagramView* blockView = nullptr;
+    QComboBox* moduleInstancePicker = nullptr;
+    std::function<void(const DesignHierarchyNode&)> moduleTargetHandler;
     std::function<void(const ModuleBlockDiagramNode&, bool)> moduleNavigationHandler;
     QLabel* titleLabel = nullptr;
     QLabel* statusLabel = nullptr;

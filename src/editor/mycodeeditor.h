@@ -346,6 +346,7 @@ public:
     bool clearSelectedAssignmentRhs(QString* message = nullptr);
     EditorStructuralContextMenuState structuralContextMenuState(
         int cursorPosition) const;
+    bool instanceSlotsAvailableAt(int cursorPosition) const;
     bool editInstanceSlotsAt(int cursorPosition,
                              QString* message = nullptr);
     bool beginSignalDefinitionEditorAt(

@@ -238,6 +238,7 @@ SemanticIndexSnapshot SemanticIndexSnapshot::withReplacedDiagnostics(
     const QStringList& files, const QList<SemanticDiagnostic>& diagnostics) const
 {
     SemanticIndexSnapshot result = *this;
+    result.m_hierarchyCache = std::make_shared<HierarchyCache>();
     if (files.isEmpty())
         result.m_rawDiagnosticsByFile.clear();
     else
@@ -253,8 +254,10 @@ SemanticIndexSnapshot SemanticIndexSnapshot::withReplacedDiagnostics(
 SemanticIndexSnapshot SemanticIndexSnapshot::withDiagnosticDisplayLimit(int maxDiagnostics) const
 {
     SemanticIndexSnapshot result = *this;
-    if (diagnosticDisplayLimit() != qMax(0, maxDiagnostics))
+    if (diagnosticDisplayLimit() != qMax(0, maxDiagnostics)) {
+        result.m_hierarchyCache = std::make_shared<HierarchyCache>();
         result.rebuildDiagnosticView(maxDiagnostics);
+    }
     return result;
 }
 

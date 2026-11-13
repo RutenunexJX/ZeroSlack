@@ -483,10 +483,15 @@ private slots:
         QVERIFY(legacyEvidence("parent-invariant-sequence",{{"steps",steps},{"complete",true},{"boundedConclusion","Invariant holds in this covered public-controller sequence; explicit parent removal filters unreachable descendants by the existing algorithm."}}));
     }
     void defaultNativeFrozen() {
-        const QByteArray bytes=readFile(QFileInfo(QString::fromUtf8(__FILE__)).dir().filePath("fixtures/linked_rails_layout/default-native.json"));
-        QCOMPARE(QCryptographicHash::hash(bytes,QCryptographicHash::Sha256).toHex(),QByteArray("07fd31225cc5d11be617bdbf3c4ec3b6e093e1035b8a7530e67d562fa7f4816d"));
+        const auto fixtures=QFileInfo(QString::fromUtf8(__FILE__)).dir();
+        const auto historical=readFile(fixtures.filePath("fixtures/linked_rails_layout/default-native.json"));
+        QCOMPARE(QCryptographicHash::hash(historical,QCryptographicHash::Sha256).toHex(),QByteArray("07fd31225cc5d11be617bdbf3c4ec3b6e093e1035b8a7530e67d562fa7f4816d"));
+        const QByteArray bytes=readFile(fixtures.filePath("fixtures/linked_rails_layout/default-native-v0354.json"));
+        QCOMPARE(QCryptographicHash::hash(bytes,QCryptographicHash::Sha256).toHex(),QByteArray("e074ba8305e738c187d76aa2439017dbfb5964a32e84e3a92efe5f6ace60f1d0"));
         const auto expected=QJsonDocument::fromJson(bytes).object();QVERIFY(!expected.isEmpty());
         Harness h;QVERIFY(h.ready);const auto actual=DefaultNativeObservation::capture(h);QVERIFY(!actual.isEmpty());
+        const auto artifacts=qEnvironmentVariable("ZEROSLACK_TEST_ARTIFACT_DIR");
+        if(!artifacts.isEmpty()) QVERIFY(writeFile(QDir(artifacts).filePath("default-native-actual.json"),QJsonDocument(actual).toJson()));
         const auto differences=differentFields(expected,actual);
         QVERIFY2(differences.isEmpty(),qPrintable(differences.join('\n')));
         const auto phases=actual["phases"].toArray();QCOMPARE(phases.size(),7);
@@ -498,7 +503,7 @@ private slots:
         QCOMPARE(differentFields(actual,changed),QStringList({"/phases/0/state/editor/position"}));
     }
     void frozenNativeSensitivity() {
-        const auto bytes=readFile(QFileInfo(QString::fromUtf8(__FILE__)).dir().filePath("fixtures/linked_rails_layout/default-native.json"));
+        const auto bytes=readFile(QFileInfo(QString::fromUtf8(__FILE__)).dir().filePath("fixtures/linked_rails_layout/default-native-v0354.json"));
         const auto expected=QJsonDocument::fromJson(bytes).object();QVERIFY(!expected.isEmpty());
         for(const auto& field:QStringList{"references","paintedPaths","association"}){
             auto altered=expected;auto phases=altered["phases"].toArray();auto phase=phases[0].toObject();auto state=phase["state"].toObject();QString path;

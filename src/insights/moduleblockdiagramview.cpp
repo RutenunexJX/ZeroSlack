@@ -17,6 +17,7 @@
 #include <QApplication>
 #include <atomic>
 #include <cmath>
+#include <algorithm>
 
 namespace {
 struct Geometry {
@@ -26,6 +27,7 @@ struct Geometry {
     QVector<qreal> headers;
 };
 using Report = std::shared_ptr<const ModuleBlockDiagramReport>;
+struct LayoutResult { Report report; Geometry geometry; };
 Geometry arrange(const Report& report, const QFont& font, qreal width, const std::shared_ptr<std::atomic_bool>& cancel)
 {
     Geometry g;
@@ -33,8 +35,12 @@ Geometry arrange(const Report& report, const QFont& font, qreal width, const std
     g.rects.resize(count); g.children.resize(count); g.headers.resize(count);
     QHash<int,int> positions;
     const QFontMetricsF fm(font);
-    for (int i = 0; i < count; ++i) { positions.insert(report->nodes[i].nodeId, i); g.byId.insert(report->nodes[i].stableId, i); }
     for (int i = 0; i < count; ++i) {
+        if (cancel->load()) return {};
+        positions.insert(report->nodes[i].nodeId, i); g.byId.insert(report->nodes[i].stableId, i);
+    }
+    for (int i = 0; i < count; ++i) {
+        if (cancel->load()) return {};
         const int parent = positions.value(report->nodes[i].parentNodeId, -1);
         if (parent >= 0) g.children[parent].append(i);
     }
@@ -95,7 +101,7 @@ struct ModuleBlockDiagramView::Impl {
     QPointF pan{16,16}, press, panAtPress;
     bool dragging = false, sourceEnabled = true, needsFit = true, doubleClickRelease = false;
     quint64 generation = 0;
-    QFutureWatcher<Geometry>* watcher = nullptr;
+    QFutureWatcher<LayoutResult>* watcher = nullptr;
     std::shared_ptr<std::atomic_bool> cancellation;
     QTimer *resizeTimer, *sourceTimer;
     QString pendingSourceId;
@@ -105,11 +111,29 @@ struct ModuleBlockDiagramView::Impl {
     std::function<void(const ModuleBlockDiagramNode&,bool)> navigate;
 
     int focused() const { return geometry.byId.value(focus, report && !report->nodes.isEmpty() ? 0 : -1); }
+    bool contains(const QString& id) const {
+        return geometry.byId.contains(id) || (requestedReport && requestedReport->hierarchy
+            && requestedReport->hierarchy->nodeById.contains(id));
+    }
+    void focusChanged() {
+        needsFit = true;
+        if (watcher || !geometry.byId.contains(focus)) requestLayout();
+        else { needsFit = false; owner->fit(); }
+        controls();
+    }
     QTransform transform() const { QTransform t; t.translate(pan.x(),pan.y()); t.scale(scale,scale); return t; }
     void controls() {
         previous->setEnabled(historyIndex > 0); next->setEnabled(historyIndex + 1 < history.size());
-        const int i = focused(); parent->setEnabled(i >= 0 && report->nodes[i].parentNodeId >= 0);
-        const auto text = i < 0 ? QString() : report->nodes[i].instancePath;
+        const int i = focused(); parent->setEnabled(i >= 0
+            && (report->nodes[i].parentNodeId >= 0 || !report->ancestors.isEmpty()));
+        auto text = i < 0 ? QString() : report->nodes[i].instancePath;
+        if (watcher) {
+            if (requestedReport && requestedReport->hierarchy) {
+                const int target = requestedReport->hierarchy->nodeById.value(focus,-1);
+                if (target >= 0) text = requestedReport->hierarchy->nodes[target].instancePath;
+            }
+            text = ModuleBlockDiagramView::tr("Updating · %1").arg(text);
+        }
         path->setText(path->fontMetrics().elidedText(text,Qt::ElideMiddle,qMax(20,path->width()))); path->setToolTip(text);
         canvas->update();
     }
@@ -122,12 +146,13 @@ struct ModuleBlockDiagramView::Impl {
     void launch() {
         const auto current = requestedReport; const auto request = generation;
         const auto cancel = std::make_shared<std::atomic_bool>(false); cancellation = cancel;
-        auto* job = new QFutureWatcher<Geometry>(owner); watcher = job;
-        QObject::connect(job,&QFutureWatcher<Geometry>::finished,owner,[this,job,current,request,cancel] {
+        auto* job = new QFutureWatcher<LayoutResult>(owner); watcher = job;
+        QObject::connect(job,&QFutureWatcher<LayoutResult>::finished,owner,[this,job,current,request,cancel] {
             auto result = job->result(); watcher = nullptr; job->deleteLater();
             if (request == generation && !cancel->load() && current == requestedReport) {
-                report = current;
-                geometry = std::move(result);
+                if (!result.report || !result.report->found) { controls(); return; }
+                report = requestedReport = std::move(result.report);
+                geometry = std::move(result.geometry);
                 if (!geometry.byId.contains(focus)) focus = report->root.stableId;
                 if (!pendingState.isEmpty()) { const auto saved=pendingState; pendingState.clear(); owner->restoreViewState(saved); }
                 if (needsFit) { needsFit=false; owner->fit(); }
@@ -135,7 +160,26 @@ struct ModuleBlockDiagramView::Impl {
             } else if (requestedReport) launch();
         });
         const auto font=canvas->font(); const qreal width=qMax(200,canvas->width()-32);
-        job->setFuture(QtConcurrent::run([current,font,width,cancel] { return arrange(current,font,width,cancel); }));
+        const auto target = focus;
+        controls();
+        job->setFuture(QtConcurrent::run([current,font,width,cancel,target] {
+            Report value = current;
+            const bool present = std::any_of(current->nodes.cbegin(),current->nodes.cend(),
+                [&](const auto& node) { return node.stableId == target; });
+            if (!present && current->hierarchy && current->semantic.isValid()) {
+                const int position = current->hierarchy->nodeById.value(target,-1);
+                if (position < 0 || cancel->load()) return LayoutResult{};
+                const auto& node = current->hierarchy->nodes[position];
+                ModuleBlockDiagramQuery query;
+                query.rootIdentity = node.rootId; query.instancePath = node.instancePath;
+                query.configurationIdentity = node.configurationId;
+                query.isCancelled = [cancel] { return cancel->load(); };
+                try { value = std::make_shared<ModuleBlockDiagramReport>(
+                    ModuleBlockDiagramService(current->semantic).buildModuleBlockDiagram(query)); }
+                catch (const std::exception&) { return LayoutResult{}; }
+            }
+            return LayoutResult{value, arrange(value,font,width,cancel)};
+        }));
     }
     int hit(const QPointF& point) const {
         if (!report || geometry.rects.size()!=report->nodes.size()) return -1;
@@ -255,7 +299,7 @@ void ModuleBlockDiagramView::setReport(const ModuleBlockDiagramReport& value,con
 {
     if(!value.found)return;
     d->sourceTimer->stop();d->pendingSourceId.clear();d->pendingSourceReport.reset();
-    const auto key=workspace+'\n'+value.root.stableId;
+    const auto key=workspace+'\n'+(value.root.rootIdentity.isEmpty() ? value.root.stableId : value.root.rootIdentity);
     if(key!=d->key) {
         if(!d->key.isEmpty())d->states.insert(d->key,saveViewState());
         d->key=key;d->workspace=workspace;d->focus=value.initialFocusId;d->history={d->focus};d->historyIndex=0;
@@ -277,15 +321,57 @@ void ModuleBlockDiagramView::setNavigationHandler(std::function<void(const Modul
 void ModuleBlockDiagramView::setSourceNavigationEnabled(bool enabled){d->sourceEnabled=enabled;}
 void ModuleBlockDiagramView::fit(){const int i=d->focused();if(i<0||i>=d->geometry.rects.size())return;const auto rect=d->geometry.rects[i];d->scale=qBound(0.0001,qMin((d->canvas->width()-32)/rect.width(),(d->canvas->height()-32)/rect.height()),1.4);d->pan=QPointF(d->canvas->width()/2.0,d->canvas->height()/2.0)-rect.center()*d->scale;d->canvas->update();}
 void ModuleBlockDiagramView::zoom(qreal factor){const QPointF center(d->canvas->width()/2.0,d->canvas->height()/2.0);const auto point=d->transform().inverted().map(center);d->scale=qBound(0.0001,d->scale*factor,8.0);d->pan=center-point*d->scale;d->canvas->update();}
-bool ModuleBlockDiagramView::enter(const QString& id){if(!d->geometry.byId.contains(id))return false;if(d->focus!=id){d->focus=id;d->history=d->history.mid(0,d->historyIndex+1);d->history.append(id);d->historyIndex=d->history.size()-1;}fit();d->controls();return true;}
-bool ModuleBlockDiagramView::up(){const int i=d->focused();if(i<0)return false;const int p=d->report->nodes[i].parentNodeId;return p>=0&&enter(d->report->nodes[p].stableId);}
-bool ModuleBlockDiagramView::back(){while(d->historyIndex>0){const auto id=d->history[--d->historyIndex];if(d->geometry.byId.contains(id)){d->focus=id;fit();d->controls();return true;}}d->controls();return false;}
-bool ModuleBlockDiagramView::forward(){while(d->historyIndex+1<d->history.size()){const auto id=d->history[++d->historyIndex];if(d->geometry.byId.contains(id)){d->focus=id;fit();d->controls();return true;}}d->controls();return false;}
+bool ModuleBlockDiagramView::enter(const QString& id)
+{
+    if(!d->contains(id)) return false;
+    if(d->focus!=id) {
+        d->focus=id; d->history=d->history.mid(0,d->historyIndex+1);
+        d->history.append(id); d->historyIndex=d->history.size()-1;
+    }
+    d->focusChanged(); return true;
+}
+bool ModuleBlockDiagramView::up()
+{
+    if (d->requestedReport && d->requestedReport->hierarchy) {
+        const auto& hierarchy=*d->requestedReport->hierarchy;
+        const int i=hierarchy.nodeById.value(d->focus,-1);
+        return i>=0 && !hierarchy.nodes[i].parentId.isEmpty() && enter(hierarchy.nodes[i].parentId);
+    }
+    const int i=d->focused(); if(i<0) return false;
+    const int p=d->report->nodes[i].parentNodeId; return p>=0&&enter(d->report->nodes[p].stableId);
+}
+bool ModuleBlockDiagramView::back()
+{
+    while(d->historyIndex>0) {
+        const auto id=d->history[--d->historyIndex];
+        if(d->contains(id)) { d->focus=id; d->focusChanged(); return true; }
+    }
+    d->controls(); return false;
+}
+bool ModuleBlockDiagramView::forward()
+{
+    while(d->historyIndex+1<d->history.size()) {
+        const auto id=d->history[++d->historyIndex];
+        if(d->contains(id)) { d->focus=id; d->focusChanged(); return true; }
+    }
+    d->controls(); return false;
+}
 QString ModuleBlockDiagramView::focusId()const{return d->focus;}
 bool ModuleBlockDiagramView::layoutReady()const{return d->report&&!d->watcher&&!d->geometry.rects.isEmpty();}
 QRectF ModuleBlockDiagramView::nodeRect(const QString& id)const{const int i=d->geometry.byId.value(id,-1);return i<0?QRectF():d->transform().mapRect(d->geometry.rects[i]).translated(d->canvas->pos());}
 QVariantMap ModuleBlockDiagramView::saveViewState()const{return {{"key",d->key},{"focus",d->focus},{"selected",d->selected},{"history",d->history},{"historyIndex",d->historyIndex},{"zoom",d->scale},{"pan",d->pan}};}
-void ModuleBlockDiagramView::restoreViewState(const QVariantMap& state){if(state.isEmpty())return;if(!layoutReady()){d->pendingState=state;return;}if(state.value("key").toString()!=d->key)return;const auto id=state.value("focus").toString();if(!d->geometry.byId.contains(id))return;d->focus=id;d->selected=state.value("selected").toString();d->history=state.value("history").toStringList();d->historyIndex=qBound(0,state.value("historyIndex").toInt(),qMax(0,int(d->history.size())-1));d->scale=qBound(0.0001,state.value("zoom",1).toDouble(),8.0);d->pan=state.value("pan").toPointF();d->needsFit=false;d->controls();}
+void ModuleBlockDiagramView::restoreViewState(const QVariantMap& state)
+{
+    if(state.isEmpty())return;
+    if(!layoutReady()){d->pendingState=state;return;}
+    if(state.value("key").toString()!=d->key)return;
+    const auto id=state.value("focus").toString(); if(!d->contains(id))return;
+    d->focus=id;
+    if(!d->geometry.byId.contains(id)){d->pendingState=state;d->requestLayout();return;}
+    d->selected=state.value("selected").toString(); d->history=state.value("history").toStringList();
+    d->historyIndex=qBound(0,state.value("historyIndex").toInt(),qMax(0,int(d->history.size())-1));
+    d->scale=qBound(0.0001,state.value("zoom",1).toDouble(),8.0);d->pan=state.value("pan").toPointF();d->needsFit=false;d->controls();
+}
 void ModuleBlockDiagramView::resizeEvent(QResizeEvent* event){QWidget::resizeEvent(event);d->resizeTimer->start();d->controls();}
 void ModuleBlockDiagramView::changeEvent(QEvent* event)
 {

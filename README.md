@@ -1,6 +1,8 @@
 # ZeroSlack
 
-Current version: `v0.35.4`
+Current version: `v0.35.5`
+
+Release 0.35.5 persists validated semantic workspace results, filters Design hierarchy to real instances, and separates selection from source navigation. Context menus and nested module diagrams share lightweight snapshot queries; instance parameter and port editing retain read-only and stale-source guards. QuestaSim waveform palettes are restored, and bottom tabs use a single compact shape. Functional acceptance combines valid prior results with targeted repairs and rechecks; release-specific build and package verification retain their own identities. Suite SDK/Runtime remains 1.0.2, native xIPs 2.16.2 and the independent asset adapter 2.14.2.
 
 Release 0.35.4 restores nested module diagrams and reorganizes Design roots, unifies dock tabs and sidebar icons, reduces the welcome page to recent workspaces, and improves Settings contrast. Inline blocks support shared editing, appearance settings, drag-out pages and gutter reattachment; Pinloom references validate capabilities before opening. Functional acceptance is retained with release-specific build and package checks. Suite SDK/Runtime remains 1.0.2, native xIPs 2.16.2 and the independent asset adapter 2.14.2.
 

@@ -38,6 +38,7 @@ struct EditorActionContextQuery {
     EditorSemanticContext editorContext;
     DocumentSemanticStatus semanticStatus;
     bool semanticAnalysisActive = false;
+    bool resolveHierarchy = true;
 };
 
 struct EditorActionWorkspaceContext {

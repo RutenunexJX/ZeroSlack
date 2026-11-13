@@ -16,6 +16,7 @@ class QHideEvent;
 class QShowEvent;
 class SignalTracePanel;
 struct ModuleBlockDiagramNode;
+struct DesignHierarchyNode;
 
 struct LiveInsightToolContext {
     QString workspaceRoot;
@@ -25,6 +26,7 @@ struct LiveInsightToolContext {
     QString rootIdentity;
     QString configurationIdentity;
     std::function<void(const ModuleBlockDiagramNode&, bool)> navigateModule;
+    std::function<void(const DesignHierarchyNode&)> selectModule;
     std::function<void(SignalTracePanel*)> configureTrace;
     QString documentId;
     quint64 documentRevision = 0;

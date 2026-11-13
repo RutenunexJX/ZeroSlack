@@ -13,6 +13,8 @@ set(ZEROSLACK_SEMANTIC_SOURCES
     include/zeroslack/semantic/relationshipservice.h
     include/zeroslack/semantic/rtlinsightlink.h
     include/zeroslack/semantic/semanticanalysisinput.h
+    include/zeroslack/semantic/semanticworkspacecache.h
+    src/semantic/semanticworkspacecache.cpp
     include/zeroslack/semantic/semanticanalysisrequest.h
     include/zeroslack/semantic/semanticanalysisresult.h
     include/zeroslack/semantic/semanticapi.h

@@ -57,6 +57,7 @@ target_include_directories(zeroslack_semantic PUBLIC "${CMAKE_CURRENT_SOURCE_DIR
             src/insights src/settings src/integrations/pinloom src/integrations/suite)
 target_link_libraries(zeroslack_semantic PUBLIC Qt6::Core zeroslack_documents
     PRIVATE slang::slang)
+target_compile_definitions(zeroslack_semantic PRIVATE ZEROSLACK_SEMANTIC_GENERATOR_VERSION="${PROJECT_VERSION}")
 if(ZEROSLACK_SHARED_CORE)
     target_compile_definitions(zeroslack_semantic PUBLIC ZEROSLACK_SEMANTIC_SHARED=1)
 endif()

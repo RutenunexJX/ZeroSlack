@@ -95,6 +95,11 @@ public:
     {
         return factsByFile;
     }
+    QHash<QString, QStringList> observedIncludeFiles() const { return observedIncludes; }
+    static SemanticDependencyGraph fromFacts(const ProjectSnapshot& project,
+        QHash<QString, SemanticFileDependencyFacts> facts,
+        QHash<QString, QStringList> observed,
+        const std::function<bool()>& cancelled = {});
 
 private:
     ProjectSnapshot graphProject;

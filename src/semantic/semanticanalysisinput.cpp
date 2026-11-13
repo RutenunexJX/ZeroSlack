@@ -6,6 +6,11 @@
 #include <QFileInfo>
 #include <QTextStream>
 #include <QSet>
+#ifdef Q_OS_WIN
+#include <qt_windows.h>
+#include <io.h>
+#include <fcntl.h>
+#endif
 
 bool SemanticAnalysisInput::equivalentTo(const SemanticAnalysisInput& other) const
 {
@@ -14,6 +19,29 @@ bool SemanticAnalysisInput::equivalentTo(const SemanticAnalysisInput& other) con
 }
 
 namespace {
+bool openSourceForRead(QFile& file)
+{
+#ifdef Q_OS_WIN
+    QString path = QDir::toNativeSeparators(QFileInfo(file.fileName()).absoluteFilePath());
+    if (!path.startsWith(QStringLiteral("\\\\?\\")) && !path.startsWith(QStringLiteral("\\\\.\\")))
+        path = path.startsWith(QStringLiteral("\\\\"))
+            ? QStringLiteral("\\\\?\\UNC\\") + path.mid(2) : QStringLiteral("\\\\?\\") + path;
+    // Validation must not block atomic source replacement or workspace deletion.
+    // Final fingerprints still reject an input changed during the read.
+    const HANDLE handle = CreateFileW(reinterpret_cast<LPCWSTR>(path.utf16()), GENERIC_READ,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (handle == INVALID_HANDLE_VALUE) return false;
+    const int descriptor = _open_osfhandle(reinterpret_cast<intptr_t>(handle), _O_RDONLY | _O_BINARY);
+    if (descriptor < 0) { CloseHandle(handle); return false; }
+    if (file.open(descriptor, QIODevice::ReadOnly, QFileDevice::AutoCloseHandle)) return true;
+    _close(descriptor);
+    return false;
+#else
+    return file.open(QIODevice::ReadOnly);
+#endif
+}
+
 SemanticSourceFingerprint fingerprintFor(const SemanticCapturedSource& source)
 {
     return {source.readable, source.readable
@@ -65,11 +93,13 @@ SemanticCapturedSource SemanticInputCapture::read(const QString& path)
 {
     SemanticCapturedSource result;
     QFile file(path);
-    if (file.open(QIODevice::ReadOnly)) {
+    if (openSourceForRead(file)) {
         const auto bytes = file.readAll();
+        const bool readComplete = file.error() == QFileDevice::NoError;
+        file.close();
         const auto decoded = decodeSourceText(bytes);
         result.text = decoded.text;
-        result.readable = file.error() == QFileDevice::NoError && decoded.valid;
+        result.readable = readComplete && decoded.valid;
         if (result.readable)
             result.rawSha256 = QCryptographicHash::hash(bytes, QCryptographicHash::Sha256);
     }

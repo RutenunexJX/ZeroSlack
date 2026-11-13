@@ -214,15 +214,11 @@ int main(int argc, char* argv[])
               && !persistedLocation.contains(
                   QStringLiteral("documentId")),
           "pinned temporary editor persists a workspace-relative identity only");
-    QToolButton* unpinButton =
-        controller.dockHost()->findChild<QToolButton*>(
-            QStringLiteral("contextDockUnpin"));
-    if (unpinButton)
-        unpinButton->click();
-    check(unpinButton
+    const bool unpinned = controller.unpinResource(firstResource.stableKey());
+    check(unpinned
               && controller.floatingWindow()->view() == originalView
               && controller.dockHost()->resourceCount() == 0,
-          "Dock unpin action returns the exact view to an Ela floating window");
+          "controller unpin returns the exact view to an Ela floating window");
     QApplication::processEvents();
     check(contextView->editor()->palette().color(QPalette::Base) == InsightVisualStyle::theme().input.background,
           "floating editor background survives docking and detaching");

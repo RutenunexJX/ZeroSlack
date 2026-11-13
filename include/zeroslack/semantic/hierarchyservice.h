@@ -172,11 +172,16 @@ public:
         const QString& activeProjectId, const QSet<QString>& fileScope) const;
     DesignHierarchyReport automaticDesignHierarchy(const QSet<QString>& fileScope = {},
         const std::function<bool()>& cancelled = {}) const;
+    std::shared_ptr<const DesignHierarchyReport> sharedDesignHierarchy(const QSet<QString>& fileScope = {},
+        const std::function<bool()>& cancelled = {}) const;
+    static std::uint64_t automaticBuildCountForTesting(const SemanticSnapshotToken& token);
     static QString definitionIdentity(const SymbolStableKey& key);
     HierarchyQuery queryForPanel(const HierarchyPanelQueryOptions& options) const;
     QList<HierarchyNode> moduleInstantiationChildren(const SymbolStableKey& moduleStableKey) const;
 
 private:
+    DesignHierarchyReport buildAutomaticDesignHierarchy(const QSet<QString>& fileScope,
+        const std::function<bool()>& cancelled) const;
     explicit HierarchyService(std::shared_ptr<SemanticIndex> owner);
     std::shared_ptr<SemanticIndex> ownedIndex;
     SemanticIndex* index = nullptr;

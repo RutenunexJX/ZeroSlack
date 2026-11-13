@@ -517,6 +517,11 @@ EditorActionContext EditorActionContextService::resolve(
         return result;
     }
 
+    if (!query.resolveHierarchy) {
+        result.hierarchyResolutionReason = QStringLiteral("Instance eligibility is checked when the action runs.");
+        return result;
+    }
+
     QString candidateReason;
     result.hierarchyCandidates = resolveHierarchyCandidates(
         query, result.workspacePath, &candidateReason);

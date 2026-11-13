@@ -3,6 +3,7 @@
 #include "testuistyle.h"
 
 #include "editorfileidentity.h"
+#include "editorsplitcontroller.h"
 #include "mainwindow.h"
 #include "mycodeeditor.h"
 #include "panellayoutcontroller.h"
@@ -24,6 +25,7 @@
 #include <QPushButton>
 #include <QTemporaryDir>
 #include <QTextCursor>
+#include <QTabWidget>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 
@@ -570,13 +572,16 @@ int main(int argc, char* argv[])
     QWidget* const drawerContent =
         productionWindow.findChild<QWidget*>(
             QStringLiteral("bottomToolDrawerContent"));
-    QWidget* const searchButton =
-        productionWindow.findChild<QWidget*>(
-            QStringLiteral("bottomPanelButton_scopedSearch"));
+    auto* const pages = productionWindow.tabManager->editorSplitController();
+    auto* const searchPage = productionWindow.findChild<QWidget*>(QStringLiteral("deferredSearchPanel"));
+    auto* const searchGroup = pages->groupForPage(searchPage);
     check(productionPanel
               && productionDock
               && drawerContent
-              && searchButton
+              && searchPage && searchPage->isAncestorOf(productionPanel)
+              && searchGroup && searchGroup->currentWidget() == searchPage
+              && pages->regionForGroup(searchGroup) == QStringLiteral("bottom")
+              && pages->pageId(searchPage) == QStringLiteral("tool:") + ScopedSearchPanelCoordinator::panelId()
               && productionWindow
                          .findChildren<ScopedSearchPanel*>()
                          .size()

@@ -1,6 +1,5 @@
 #include "editorsourcenavigationquery.h"
 
-#include "moduleblockdiagramservice.h"
 #include "semanticindex.h"
 #include "statetransitiontriggerservice.h"
 #include "symboltaxonomy.h"
@@ -42,13 +41,7 @@ bool moduleBlockDiagramAvailableForContext(
     if (!hasModuleDefinition)
         return false;
 
-    ModuleBlockDiagramQuery query;
-    query.moduleName = actionContext.symbolName;
-    query.fileName = actionContext.fileName;
-    query.maxDepth = 0;
-    return ModuleBlockDiagramService::getInstance()
-        ->buildModuleBlockDiagram(query)
-        .found;
+    return true;
 }
 
 bool signalUsageHotspotAvailableForContext(
@@ -189,12 +182,12 @@ EditorSourceNavigationQuery::sourceSymbolContextMenuState(
 {
     const SourceSymbolActionContext actionContext =
         sourceSymbolActionContext(context);
-    const StateTransitionTriggerReport stateTransitionTrigger =
-        actionContext.available
-            ? stateTransitionTriggerForContext(actionContext)
-            : StateTransitionTriggerReport();
     const bool moduleBlockAvailable = actionContext.available
         && moduleBlockDiagramAvailableForContext(actionContext);
+    const StateTransitionTriggerReport stateTransitionTrigger =
+        actionContext.available && !moduleBlockAvailable
+            ? stateTransitionTriggerForContext(actionContext)
+            : StateTransitionTriggerReport();
     const bool signalUsageHotspotAvailable =
         signalUsageHotspotAvailableForContext(actionContext);
 
@@ -284,6 +277,13 @@ EditorSourceNavigationQuery::sourceSymbolActionRequestState(
     }
     state.fileName = actionContext.fileName;
     state.moduleName = actionContext.moduleName;
+    if (action == SourceSymbolAction::ShowModuleBlockDiagram) {
+        SemanticQueryContext scope; scope.fileName = actionContext.fileName; scope.moduleName = actionContext.moduleName;
+        QSet<QString> files;
+        for (const auto& record : SemanticIndex::getInstance()->findDefinitionRecords(actionContext.symbolName,scope))
+            if (record.declarationKind == SymbolTaxonomy::DeclarationKind::Module) files.insert(record.location.fileName);
+        state.fileName = files.size() == 1 ? *files.cbegin() : QString();
+    }
     return state;
 }
 

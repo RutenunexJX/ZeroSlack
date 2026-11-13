@@ -3,15 +3,20 @@
 #include <atomic>
 #include <cstdio>
 #include <thread>
+#include <QtEndian>
 #define private public
 #include "symbolanalyzer.h"
 #undef private
 #include "semanticindexsnapshot.h"
 #include "semanticanalysisinput.h"
+#include "incrementalsemanticanalysisworker.h"
+#include "semanticsourceremap.h"
 #include "slangmanager.h"
 #include "workspacemanager.h"
 #include "workspaceconfigurationservice.h"
 #include "tsdocument.h"
+#include <zeroslack/semantic/semanticworkspacecache.h>
+#include <zeroslack/semantic/hierarchyservice.h>
 
 namespace {
 int checks = 0, failures = 0;
@@ -22,6 +27,19 @@ bool waitFor(const std::function<bool()>& fn, int timeout=10000) {
 bool write(const QString& path,const QString& text){QDir().mkpath(QFileInfo(path).absolutePath());QFile f(path);return f.open(QIODevice::WriteOnly)&&f.write(text.toUtf8())==text.toUtf8().size();}
 QString read(const QString& path){QFile f(path);if(!f.open(QIODevice::ReadOnly))return {};return QString::fromUtf8(f.readAll());}
 bool symbol(const char* name){return !SemanticIndex::getInstance()->getSymbolRecordsByName(QString::fromLatin1(name)).isEmpty();}
+void concurrentSourceReplacement(const QString& root) {
+ const QString file=root+"/共享 source.sv", moved=root+"/renamed.sv";
+ expect("concurrent source fixture created",write(file,"module shared;\n//"+QString(1024*1024,'x')+"\nendmodule\n"));
+ std::atomic_bool stop=false;std::atomic_int reads=0;
+ std::thread reader([&] {
+  while(!stop.load()) { SemanticAnalysisRequest request;SemanticInputCapture capture(request);capture.source(file);++reads; }
+ });
+ const bool started=waitFor([&]{return reads.load()>0;});bool renamed=started;
+ for(int i=0;i<256&&renamed;++i) { renamed=QFile::rename(file,moved)&&QFile::rename(moved,file);QThread::yieldCurrentThread(); }
+ stop=true;reader.join();
+ expect("background semantic capture never blocks source rename or replacement",started&&renamed&&reads.load()>0);
+ expect("source stays readable after concurrent replacement",QFileInfo::exists(file)&&read(file).startsWith("module shared;"));
+}
 struct Harness {
  SymbolAnalyzer analyzer; quint64 generation=1000, terminal=0; bool committed=false, slang=false;QString error;
  Harness(){
@@ -87,12 +105,43 @@ void rawDiagnostics(const QString& root){
  auto p=single(root,"diagnostics");QString text="module diagnostics; logic y;\n";for(int i=0;i<12;++i)text+=QString("assign y = undefined_%1;\n").arg(i);text+="endmodule\n";write(p.systemVerilogFiles.first(),text);
  Harness h;expect("diagnostic baseline commits",h.run(p));const auto before=SemanticIndex::getInstance()->snapshot();const auto count=before->rawDiagnosticCount();
  expect("display cap retains complete raw diagnostic ownership",count>2&&before->diagnostics().size()==2&&before->suppressedDiagnosticCount()==count-2);
+ const auto cache=SemanticWorkspaceCache::directory(root)+"/current.zscache";
+ expect("raw diagnostic snapshot is persisted",waitFor([&]{return QFileInfo(cache).size()>12;}));
+ SemanticAnalysisRequest restore;restore.project=p;restore.generation=500;restore.runtimePolicy.maxDiagnostics=2;
+ const auto restored=SemanticWorkspaceCache::restore(restore,{});
+ expect("persistent restore retains suppressed raw diagnostic ownership",restored&&restored->preparedSnapshot->rawDiagnosticCount()==count);
  const auto file=p.systemVerilogFiles.first();const auto edited=QString("// prefix\n\n")+text;
  expect("trivia save remaps capped and uncapped diagnostics without Slang",h.run(p,{{file,edited}},SemanticAnalysisReason::Save,file)&&!h.slang);
  const auto after=SemanticIndex::getInstance()->snapshot();bool mapped=after->rawDiagnosticCount()==count&&before->rawDiagnosticCount()==count;
  if(mapped)for(int i=0;i<count;++i)mapped &= after->rawDiagnostics().at(i).line==before->rawDiagnostics().at(i).line+2;
  expect("suppressed diagnostic source ranges advance with the same publication",mapped);
  p.systemVerilogFiles.clear();p.allFiles.clear();expect("deleted file cannot be revived by old raw diagnostics",h.run(p)&&SemanticIndex::getInstance()->snapshot()->rawDiagnosticCount()==0);
+}
+void roleEvidenceTrivia(const QString& root) {
+ auto p=single(root,"role_top");const auto file=p.systemVerilogFiles.first();
+ const QString source="module role_child(input logic clk, d, output logic q);\n"
+   "always_ff @(posedge clk) q <= d;\nendmodule\n"
+   "module role_top; logic clk, d, q; role_child u_child(.*); endmodule\n";
+ write(file,source);Harness h;
+ expect("clock role fixture publishes",h.run(p)&&h.slang);
+ const auto before=SemanticIndex::getInstance()->snapshotToken();
+ expect("clock role proof prevents unsafe positional-only remapping",
+        !SemanticSourceRemapper::canRemapSnapshot(*before.snapshot,file));
+ SemanticAnalysisRequest idle;idle.generation=++h.generation;idle.project=p;
+ idle.reason=SemanticAnalysisReason::EditIdle;idle.triviaOnlyGate=true;
+ idle.triggerFile=file;idle.changedFiles={file};idle.sourceOverrides={{file,"\n"+source}};
+ const auto state=h.analyzer.activeWorkspaceState;
+ const auto rejected=IncrementalSemanticAnalysisWorker::analyze(idle,before.snapshot,state->dependencyGraph,
+     [] {return false;},state->input,state);
+ expect("idle trivia gate refuses role proof refresh without invoking Slang or publishing",
+        rejected.disposition==SemanticAnalysisRequestDisposition::TriviaGateRejected
+        &&!rejected.slangInvoked&&!rejected.preparedSnapshot
+        &&SemanticIndex::getInstance()->snapshotToken().revision==before.revision);
+ for(const auto& text : {QString("\n")+source, source, QString("\n")+source}) {
+  expect("save and undo/redo refresh role evidence through normal semantic analysis",
+         h.run(p,{{file,text}},SemanticAnalysisReason::Save,file)&&h.slang
+         &&SemanticIndex::getInstance()->getCachedFileContent(file)==text);
+ }
 }
 void configurationActivation(const QString& root){
  const auto a=single(root+"/a","a"),b=single(root+"/b","b");WorkspaceConfigurationService service;
@@ -243,13 +292,18 @@ bool blockingTerminalLifecycle(const QString& root, const QString& mode)
                 watchdogFired, elapsed.elapsed());
     return !watchdogFired;
 }
+#include "semantic_workspace_cache_checks.h"
 }
 int main(int argc,char**argv){
  std::setvbuf(stdout,nullptr,_IONBF,0);QApplication app(argc,argv);QTemporaryDir temp,profile;if(!temp.isValid()||!profile.isValid())return 2;
  QCoreApplication::setApplicationName("ZeroSlack-Semantic-Contract");QSettings::setDefaultFormat(QSettings::IniFormat);QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,profile.path());QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,profile.path());qputenv("ZEROSLACK_SESSION_STORAGE_PATH",(profile.path()+"/sessions.ini").toUtf8());
+ if(app.arguments().size()==4 && app.arguments().at(1)=="--cache-child") return persistentChild(app.arguments().at(2),app.arguments().at(3));
+ concurrentSourceReplacement(temp.path()+"/concurrent");
+ persistentCache(temp.path()+"/persistent");SemanticIndex::getInstance()->clearSemanticState();EffectiveValueService::getInstance()->clearPublishedFacts();
  retainedInputs(temp.path()+"/retained");SemanticIndex::getInstance()->clearSemanticState();EffectiveValueService::getInstance()->clearPublishedFacts();
  includesAndAdapters(temp.path()+"/adapters");SemanticIndex::getInstance()->clearSemanticState();EffectiveValueService::getInstance()->clearPublishedFacts();
  rawDiagnostics(temp.path()+"/raw");SemanticIndex::getInstance()->clearSemanticState();EffectiveValueService::getInstance()->clearPublishedFacts();
+ roleEvidenceTrivia(temp.path()+"/role-trivia");SemanticIndex::getInstance()->clearSemanticState();EffectiveValueService::getInstance()->clearPublishedFacts();
  configurationActivation(temp.path()+"/configuration");cancellation(temp.path()+"/cancellation");
  for (const auto& mode : {"cancel", "shutdown", "supersede", "pending-shutdown",
                           "publication-shutdown", "observer-shutdown", "committed-shutdown"}) {

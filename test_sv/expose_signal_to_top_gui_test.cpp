@@ -539,6 +539,10 @@ void runEditorActionContextRegression()
 void runEditorActionContextStripRegression()
 {
     MainWindow window;
+    if (const auto* bar = window.findChild<QStatusBar*>())
+        std::printf("context-strip status=%s visible=%d message=%s\n",qPrintable(bar->objectName()),bar->isVisible(),qPrintable(bar->currentMessage()));
+    if (const auto* chip = window.findChild<QLabel*>(QStringLiteral("editorActionContextChip")))
+        std::printf("context-strip chip=%s visible=%d\n",qPrintable(chip->text()),chip->isVisible());
     check("status bar and context chip are removed",
           window.findChild<QStatusBar*>() == nullptr
           && window.findChild<QLabel*>(QStringLiteral("editorActionContextChip")) == nullptr);
@@ -777,6 +781,8 @@ void runContextActionRegistryExecutionRegression()
     if (!editor)
         return;
 
+    check("opened source editor is visible in its owning region",
+          QTest::qWaitFor([&] { return editor->isVisible(); },3000));
     QTextCursor firstCursor(editor->document());
     firstCursor.setPosition(positionInside(
         source, QStringLiteral("logic first")));
@@ -1356,14 +1362,15 @@ void runContextActionRegistryExecutionRegression()
     QApplication::setActiveWindow(&window);
     editor->setFocus();
     QTest::keyClick(editor, Qt::Key_Escape);
-    editor->setTextCursor(columnStart);
-    const auto columnModifiers = Qt::ShiftModifier | Qt::AltModifier;
-    QTest::keyClick(editor, Qt::Key_Down, columnModifiers);
-    for (int column = 0; column < QStringLiteral("first").size(); ++column)
-        QTest::keyClick(editor, Qt::Key_Right, columnModifiers);
+    // An undo restores the old rectangular selection as well as text. Start a
+    // fresh gesture, then restore the same endpoint through the public input path.
+    QTest::mouseClick(editor->viewport(),Qt::LeftButton,{},editor->cursorRect(columnStart).center());
+    QTest::mouseClick(editor->viewport(),Qt::LeftButton,Qt::ShiftModifier|Qt::AltModifier,
+                      editor->cursorRect(columnEnd).center());
     {
         QString diagnostic;
         { QDebug output(&diagnostic); output << "diag.column-restored" << editor->hasFocus()
+            << "visible" << editor->isVisible() << "active" << window.tabManager->getCurrentEditor()
             << editor->columnSelectionActive() << editor->columnSelectionTexts() << selectedColumnRows
             << editor->textCursor().position() << columnStart.position() << columnEnd.position()
             << originalColumnSnapshot.anchorLine << originalColumnSnapshot.anchorColumn
@@ -1571,6 +1578,10 @@ void runContextActionRegistryExecutionRegression()
     QCoreApplication::processEvents(
         QEventLoop::AllEvents, 50);
     QWidget* findDialog = visibleSearchBar(false);
+    for (auto* ancestor = static_cast<QWidget*>(editor); ancestor; ancestor = ancestor->parentWidget())
+        std::printf("search-ancestor class=%s name=%s visible=%d hidden=%d size=%dx%d\n",
+            ancestor->metaObject()->className(),qPrintable(ancestor->objectName()),ancestor->isVisible(),
+            ancestor->isHidden(),ancestor->width(),ancestor->height());
     const bool findShortcutRouted = findDialog
         && applicationActionExecutionHistory()
                .lastActionId()
@@ -1588,6 +1599,9 @@ void runContextActionRegistryExecutionRegression()
     QCoreApplication::processEvents(
         QEventLoop::AllEvents, 50);
     QWidget* replaceDialog = visibleSearchBar(true);
+    std::printf("search-routing find=%d replace=%d action=%s focus=%s\n",findShortcutRouted,
+        replaceDialog!=nullptr,qPrintable(applicationActionExecutionHistory().lastActionId()),
+        qPrintable(QApplication::focusWidget()?QApplication::focusWidget()->objectName():QString()));
     check("Find and Replace shortcuts execute canonical Registry Actions",
           findShortcutRouted
               && replaceDialog

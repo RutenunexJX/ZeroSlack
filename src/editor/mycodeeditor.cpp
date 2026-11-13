@@ -1863,6 +1863,11 @@ bool MyCodeEditor::editInstanceSlotsAt(
         this, cursorPosition, message);
 }
 
+bool MyCodeEditor::instanceSlotsAvailableAt(int cursorPosition) const
+{
+    return state->instanceSlotsAvailableAt(cursorPosition);
+}
+
 bool MyCodeEditor::beginSignalDefinitionEditorAt(
     int cursorPosition,
     QString* failureReason)

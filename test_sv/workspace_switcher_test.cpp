@@ -12,6 +12,7 @@
 #include "navigationpanecoordinator.h"
 #include "navigationwidget.h"
 #include "navigationrowstyle.h"
+#include "designhierarchymodel.h"
 #include "liveinsightscontextprovider.h"
 #include "signaltracepanel.h"
 #include "panellayoutcontroller.h"
@@ -27,6 +28,7 @@
 #include <QContextMenuEvent>
 #include <QStackedWidget>
 #include <QTreeWidgetItemIterator>
+#include <QTreeView>
 #include <QApplication>
 #include <QDir>
 #include <QFile>
@@ -333,8 +335,6 @@ private slots:
                 QVERIFY(window.grab().save(evidence + QString("/workspaces-%1-%2-%3.png")
                     .arg(count).arg(dark ? "dark" : "light").arg(width)));
             }
-            qInfo() << "workspace strip geometry" << strip->geometry() << "hint" << strip->sizeHint()
-                    << "bar" << bar->geometry() << "tabs" << bar->tabRect(0) << bar->tabRect(count - 1);
             for (auto* scroll : bar->findChildren<QToolButton*>())
                 QVERIFY2(!scroll->isVisible(), "2/3 workspace icons must fit without overflow arrows");
             for (int i = 0; i < count; ++i) {
@@ -359,8 +359,24 @@ private slots:
             }
             const int stripRight = strip->mapTo(&window, strip->rect().topRight()).x();
             QVERIFY2(controlsLeft - stripRight >= 80, "Keep a usable blank title area for dragging the window");
-            auto* blank = window.childAt(QPoint((controlsLeft + stripRight) / 2, title->geometry().center().y()));
-            QVERIFY(blank == title || (blank && title->isAncestorOf(blank) && !qobject_cast<QAbstractButton*>(blank)));
+            int blankRun = 0, longestBlank = 0;
+            // The fixed brand label is draggable too. The right-hand region
+            // now hosts Run, Settings and editing time, not only blank space.
+            auto* run = title->findChild<QAbstractButton*>("startSimulation"); QVERIFY(run);
+            auto* editingTime = title->findChild<QWidget*>("editingTimeWidget"); QVERIFY(editingTime);
+            auto* accessory = editingTime->parentWidget();
+            QVERIFY(accessory && title->isAncestorOf(accessory));
+            QVERIFY(accessory->isAncestorOf(run));
+            for (int x = title->geometry().left(); x < controlsLeft; ++x) {
+                auto* hit = window.childAt(QPoint(x,title->mapTo(&window,title->rect().center()).y()));
+                bool draggable = hit == title || (hit && title->isAncestorOf(hit));
+                for (auto* widget = hit; widget && widget != title; widget = widget->parentWidget())
+                    if (qobject_cast<QAbstractButton*>(widget) || qobject_cast<QLineEdit*>(widget)
+                        || widget == strip || widget == accessory) draggable = false;
+                blankRun = draggable ? blankRun + 1 : 0;
+                longestBlank = qMax(longestBlank,blankRun);
+            }
+            QVERIFY2(longestBlank >= 80,"Keep 80 contiguous pixels of draggable title area outside controls");
             QVERIFY(open->isVisible());
         }
         ApplicationThemeManager::instance().setMode(ThemeMode::Light);
@@ -528,38 +544,40 @@ private slots:
         DesignHierarchyNode child = root; child.id = "child"; child.instanceName = "child";
         child.projectId = "child-project"; child.moduleType = "child"; child.definitionFile = other; child.inSelectedTop = false;
         report.nodes = {root, child};
+        QPair<QString,QString> simulationTarget{top,"top"};
+        navigation.setSimulationTargetProvider([&] { return simulationTarget; });
         navigation.updateDesignHierarchy(report);
-        auto* tree = navigation.findChild<QTreeWidget*>("navigationDesignTree"); QVERIFY(tree);
-        auto find = [tree](const QString& path) -> QTreeWidgetItem* {
-            QTreeWidgetItemIterator iterator(tree);
-            while (*iterator) {
-                if ((*iterator)->data(0, Qt::UserRole).toString() == path) return *iterator;
-                ++iterator;
-            }
-            return nullptr;
+        auto* tree = navigation.findChild<QTreeView*>("navigationDesignTree"); QVERIFY(tree);
+        auto* model = qobject_cast<DesignHierarchyModel*>(tree->model()); QVERIFY(model);
+        auto find = [model](const QString& path) {
+            return model->indexForId(path);
         };
-        auto* topItem = find("top"); auto* otherItem = find("child"); QVERIFY(topItem && otherItem);
+        QTRY_VERIFY(find("top").isValid() && find("child").isValid());
+        auto topItem = find("top"), otherItem = find("child");
         for (auto theme : {ThemeMode::Light, ThemeMode::Dark}) {
             ApplicationThemeManager::instance().setMode(theme);
             navigation.highlightFile(other);
-            QVERIFY(topItem->data(0, NavigationRowStyle::ActiveRole).toBool());
-            QVERIFY(topItem->data(0, Qt::AccessibleDescriptionRole).toString().contains("Active project"));
-            QVERIFY(topItem->data(0, NavigationWidget::DesignTopRole).toBool());
-            QVERIFY(!otherItem->data(0, NavigationWidget::DesignTopRole).toBool());
+            QVERIFY(topItem.data(NavigationRowStyle::SimulationRole).toBool());
+            QVERIFY(topItem.data(Qt::AccessibleDescriptionRole).toString().contains("Simulation top"));
+            QVERIFY(model->node(topItem).isTop);
+            QVERIFY(!otherItem.data(NavigationRowStyle::SimulationRole).toBool());
         }
         report.selectedTopModule = "child";
         report.nodes[0].inSelectedTop = false; report.nodes[1].inSelectedTop = true;
+        simulationTarget = {other,"child"};
         navigation.updateDesignHierarchy(report);
-        topItem = find("top"); otherItem = find("child"); QVERIFY(topItem && otherItem);
-        QVERIFY(!topItem->data(0, Qt::AccessibleDescriptionRole).toString().contains("Active project"));
-        QVERIFY(!topItem->data(0, NavigationRowStyle::ActiveRole).toBool());
-        QVERIFY(otherItem->data(0, Qt::AccessibleDescriptionRole).toString().contains("Active project")
-            && otherItem->data(0, NavigationRowStyle::ActiveRole).toBool()
-            && otherItem->data(0, NavigationWidget::DesignTopRole).toBool());
+        navigation.refreshSimulationTop();
+        QTRY_VERIFY(find("top").isValid() && find("child").isValid());
+        topItem = find("top"); otherItem = find("child");
+        QVERIFY(!topItem.data(Qt::AccessibleDescriptionRole).toString().contains("Simulation top"));
+        QVERIFY(!topItem.data(NavigationRowStyle::SimulationRole).toBool());
+        QVERIFY(otherItem.data(Qt::AccessibleDescriptionRole).toString().contains("Simulation top")
+            && otherItem.data(NavigationRowStyle::SimulationRole).toBool()
+            && model->node(otherItem).isTop);
         navigation.setWorkspaceRoot("D:/another-project");
         navigation.updateDesignHierarchy({});
         navigation.updateFileHierarchy({top, other});
-        QVERIFY(!find("child") && !find("top"));
+        QTRY_VERIFY(!find("child").isValid() && !find("top").isValid());
         ApplicationThemeManager::instance().setMode(ThemeMode::Light);
     }
 
@@ -578,7 +596,7 @@ private slots:
             QTRY_VERIFY_WITH_TIMEOUT(!SemanticIndex::getInstance()->getSymbolRecords(source).isEmpty(), 15000);
             window.navigationManager->setDesignTop("top");
             auto* navigation = window.findChild<NavigationWidget*>(); QVERIFY(navigation);
-            auto* designTree = window.findChild<QTreeWidget*>("navigationDesignTree"); QVERIFY(designTree);
+            auto* designTree = window.findChild<QTreeView*>("navigationDesignTree"); QVERIFY(designTree);
             QSignalSpy refreshed(window.navigationManager.get(), &NavigationManager::dataRefreshed);
             bool refreshAvailable = false;
             QTimer::singleShot(20, &window, [&] {
@@ -610,12 +628,9 @@ private slots:
             QVERIFY(panels);
             auto* trace = panels->drawerContent()->findChild<SignalTracePanel*>(QStringLiteral("signalTracePanel")); QVERIFY(trace);
             const auto external = [](const QString& id) {
-                return id == LiveInsightsContextProvider::providerIdForKind(LiveInsightKind::Module) || id == "rtlInsight.kernel" || id == "rtlInsight.hotspot";
+                return id == "rtlInsight.kernel" || id == "rtlInsight.hotspot";
             };
             const auto visible = [&](const QString& id) {
-                if (id == LiveInsightsContextProvider::providerIdForKind(LiveInsightKind::Module))
-                    return pane->isExpanded() && pane->dock()->isVisible()
-                        && pane->activeTab() == NavigationWidget::DesignTab;
                 if (id == "rtlInsight.kernel" || id == "rtlInsight.hotspot")
                     return panels->isPanelOpen("hotspot") && panels->activeBottomPanelId() == "hotspot"
                         && trace->isVisible()
@@ -623,13 +638,11 @@ private slots:
                 return controller->dockVisible() && controller->dockHost()->currentResource().providerId == id;
             };
             const auto destination = [&](const QString& id) -> QWidget* {
-                if (id == LiveInsightsContextProvider::providerIdForKind(LiveInsightKind::Module)) return pane->dock()->widget();
                 if (id == "rtlInsight.kernel" || id == "rtlInsight.hotspot") return trace;
                 return controller->dockHost()->viewForResource(controller->dockHost()->currentResource().stableKey());
             };
             const auto closeExternal = [&](const QString& id) {
-                if (id == LiveInsightsContextProvider::providerIdForKind(LiveInsightKind::Module)) pane->setExpanded(false, false);
-                else panels->closePanel("hotspot");
+                panels->closePanel("hotspot");
             };
             for (const auto& id : ids) {
                 auto* entry = controller->rail()->findChild<QAction*>("contextRail." + id); QVERIFY(entry);
@@ -707,10 +720,10 @@ private slots:
                 QTRY_VERIFY2_WITH_TIMEOUT(visible(id), qPrintable(QStringLiteral("%1: dock=%2 resource=%3 rail=%4")
                     .arg(id).arg(controller->dockVisible()).arg(controller->dockHost()->currentResource().providerId)
                     .arg(controller->rail()->activeEntryId())), int(activationDeadline.remainingTime()));
-                if (external(id)) QCOMPARE(destination(id), id == LiveInsightsContextProvider::providerIdForKind(LiveInsightKind::Module) ? pane->dock()->widget() : trace);
+                if (external(id)) QCOMPARE(destination(id), static_cast<QWidget*>(trace));
                 else QCOMPARE(controller->dockHost()->currentResource().providerId, id);
             }
-            closeExternal(LiveInsightsContextProvider::providerIdForKind(LiveInsightKind::Module));
+            pane->setExpanded(false,false);
             QVERIFY(!pane->isExpanded());
             more->trigger(); QTRY_VERIFY(controller->toolboxVisible());
             auto* firstCard = window.findChild<QToolButton*>("contextToolRun." + ids.at(0))->parentWidget();

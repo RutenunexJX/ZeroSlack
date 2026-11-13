@@ -1906,7 +1906,7 @@ void MainWindow::setupPanelLayoutController()
     runLogDock->setWidget(simulation->runLogWidget());
     registerPanel(QStringLiteral("simulationLog"), runLogDock);
     const auto showSimulationIssue = [this](const QString& message) {
-        statusBar()->showMessage(message);
+        postActivityMessage(message);
         panelLayoutController->restorePanel(QStringLiteral("simulationLog"));
     };
     connect(simulation, &simdock::Workbench::issueRaised, this, showSimulationIssue);
@@ -1915,7 +1915,7 @@ void MainWindow::setupPanelLayoutController()
             navigation->setActiveTab(NavigationWidget::DesignTab);
             navigation->focusSearch();
         }
-        statusBar()->showMessage(tr("Choose a module in Design, then use Set as simulation top."));
+        postActivityMessage(tr("Choose a module in Design, then use Set as simulation top."));
     });
     connect(simulationWorkspace.get(), &SimDockContextView::issueRaised, this, showSimulationIssue);
     connect(workspaceSimulation.get(), &simdock::WorkspaceSimulationController::finished, this,
