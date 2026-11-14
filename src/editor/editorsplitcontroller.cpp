@@ -83,6 +83,7 @@ EditorSplitController::EditorSplitController(
     , currentGroup(initial)
 {
     qApp->installEventFilter(this);
+    connect(this,&EditorSplitController::layoutChanged,this,&EditorSplitController::refreshGroupSurfaces);
     connect(&ApplicationThemeManager::instance(),&ApplicationThemeManager::themeChanged,this,[this]{refreshGroupSurfaces();});
     if (initial) {
         regionHosts.insert(QStringLiteral("main"), {nullptr, initial, initial, initial, {}});
@@ -1055,6 +1056,20 @@ void EditorSplitController::refreshGroupSurfaces()
         auto* group=it.key();if(!group)continue;
         const auto region=isFloatingGroup(group)?QStringLiteral("floating"):it.value();
         surface(group,region);surface(group->tabBar(),region);
+        for (int index=0; index<group->count(); ++index) {
+            QWidget* page=group->widget(index);
+            const auto kind=page->property("pageKind").toString();
+            if (kind!="tool" && kind!="navigation" && kind!="context") continue;
+            if (page->property("workspaceToolRegion").toString()==region) continue;
+            page->setProperty("workspaceToolRegion",region);
+            page->setAttribute(Qt::WA_StyledBackground);
+            // Repolish scoped descendants after reparenting, without assigning
+            // palettes or changing the contents/lifetime of a tool page.
+            auto widgets=page->findChildren<QWidget*>();widgets.prepend(page);
+            for (auto* widget:widgets) {
+                widget->style()->unpolish(widget);widget->style()->polish(widget);widget->update();
+            }
+        }
         QList<QWidget*> chrome{group,group->tabBar()};
         for(auto* stack:group->findChildren<QStackedWidget*>(QString(),Qt::FindDirectChildrenOnly)){
             surface(stack,region);chrome.append(stack);

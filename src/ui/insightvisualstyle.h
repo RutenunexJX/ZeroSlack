@@ -273,6 +273,7 @@ public:
     static QColor subtleBorder(const QColor& surface, const QColor& foreground);
     static WorkspaceRegionColors workspaceRegionColors(const QString& region, ThemeMode mode);
     static WorkspaceRegionColors workspaceRegionColors(const QString& region);
+    static QString workspaceToolStyleSheet(ThemeMode mode);
 
     static QColor roleColor(InsightVisualRole role);
     static QColor roleColor(InsightVisualRole role, ThemeMode mode);

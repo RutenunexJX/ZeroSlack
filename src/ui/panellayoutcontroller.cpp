@@ -1223,7 +1223,7 @@ void PanelLayoutController::updateDrawerStyle()
         " background: %1; border-top: 1px solid %2; }"
         "QWidget#bottomToolDrawerResizeHandle:hover { background: %3; }"
         "QFrame#bottomToolTabStrip {"
-        " background: %1; border-top: 1px solid %2; }"
+        " background: %1; border: 0; }"
         "QToolButton[zeroslackElaControl=false] { color: %4; border: 0; border-radius: 8px;"
         " padding: 0 11px 0 9px; min-height: 30px; }"
         "QToolButton[zeroslackElaControl=false]:hover { background: %3; }"

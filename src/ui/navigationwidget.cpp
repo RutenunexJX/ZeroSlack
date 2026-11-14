@@ -475,13 +475,14 @@ void NavigationWidget::setupFileTab()
     fileTab = new QWidget();
     fileTabLayout = new QVBoxLayout(fileTab);
     fileTabLayout->setContentsMargins(2, 2, 2, 2);
-    fileTabLayout->setSpacing(2);
+    fileTabLayout->setSpacing(4);
 
     fileTreeWidget = UiControls::treeWidget(fileTab);
     UiControls::enableTreeTransitions(fileTreeWidget);
     fileTreeWidget->setObjectName(
         QStringLiteral("navigationFileTree"));
     fileTreeWidget->setHeaderLabel("Files");
+    fileTreeWidget->setFrameShape(QFrame::NoFrame);
     fileTreeWidget->setAlternatingRowColors(false);
     fileTreeWidget->setProperty("workspaceNavigationList", true);
     fileTreeWidget->setMouseTracking(true);
@@ -510,6 +511,7 @@ void NavigationWidget::setupDesignTab()
     designTabLayout = new QVBoxLayout(designTab);
     designTabLayout->setContentsMargins(2, 2, 2, 2); designTabLayout->setSpacing(4);
     designTreeWidget = new DesignTreeView(designTab);
+    UiTypography::apply(designTreeWidget, UiTypography::Role::Body);
     designTreeWidget->setObjectName(QStringLiteral("navigationDesignTree"));
     designTreeWidget->setHeaderHidden(true);
     designTreeWidget->setFrameShape(QFrame::NoFrame);

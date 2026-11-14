@@ -38,7 +38,9 @@ QString floatingBackgroundRule(const QString& typeName, const QString& objectNam
     // Keep this rule in local styles too: a child's stylesheet takes precedence
     // over its host. Ancestry lets docking restore the normal surface directly.
     return QStringLiteral("#contextFloatingWindow %1 { background: transparent; }")
-        .arg(objectSelector(typeName, objectName));
+        .arg(objectSelector(typeName, objectName))
+        + QStringLiteral("QWidget[workspaceToolRegion] %1 { background: transparent; }")
+            .arg(objectSelector(typeName, objectName));
 }
 
 QString workspaceRegionStyleSheet(ThemeMode mode)
@@ -48,11 +50,11 @@ QString workspaceRegionStyleSheet(ThemeMode mode)
         const auto colors=InsightVisualStyle::workspaceRegionColors(QString::fromLatin1(region),mode);
         result += QStringLiteral(
             "QWidget[workspaceRegionSurface=%1] { background: %2; }"
-            "QStackedWidget[workspaceRegionId=%1] { background: %2; border: 1px solid %3; padding: 2px; }"
-            "QStackedWidget[workspaceRegionId=%1][workspaceRegionFocused=true] { border-color: %4; }")
-            .arg(QString::fromLatin1(region),colors.surface.name(),colors.border.name(),colors.borderFocused.name());
+            "QTabWidget[workspaceRegionId=%1]::pane { background: %2; border: 0; }"
+            "QStackedWidget[workspaceRegionId=%1] { background: %2; border: 0; padding: 0; }")
+            .arg(QString::fromLatin1(region),colors.surface.name());
     }
-    return result;
+    return result + InsightVisualStyle::workspaceToolStyleSheet(mode);
 }
 
 constexpr const char* kThemeHelperProperty =
@@ -899,12 +901,34 @@ WorkspaceRegionColors InsightVisualStyle::workspaceRegionColors(const QString& r
     else if(region=="bottom")surface=dark?color("#191e22"):color("#c9ccc9");
     else if(region=="floating")surface=dark?color("#38313f"):color("#ded9e4");
     if(mode!=ThemeMode::Light && mode!=ThemeMode::Dark)surface=mix(surface,t.panelBackground,0.25);
-    return {surface,mix(surface,t.panelBackground,0.45),mix(surface,t.panelBackground,0.75),
-        mix(surface,t.textPrimary,0.08),mix(surface,t.textPrimary,0.28),mix(surface,t.textPrimary,0.60)};
+    return {surface,mix(surface,t.textPrimary,0.07),mix(surface,t.textPrimary,0.11),
+        mix(surface,t.textPrimary,0.045),mix(surface,t.textPrimary,0.14),mix(surface,t.textPrimary,0.45)};
 }
 WorkspaceRegionColors InsightVisualStyle::workspaceRegionColors(const QString& region)
 {
     return workspaceRegionColors(region,ApplicationThemeManager::instance().mode());
+}
+
+QString InsightVisualStyle::workspaceToolStyleSheet(ThemeMode mode)
+{
+    QString result;
+    for (const auto* region : {"main", "left", "right", "bottom", "floating"}) {
+        const auto colors = workspaceRegionColors(QString::fromLatin1(region), mode);
+        const auto scope = QStringLiteral("QWidget[workspaceToolRegion=%1]").arg(QString::fromLatin1(region));
+        // Only ordinary tool hosts opt in. Document canvases and input controls
+        // keep their own surfaces; late-created views inherit this host rule.
+        result += QStringLiteral(
+            "%1 { background: %2; }"
+            "%1 QStackedWidget { background: transparent; border: 0; }"
+            "%1 QAbstractItemView, %1 QPlainTextEdit[workspaceToolSurface=true] {"
+            " background: %2; alternate-background-color: %2; border: 0; outline: 0; }"
+            "%1 QAbstractItemView::item { background: transparent; }"
+            "%1 QAbstractItemView::item:hover { background: %3; }"
+            "%1 QAbstractItemView::item:selected { background: %4; color: %5; }"
+            "%1 QHeaderView::section { background: %2; border: 0; }")
+            .arg(scope, colors.surface.name(), colors.hover.name(), colors.selectedFocused.name(), theme(mode).textPrimary.name());
+    }
+    return result;
 }
 
 QString InsightVisualStyle::panelStyleSheet(const QString& objectName)

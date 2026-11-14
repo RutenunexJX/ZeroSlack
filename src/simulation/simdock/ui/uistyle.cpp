@@ -260,7 +260,8 @@ void applyTheme(QWidget* root)
         root->setPalette(p);
         root->setAttribute(Qt::WA_StyledBackground);
         root->setStyleSheet(QStringLiteral("QWidget#SimDockWorkbench { background: %1; } QStatusBar { background: %2; }")
-            .arg(t.app.name(), t.panel.name()) + sheet);
+            .arg(t.app.name(), t.panel.name()) + sheet
+            + InsightVisualStyle::workspaceToolStyleSheet(ApplicationThemeManager::instance().mode()));
     }
     
 }

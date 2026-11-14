@@ -1107,6 +1107,7 @@ QPlainTextEdit* UiControls::readOnlyText(QWidget* parent) {
     text = new QPlainTextEdit(parent);
 #endif
     text->setReadOnly(true);
+    text->setProperty("workspaceToolSurface", true);
     enableSmoothScrolling(text);
     return text;
 }

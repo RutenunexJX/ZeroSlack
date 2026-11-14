@@ -81,10 +81,10 @@ QVariant DesignHierarchyModel::data(const QModelIndex& index, int role) const
     case Qt::DecorationRole: {
         if (value.category) return RoundedIcons::icon(RoundedIcons::Folder);
         if (node.id.isEmpty()) {
-            const auto kind = value.parentId == "section/Headers" ? RoundedIcons::HeaderFile
-                : value.parentId == "section/Simulation" ? RoundedIcons::SimulationFile
-                : value.parentId == "section/Unreferenced" ? RoundedIcons::UnreferencedFile
-                : value.parentId == "section/Sources" ? RoundedIcons::SourceFile : RoundedIcons::File;
+            if(value.file.isEmpty())return QIcon();
+            const auto role=SymbolTaxonomy::sourceRoleForFileName(value.file);
+            const auto kind = SymbolTaxonomy::isHeaderSourceRole(role) ? RoundedIcons::HeaderFile
+                : role==SymbolTaxonomy::SourceRole::DesignSource ? RoundedIcons::SourceFile : RoundedIcons::File;
             return RoundedIcons::icon(kind);
         }
         return RoundedIcons::icon(value.source ? RoundedIcons::SourceTop

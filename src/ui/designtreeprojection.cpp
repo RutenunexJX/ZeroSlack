@@ -8,7 +8,7 @@
 #include <algorithm>
 
 namespace {
-QString key(const QString& file) { return QDir::cleanPath(QDir::fromNativeSeparators(file)).toCaseFolded(); }
+QString key(const QString& file) { return file.isEmpty()?QString():QDir::cleanPath(QDir::fromNativeSeparators(file)).toCaseFolded(); }
 DesignTreeRow instance(const DesignHierarchyNode& node, const QString& id, const QString& parent) {
     DesignTreeRow row;
     row.id=id; row.parentId=parent; row.name=node.instanceName; row.type=node.moduleType;
@@ -49,6 +49,19 @@ std::shared_ptr<DesignTreeProjection> DesignTreeProjection::build(const DesignHi
     }
     for(const auto& file:project.systemVerilogFiles)
         if(!known.contains(key(file)))uncertain.insert(key(file));
+    QSet<QString> packages;
+    for(const auto& fact:facts)packages.unite(fact.packageDeclarations);
+    for(auto it=facts.cbegin();it!=facts.cend();++it) {
+        if(!(it->importedPackages-packages).isEmpty())uncertain.insert(key(it.key()));
+        const auto includes=dependencies.dependenciesOf({it.key()},SemanticDependencyKind::Include,false);
+        for(const auto& include:it->includeNames) {
+            const auto suffix=key(include);
+            const bool resolved=std::any_of(includes.cbegin(),includes.cend(),[&](const QString& file) {
+                return key(file)==suffix || key(file).endsWith('/'+suffix);
+            });
+            if(!resolved)uncertain.insert(key(it.key()));
+        }
+    }
     const auto locate=[&](const QPair<QString,QString>& target) {
         int found=-1;
         for(int i=0;i<report.nodes.size();++i) {
@@ -67,7 +80,7 @@ std::shared_ptr<DesignTreeProjection> DesignTreeProjection::build(const DesignHi
         if(file.isEmpty() || identity.isEmpty() || identitiesByFile[file].contains(identity))continue;
         identitiesByFile[file].insert(identity);definitionsByFile[file].append(node);
     }
-    const auto addFile=[&](const QString& file,const QString& section,const QString& status) {
+    const auto addFile=[&](const QString& file,const QString& section,const QString& status,const QSet<QString>& covered) {
         const QString id=section+"/file/"+key(file);
         if(result->nodeById.contains(id))return;
         DesignTreeRow row; row.id=id;row.parentId=section;row.file=file;
@@ -76,6 +89,7 @@ std::shared_ptr<DesignTreeProjection> DesignTreeProjection::build(const DesignHi
         // Definitions remain selectable even in dependency and unused files.
         for(const auto& node:definitionsByFile.value(key(file))) {
             const auto identity=node.definitionId.isEmpty()?node.moduleType:node.definitionId;
+            if(covered.contains(identity))continue;
             auto entry=instance(node,id+"/definition/"+identity,id);
             entry.name=node.moduleType;entry.type.clear();result->append(entry);
         }
@@ -83,7 +97,10 @@ std::shared_ptr<DesignTreeProjection> DesignTreeProjection::build(const DesignHi
     const auto addContext=[&](const QString& section,const QPair<QString,QString>& target,bool src) {
         QList<int> roots;
         if(target.second.isEmpty()) {
-            if(src)for(int i=0;i<report.nodes.size();++i)if(report.nodes[i].parentId.isEmpty())roots.append(i);
+            DesignTreeRow state;state.id=section+"/state";state.parentId=section;
+            state.name=src?"No source top selected":"No simulation top selected";
+            state.status="Select a top to show its instance hierarchy; unclassified files remain in Reference pending";
+            result->append(state);
         } else {
             const int found=locate(target);
             if(found>=0) roots.append(found);
@@ -94,7 +111,7 @@ std::shared_ptr<DesignTreeProjection> DesignTreeProjection::build(const DesignHi
                 result->append(missing);
             }
         }
-        QSet<QString> files;
+        QSet<QString> files, representedFiles, representedDefinitions;
         for(int root:roots) {
             QList<QPair<int,QString>> pending{{root,section}};
             for(int i=0;i<pending.size();++i) {
@@ -106,28 +123,47 @@ std::shared_ptr<DesignTreeProjection> DesignTreeProjection::build(const DesignHi
                     row.source=src && !target.second.isEmpty();row.simulation=!src;
                 }
                 result->append(row);
-                if(!node.definitionFile.isEmpty())files.insert(node.definitionFile);
+                if(!node.definitionFile.isEmpty()) {
+                    files.insert(node.definitionFile);representedFiles.insert(key(node.definitionFile));shown.insert(key(node.definitionFile));
+                    representedDefinitions.insert(node.definitionId.isEmpty()?node.moduleType:node.definitionId);
+                }
                 for(int child:report.childrenById.value(node.id))pending.append({child,row.id});
             }
         }
         const auto required=dependencies.dependenciesOf(files.values());
         for(const auto& file:required)files.insert(file);
-        for(const auto& file:files) {
+        auto orderedFiles=files.values();std::sort(orderedFiles.begin(),orderedFiles.end());
+        const auto supporting=section+"/supporting";
+        for(const auto& file:orderedFiles) {
             used.insert(key(file));
             if(project.headerSourceFiles().contains(file,Qt::CaseInsensitive))continue;
-            addFile(file,section,target.second.isEmpty()?"Definition browsing; no source top selected":"Required by selected top");
+            const auto definitions=definitionsByFile.value(key(file));
+            const bool additionalDefinition=std::any_of(definitions.cbegin(),definitions.cend(),[&](const DesignHierarchyNode& node) {
+                return !representedDefinitions.contains(node.definitionId.isEmpty()?node.moduleType:node.definitionId);
+            });
+            if(representedFiles.contains(key(file)) && !additionalDefinition)continue;
+            if(!result->nodeById.contains(supporting)) {
+                DesignTreeRow group;group.id=supporting;group.parentId=section;group.name="Supporting files";group.category=true;
+                group.status="Compile dependencies and definitions not represented by an instance";result->append(group);
+            }
+            addFile(file,supporting,"Required by selected top; file/definition browsing",representedDefinitions);
         }
     };
     addContext("section/Sources",source,true);addContext("section/Simulation",simulation,false);
     const bool proven=project.sourceDiscoveryComplete && uncertain.isEmpty()
         && !source.second.isEmpty() && locate(source)>=0 && !simulation.second.isEmpty() && locate(simulation)>=0
         && report.unresolvedModules.isEmpty();
-    for(const auto& file:project.headerSourceFiles())addFile(file,"section/Headers",used.contains(key(file))?"Included by selected top":"Workspace header");
+    for(const auto& file:project.headerSourceFiles())addFile(file,"section/Headers",used.contains(key(file))?"Included by selected top"
+        :proven?"Not referenced by either selected top":"Reference status pending",{});
     for(const auto& file:project.systemVerilogFiles) {
         if(cancelled && cancelled())return result;
         if(shown.contains(key(file)))continue;
-        addFile(file,proven?"section/Unreferenced":"section/Sources",
-            proven?"Not referenced by either selected top or its dependencies":"Reference status pending; workspace analysis or top selection is incomplete");
+        if(!proven && !result->nodeById.contains("section/Pending")) {
+            DesignTreeRow group;group.id="section/Pending";group.name="Reference pending";group.category=true;
+            group.status="Workspace analysis, dependency resolution or top selection is incomplete";result->append(group);
+        }
+        addFile(file,proven?"section/Unreferenced":"section/Pending",
+            proven?"Not referenced by either selected top or its dependencies":"Reference status pending; workspace analysis or top selection is incomplete",{});
     }
     QCryptographicHash fingerprint(QCryptographicHash::Sha256);
     for(const auto& row:result->nodes){fingerprint.addData(row.id.toUtf8());fingerprint.addData(row.parentId.toUtf8());}

@@ -89,6 +89,7 @@ void Workbench::buildUi()
     connect(clear, &QPushButton::clicked, m_controller, &WorkspaceSimulationController::clearLog);
     m_log = Ui::textView(logs); m_log->setObjectName(QStringLiteral("simulationLog"));
     m_log->setProperty("codeSurface", true); m_log->setNativeTextBehavior(true); m_log->setReadOnly(true);
+    m_log->setProperty("workspaceToolSurface", true);
     m_log->setFont(Ui::codeFont()); m_log->setPlaceholderText(QStringLiteral("Compiler, loader, and simulation output will appear here."));
     m_log->setToolTip(QStringLiteral("Double-click a source location to open it."));
     m_log->viewport()->installEventFilter(this);
