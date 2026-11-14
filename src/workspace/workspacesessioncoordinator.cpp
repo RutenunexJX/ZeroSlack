@@ -342,6 +342,12 @@ bool WorkspaceSessionCoordinator::restoreSession()
     }
 
     QStringList notes = uiResult.warnings;
+    for (const auto& tab : result.state.tabs) {
+        if (tab.kind == QStringLiteral("blocks") || QFileInfo(tab.filePath).suffix().compare(QStringLiteral("zblock"), Qt::CaseInsensitive) == 0) {
+            notes.append(QStringLiteral("unsupported .zblock tabs skipped; original files and recovery data preserved"));
+            break;
+        }
+    }
     if (restoredPending) notes.append(QStringLiteral("latest pending session; not yet persisted"));
     if (!scanRestored)
         notes.append(QStringLiteral("scan list skipped"));

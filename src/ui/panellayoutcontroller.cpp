@@ -76,10 +76,11 @@ QString panelLabel(const QString& panelId)
 QIcon panelIcon(const QString& panelId)
 {
     using namespace RoundedIcons;
-    if (panelId == QStringLiteral("problems")) return icon(Warning);
-    if (panelId == QStringLiteral("scopedSearch")) return icon(Search);
+    if (panelId == QStringLiteral("problems")) return icon(Problems);
+    if (panelId == QStringLiteral("scopedSearch")) return icon(WorkspaceSearch);
     if (panelId == QStringLiteral("activity")) return icon(Activity);
-    if (panelId == QStringLiteral("simulationLog") || panelId == QStringLiteral("simulationEvents")) return icon(Activity);
+    if (panelId == QStringLiteral("simulationLog")) return icon(RunLog);
+    if (panelId == QStringLiteral("simulationEvents")) return icon(SimulationEvents);
     if (panelId == QStringLiteral("hotspot")) return icon(HotspotGraph);
     if (panelId == QStringLiteral("rtlHighRiskEdit")) return icon(Change);
     if (panelId == QStringLiteral("connections")) return icon(Connections);

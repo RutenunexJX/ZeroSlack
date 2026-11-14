@@ -3,10 +3,32 @@
 #include "associatedblockdragcontroller.h"
 #include "documentblockmodel.h"
 #include "documentblockstore.h"
+#include "editorruntime.h"
+#include "editorblockhost.h"
+#include "editorblockcontent.h"
 #include "uicontrols.h"
 #include "roundedicons.h"
 #include <QTextDocument>
 #include <QDir>
+
+void TabManager::transferAssociatedBlockContent(SharedDocument* source,DocumentBlockModel* target,const QString& id) {
+    SharedDocument* destination=nullptr;
+    for(auto* document:sharedDocuments->documents())if(DocumentBlockModel::get(document->textDocument())==target){destination=document;break;}
+    if(!destination || !target->find(id))return;
+    EditorBlockContent* content=nullptr;
+    for(auto* page:associatedBlockPresentations())if(page->ownerDocument()==source && page->blockId()==id){content=page->takeContent();if(content)break;}
+    if(!content)for(auto* view:source->views())if((content=view->takeAssociatedBlockContent(id)))break;
+    if(!content)return;
+    content->rebind(target);
+    if(target->find(id)->detached){
+        if(auto* page=createAssociatedBlockPage(destination,id,nullptr))page->adoptContent(content);
+        else delete content;
+    }else{
+        MyCodeEditor* view=nullptr;for(auto* candidate:destination->views())if(!isAuxiliaryView(candidate)){view=candidate;break;}
+        if(!view)view=createView(destination,activeTabWidget());
+        if(view)view->adoptAssociatedBlockContent(id,content);else delete content;
+    }
+}
 
 QList<AssociatedBlockPage*> TabManager::associatedBlockPages() const {
     QList<AssociatedBlockPage*> result;
@@ -17,6 +39,37 @@ QList<AssociatedBlockPage*> TabManager::associatedBlockPages() const {
 }
 AssociatedBlockPage* TabManager::currentAssociatedBlock() const {
     auto* group=activeTabWidget(); return group ? qobject_cast<AssociatedBlockPage*>(group->currentWidget()) : nullptr;
+}
+QList<AssociatedBlockPage*> TabManager::associatedBlockPresentations() const {
+    auto result=associatedBlockPages();for(auto page:blockPresentations)if(page)result.append(page);return result;
+}
+bool TabManager::blockDragInProgress() const { return blockDragController && blockDragController->dragInProgress(); }
+EditorBlockContent* TabManager::takeBlockContent(SharedDocument* document,const QString& id) {
+    if(!document)return nullptr;
+    for(auto* page:associatedBlockPresentations())if(page->ownerDocument()==document && page->blockId()==id)
+        if(auto* content=page->takeContent())return content;
+    for(auto* editor:document->views())if(auto* content=editor->takeAssociatedBlockContent(id))return content;
+    return nullptr;
+}
+AssociatedBlockPage* TabManager::createBlockPresentation(SharedDocument* document,const QString& id,QWidget* parent) {
+    const auto* block=document ? DocumentBlockModel::get(document->textDocument())->find(id) : nullptr;
+    if(!block || block->detached || block->removedReference())return nullptr;
+    auto* page=new AssociatedBlockPage(document,id,parent,{},nullptr,takeBlockContent(document,id));
+    page->setProperty("expandedBlockPresentation",true);
+    blockPresentations.removeIf([](auto value){return value.isNull();});blockPresentations.append(page);
+    connectBlockPresentation(page);return page;
+}
+void TabManager::connectBlockPresentation(AssociatedBlockPage* page) {
+    connect(page,&AssociatedBlockPage::statusChanged,this,[this,page] { updateAssociatedBlockTitle(page); });
+    connect(page,&AssociatedBlockPage::saveRequested,this,[this,page](bool saveAs) { saveSharedDocument(page->ownerDocument(),saveAs); });
+    connect(page,&AssociatedBlockPage::clipboardRequested,this,[this,page](bool cut) {
+        if(blockDragController)blockDragController->copyBlock(page->ownerDocument(),page->blockId(),cut);
+    });
+    connect(page,&AssociatedBlockPage::sourceRequested,this,[this,page] {
+        auto* owner=page->ownerDocument();if(!owner)return;
+        for(auto* view:owner->views())if(!isAuxiliaryView(view)){splitController->activatePage(view);return;}
+        createView(owner,splitController->groupForPage(page));
+    });
 }
 AssociatedBlockPage* TabManager::openAssociatedBlock(SharedDocument* document, const QString& id, QTabWidget* group, const QString& viewId) {
     if (!document || !splitController || sharedDocuments->documentById(document->documentId()) != document) return nullptr;
@@ -42,7 +95,8 @@ AssociatedBlockPage* TabManager::createAssociatedBlockPage(SharedDocument* docum
         for (auto* view : owner->views()) if (!isAuxiliaryView(view)) { splitController->activatePage(view); return; }
         createView(owner,splitController->groupForPage(page));
     });
-    group->addTab(page,RoundedIcons::icon(RoundedIcons::File),page->title());
+    const auto* iconBlock = prepared ? prepared : DocumentBlockModel::get(document->textDocument())->find(id);
+    group->addTab(page,RoundedIcons::icon(iconBlock ? RoundedIcons::blockKind(iconBlock->type) : RoundedIcons::BlockText),page->title());
     updateAssociatedBlockTitle(page); group->setCurrentWidget(page); splitController->setActiveGroup(group);
     applyWorkspaceScope(); emit workspaceSessionStateChanged(); return page;
 }
@@ -94,6 +148,9 @@ AssociatedBlockPage* TabManager::detachAssociatedBlock(SharedDocument* document,
     if (!nextBlock.detached) {
         model->endTextSession(); auto next=nextBlock; next.detached=true;
         if (!model->update(next)) { closeAssociatedBlock(page,false,false); return nullptr; }
+        for(auto presentation:blockPresentations)if(presentation && presentation->ownerDocument()==document && presentation->blockId()==id)
+            if(auto* retained=presentation->takeContent()){page->adoptContent(retained);return page;}
+        for(auto* view:document->views())if(auto* retained=view->takeAssociatedBlockContent(id)){page->adoptContent(retained);break;}
     }
     return page;
 }
@@ -115,7 +172,7 @@ bool TabManager::closeAssociatedBlock(AssociatedBlockPage* page, bool confirm, b
     if (!page || !page->ownerDocument()) return false;
     QPointer<SharedDocument> document=page->ownerDocument();
     auto* group=splitController->groupForPage(page); if (!group) return false;
-    page->finishEditing();
+    if(!page->finishEditing())return false;
     if (confirm && document->viewCount()==0 && document->consumerCount()==1 && !confirmCloseDocument(document)) return false;
     if (!document) return false;
     ClosedTabState location; rememberClosedGroup(location,group); location.viewState.viewId=page->viewIdentity();
@@ -161,6 +218,9 @@ void TabManager::reconcileAssociatedBlocks(SharedDocument* document) {
         const auto* block=model->find(page->blockId());
         if (!block && document->viewCount()==0) continue; // Keep Undo reachable for the last visible consumer.
         if (document->viewCount()==0) createView(document,splitController->groupForPage(page));
+        if(block)for(auto* view:document->views()) {
+            view->adoptAssociatedBlockContent(page->blockId(),page->takeContent());break;
+        }
         closeAssociatedBlock(page,false,false);
     }
 }

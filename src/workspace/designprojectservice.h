@@ -9,6 +9,8 @@ class ZEROSLACK_API DesignProjectService final : public QObject {
 public:
     explicit DesignProjectService(QObject* parent = nullptr);
     QString setWorkspace(const QString& root);
+    QPair<QString, QString> sourceTop() const { return m_sourceTop; }
+    QString setSourceTop(const QString& file, const QString& module);
     QString workspace() const { return m_root; }
     QList<DesignHierarchyRoot> designRoots() const { return m_roots; }
     QString activeProjectId() const { return m_active; }
@@ -26,6 +28,7 @@ signals:
 private:
     QString commit(const QList<DesignHierarchyRoot>& roots, const QString& active, bool migrated);
     QString m_root, m_active;
+    QPair<QString, QString> m_sourceTop;
     QList<DesignHierarchyRoot> m_roots;
     bool m_explicitTopMigrated = false;
     simdock::WorkspaceStateFile m_store;

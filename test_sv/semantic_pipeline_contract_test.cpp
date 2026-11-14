@@ -76,6 +76,28 @@ void retainedInputs(const QString& root){
  ProjectSnapshot empty=b;empty.systemVerilogFiles.clear();empty.allFiles.clear();h.analyzer.clearSemanticIndex();
  expect("empty authoritative workspace clears symbols relationships diagnostics",h.run(empty)&&SemanticIndex::getInstance()->snapshot()->symbolRecordCount()==0&&SemanticIndex::getInstance()->snapshot()->relationshipCount()==0&&SemanticIndex::getInstance()->snapshot()->rawDiagnosticCount()==0);
 }
+void retainedRemovalGuards(const QString& root){
+ auto a=single(root+"/a","retained_a"),b=single(root+"/b","retained_b");
+ const QString outside=root+"/outside.sv",content="module outside_revisited; endmodule\n";
+ expect("retained removal fixture written",write(outside,content));
+ Harness h;
+ auto publishOutside=[&]{
+  h.committed=false;h.analyzer.analyzeStandaloneFileContentAsync(outside,content,1);
+  return waitFor([&]{return h.committed&&!h.analyzer.hasWorkspaceAnalysisInFlight();})&&symbol("outside_revisited");
+ };
+ expect("standalone publication precedes retained workspace",publishOutside());
+ expect("workspace A removes standalone symbols",h.run(a)&&!symbol("outside_revisited"));
+ const auto retained=h.analyzer.retainedWorkspaces.value(SemanticInputCapture::pathKey(a.workspaceRoot));
+ auto* facts=EffectiveValueService::getInstance();
+ expect("retained facts initially installable",retained&&facts->canInstallPreparedDocumentFacts(retained->facts));
+ h.analyzer.clearSemanticIndex();expect("workspace B commits after A",h.run(b));
+ h.analyzer.clearSemanticIndex();expect("standalone publication advances outside scope",publishOutside());
+ expect("workspace-only revision check does not cover retained removals",retained&&facts->isComputationCurrent(a.systemVerilogFiles,retained->analysisRevision));
+ expect("retained removal rejects newer outside publication",retained&&!facts->canInstallPreparedDocumentFacts(retained->facts));
+ bool committed=false;
+ expect("stale retained facts cannot run publication callback",retained&&!facts->installPreparedDocumentFacts(retained->facts,true,[&]{committed=true;return true;}).accepted&&!committed);
+ expect("A revisit rebuilds stale retained removals and commits",h.run(a)&&h.slang&&symbol("retained_a")&&!symbol("outside_revisited"));
+}
 void includesAndAdapters(const QString& root){
  ProjectSnapshot p;p.workspaceRoot=root;p.includeDirs={root+"/first",root+"/second"};p.systemVerilogFiles={root+"/a.sv",root+"/b.sv"};p.allFiles=p.systemVerilogFiles;
  QDir().mkpath(p.includeDirs.first());
@@ -301,6 +323,7 @@ int main(int argc,char**argv){
  concurrentSourceReplacement(temp.path()+"/concurrent");
  persistentCache(temp.path()+"/persistent");SemanticIndex::getInstance()->clearSemanticState();EffectiveValueService::getInstance()->clearPublishedFacts();
  retainedInputs(temp.path()+"/retained");SemanticIndex::getInstance()->clearSemanticState();EffectiveValueService::getInstance()->clearPublishedFacts();
+ retainedRemovalGuards(temp.path()+"/retained-removals");SemanticIndex::getInstance()->clearSemanticState();EffectiveValueService::getInstance()->clearPublishedFacts();
  includesAndAdapters(temp.path()+"/adapters");SemanticIndex::getInstance()->clearSemanticState();EffectiveValueService::getInstance()->clearPublishedFacts();
  rawDiagnostics(temp.path()+"/raw");SemanticIndex::getInstance()->clearSemanticState();EffectiveValueService::getInstance()->clearPublishedFacts();
  roleEvidenceTrivia(temp.path()+"/role-trivia");SemanticIndex::getInstance()->clearSemanticState();EffectiveValueService::getInstance()->clearPublishedFacts();

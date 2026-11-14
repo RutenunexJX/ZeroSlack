@@ -2,7 +2,8 @@
 
 #include "actionregistry.h"
 #include "editorhoverpopup.h"
-#include "editorradialmenu.h"
+#include "uicontrols.h"
+#include <QPointer>
 #include "editormodecontroller.h"
 #include "editorselection.h"
 #include "ghostannotationservice.h"
@@ -493,15 +494,20 @@ void EditorSourceNavigationUi::handleContextMenu(
     QContextMenuEvent* event,
     const EditorSourceContextProvider& contextProvider)
 {
-    std::unique_ptr<QMenu> menu =
-        std::make_unique<QMenu>(editor);
+    QPointer<MyCodeEditor> editorGuard(editor);
+    // The popup owns its lifetime even when an action closes the editor.
+    std::unique_ptr<QMenu> menu(UiControls::menu());
+    menu->setObjectName(QStringLiteral("editorContextMenu"));
+    QObject::connect(editor, &QObject::destroyed, menu.get(), &QMenu::close);
     const QTextCursor cursorAtPos = editor->cursorForPosition(event->pos());
     emit editor->sourceSymbolContextMenuRequested(
         menu.get(),
         contextProvider(sourceSymbolContextPositionForMenu(editor, cursorAtPos),
                         true));
+    if (!editorGuard) { event->accept(); return; }
     editor->addBlockAssociationMenu(menu.get());
-    EditorRadialMenu::exec(menu.get(), event->globalPos());
+    menu->exec(event->globalPos());
+    if (editorGuard) editorGuard->setFocus(Qt::PopupFocusReason);
     event->accept();
 }
 

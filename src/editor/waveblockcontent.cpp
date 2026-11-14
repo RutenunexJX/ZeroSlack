@@ -4,192 +4,212 @@
 #include "insightvisualstyle.h"
 #include <QLibrary>
 #include <QCoreApplication>
-#include <QApplication>
 #include <QFile>
 #include <QCryptographicHash>
 #include <QJsonDocument>
-#include <QJsonObject>
-#include <QJsonArray>
 #include <QVBoxLayout>
 #include <QLabel>
-#include <QTabWidget>
-#include <QDynamicPropertyChangeEvent>
 #include <QTimer>
-#include <QUuid>
+#include <QSettings>
+#include <QTextDocument>
 #include <QScopedValueRollback>
-
+#include <utility>
 namespace {
 struct Api {
     QLibrary ela,library;
-    using CreateEditor=int(*)(const char*,size_t,const char*,QWidget*,QWidget**,char*,size_t);
+    using Create=int(*)(const char*,size_t,const char*,QWidget*,QWidget**,char*,size_t);
     using Snapshot=int(*)(QWidget*,char*,size_t,size_t*,char*,size_t);
     using Update=int(*)(QWidget*,const char*,size_t,char*,size_t);
-    using CreatePreview=int(*)(QWidget*,QWidget**,char*,size_t);
-    CreateEditor create=nullptr; Snapshot snapshot=nullptr; Update update=nullptr,setPreview=nullptr; CreatePreview preview=nullptr;
+    using Action=int(*)(QWidget*,const char*,char*,size_t);
+    using Callback=void(*)(void*,const char*,size_t);
+    using Observe=int(*)(QWidget*,Callback,void*,char*,size_t);
+    using Preview=int(*)(QWidget*,QWidget**,char*,size_t);
+    Create create=nullptr; Snapshot project=nullptr,state=nullptr;
+    Update configure=nullptr,sync=nullptr,setPreview=nullptr;
+    Action action=nullptr; Observe observe=nullptr; Preview preview=nullptr;
     QString error;
     Api() {
         const auto root=QCoreApplication::applicationDirPath()+"/components/tickx/";
         const auto verify=[&](const QString& name,const QByteArray& hash) {
             QFile file(root+name);
-            if (!file.open(QIODevice::ReadOnly) || QCryptographicHash::hash(file.readAll(),QCryptographicHash::Sha256).toHex()!=hash) {
-                error="Tickx 0.15.10 component is missing or changed: "+name; return false;
+            if(!file.open(QIODevice::ReadOnly) || QCryptographicHash::hash(file.readAll(),QCryptographicHash::Sha256).toHex()!=hash) {
+                error="The frozen Tickx component is missing or changed: "+name;return false;
             }
             return true;
         };
-        if (!verify("WaveWorkbenchEla.dll","61e96709023acb4710a1edbcef26b832e1a35c7079bb0d5414b5337d89723207")
-            || !verify("wavewidgets.dll","92095197ea2e5512e6a7bb31d6df36c4a2194b84a340ad119fdccd2b4ab75d52")) return;
-        ela.setFileName(root+"WaveWorkbenchEla.dll"); library.setFileName(root+"wavewidgets.dll");
-        ela.setLoadHints(QLibrary::PreventUnloadHint); library.setLoadHints(QLibrary::PreventUnloadHint);
-        if (!ela.load() || !library.load()) { error=ela.isLoaded() ? library.errorString() : ela.errorString(); return; }
+        if(!verify("wavewidgets.dll","e89d2845a7c132380a1dc9a5aa23c6ef303c8d283ec4c697da613ef096031057")
+            || !verify("WaveWorkbenchEla.dll","61e96709023acb4710a1edbcef26b832e1a35c7079bb0d5414b5337d89723207")
+            || !verify("LICENSE","a310654192acd627fd9ffae6d3692e3ec66782f298b3f9b7f6c61c4c61e1fd7e")
+            || !verify("NOTICE","36729df452801962a892fd8ad48b83763531a26b81134a684ae0375abd326fe6")
+            || !verify("THIRD-PARTY-NOTICES.md","618eaf788fca27b5e25a5b5af1b247c50edac5073afa9da418c8f5033e9e95fc")
+            || !verify("build-info.json","54f8a8149666c5ab093c01d085bfd6dcdbc29f4923cb3a99e26a5f0218feaa88"))return;
+        ela.setFileName(root+"WaveWorkbenchEla.dll");library.setFileName(root+"wavewidgets.dll");
+        ela.setLoadHints(QLibrary::PreventUnloadHint);library.setLoadHints(QLibrary::PreventUnloadHint);
+        if(!ela.load() || !library.load()){error=ela.isLoaded()?library.errorString():ela.errorString();return;}
         const auto abi=reinterpret_cast<int(*)()>(library.resolve("wavewidgets_abi_version"));
-        if (!abi || abi()!=1) { error="Unsupported Tickx widget ABI."; return; }
-        create=reinterpret_cast<CreateEditor>(library.resolve("wavewidgets_create_stimulus_editor_v1"));
-        snapshot=reinterpret_cast<Snapshot>(library.resolve("wavewidgets_stimulus_project_v1"));
-        update=reinterpret_cast<Update>(library.resolve("wavewidgets_update_stimulus_editor_v1"));
-        preview=reinterpret_cast<CreatePreview>(library.resolve("wavewidgets_create_waveform_view_v1"));
+        if(!abi || abi()!=1){error="Unsupported Tickx widget ABI.";return;}
+        create=reinterpret_cast<Create>(library.resolve("wavewidgets_create_wave_editor_v1"));
+        project=reinterpret_cast<Snapshot>(library.resolve("wavewidgets_wave_editor_project_v1"));
+        state=reinterpret_cast<Snapshot>(library.resolve("wavewidgets_wave_editor_state_v1"));
+        configure=reinterpret_cast<Update>(library.resolve("wavewidgets_configure_wave_editor_v1"));
+        sync=reinterpret_cast<Update>(library.resolve("wavewidgets_sync_wave_editor_v1"));
+        action=reinterpret_cast<Action>(library.resolve("wavewidgets_wave_editor_action_v1"));
+        observe=reinterpret_cast<Observe>(library.resolve("wavewidgets_set_wave_editor_callback_v1"));
+        preview=reinterpret_cast<Preview>(library.resolve("wavewidgets_create_waveform_view_v1"));
         setPreview=reinterpret_cast<Update>(library.resolve("wavewidgets_set_waveform_preview_v1"));
-        if (!create || !snapshot || !update || !preview || !setPreview) error="Tickx memory editor or preview contract is unavailable.";
+        if(!create || !project || !state || !configure || !sync || !action || !observe || !preview || !setPreview)
+            error="The complete Tickx wave-editor/v1 contract is unavailable.";
     }
 };
-Api& api() { static Api value; return value; }
-QByteArray normalized(const QByteArray& data) { return QJsonDocument::fromJson(data).toJson(QJsonDocument::Compact); }
-bool isPreview(const QByteArray& data) { return QJsonDocument::fromJson(data).object().value("contract")=="wave-preview/v1"; }
-QByteArray snapshotBytes(QWidget* editor,QString* error) {
-    size_t size=0; char message[2048]{};
-    if(api().snapshot(editor,nullptr,0,&size,message,sizeof(message))!=0 || !size || size>8*1024*1024) { if(error)*error=QString::fromUtf8(message); return {}; }
-    QByteArray bytes(qsizetype(size),Qt::Uninitialized);
-    if(api().snapshot(editor,bytes.data(),size,&size,message,sizeof(message))!=0) { if(error)*error=QString::fromUtf8(message); return {}; }
-    bytes.chop(1); return normalized(bytes);
-}
-QByteArray projectPreview(const QByteArray& payload,QString* error) {
-    const auto project=QJsonDocument::fromJson(payload).object();
-    const auto scenario=project.value("scenarios").toArray().first().toObject();
-    const auto duration=scenario.value("durationTick").toString().toLongLong();
-    const auto tick=project.value("timebase").toObject().value("picosecondsPerTick").toString().toLongLong();
-    if (duration<=0 || tick<=0 || duration>9007199254740991LL/tick) { *error="This project time range cannot be represented by the preview contract."; return {}; }
-    QJsonArray lanes;
-    for (const auto& value:scenario.value("lanes").toArray()) {
-        const auto lane=value.toObject(); if (!lane.value("visible").toBool(true)) continue;
-        QJsonArray segments;
-        for (const auto& piece:lane.value("segments").toArray()) {
-            const auto segment=piece.toObject();
-            segments.append(QJsonObject{{"start",double(segment.value("startTick").toString().toLongLong()*tick)},
-                {"end",double(segment.value("endTick").toString().toLongLong()*tick)},{"value",segment.value("value")}});
-        }
-        if (lane.value("kind")=="clock" && segments.isEmpty()) {
-            QJsonObject clock;
-            for (const auto& domain:project.value("clockDomains").toArray()) if (domain.toObject().value("id")==lane.value("clockDomainId")) clock=domain.toObject();
-            const auto period=clock.value("periodTick").toString().toLongLong();
-            const auto phase=clock.value("phaseTick").toString().toLongLong();
-            const auto numerator=clock.value("dutyNumerator").toString().toLongLong(), denominator=clock.value("dutyDenominator").toString().toLongLong();
-            if (period<=0 || denominator<=0 || numerator<=0 || numerator>=denominator || duration/period>20000) { *error="The clock exceeds the bounded preview range. The original project remains intact."; return {}; }
-            const qint64 high=qMax<qint64>(1,qint64((static_cast<long double>(period)*numerator)/denominator));
-            for (qint64 start=0;start<duration;) {
-                auto offset=(start-phase)%period; if(offset<0) offset+=period;
-                const bool active=offset<high;
-                const auto end=start+qMin(duration-start,active ? high-offset : period-offset);
-                segments.append(QJsonObject{{"start",double(start*tick)},{"end",double(end*tick)},{"value",active ? "1" : "0"}}); start=end;
-            }
-        }
-        lanes.append(QJsonObject{{"id",lane.value("id")},{"name",lane.value("name")},{"width",lane.value("width")},
-            {"kind",lane.value("kind")=="clock" ? "clock" : lane.value("width").toInt(1)>1 ? "bus" : "bit"},
-            {"provenance","tickx-project"},{"segments",segments}});
+Api& api(){static Api value;return value;}
+QByteArray normalized(const QByteArray& data){return QJsonDocument::fromJson(data).toJson(QJsonDocument::Compact);}
+bool isPreview(const QByteArray& data){return QJsonDocument::fromJson(data).object().value("contract")=="wave-preview/v1";}
+QByteArray snapshot(QWidget* widget,Api::Snapshot read,QString* error=nullptr) {
+    size_t size=0;char message[2048]{};
+    if(read(widget,nullptr,0,&size,message,sizeof(message))!=0 || size<2 || size>8*1024*1024) {
+        if(error)*error=*message?QString::fromUtf8(message):QStringLiteral("Invalid Tickx snapshot size.");return {};
     }
-    return QJsonDocument(QJsonObject{{"contract","wave-preview/v1"},{"generation",1},{"mode","symbolic"},
-        {"timebase",QJsonObject{{"unit","ps"},{"start",0},{"end",double(duration*tick)}}},{"lanes",lanes}}).toJson(QJsonDocument::Compact);
+    QByteArray bytes(qsizetype(size),Qt::Uninitialized);
+    if(read(widget,bytes.data(),size,&size,message,sizeof(message))!=0){if(error)*error=QString::fromUtf8(message);return {};}
+    bytes.chop(1);return normalized(bytes);
 }
 }
 bool WaveBlockContent::validate(const QByteArray& data,QString* error) {
-    auto& runtime=api(); if (!runtime.error.isEmpty()) { if(error)*error=runtime.error; return false; }
-    if (data.isEmpty() || data.size()>8*1024*1024 || !QJsonDocument::fromJson(data).isObject()) { if(error)*error="Invalid or oversized Tickx JSON."; return false; }
-    QWidget parent; QWidget* child=nullptr; char message[2048]{};
-    const bool preview=isPreview(data);
-    const int code=preview ? runtime.preview(&parent,&child,message,sizeof(message)) : runtime.create(data.constData(),size_t(data.size()),qVersion(),&parent,&child,message,sizeof(message));
-    const bool ok=code==0 && child && (!preview || runtime.setPreview(child,data.constData(),size_t(data.size()),message,sizeof(message))==0);
-    if (!ok && error) *error=QString::fromUtf8(message);
-    return ok;
+    auto& runtime=api();if(!runtime.error.isEmpty()){if(error)*error=runtime.error;return false;}
+    if(data.isEmpty() || data.size()>8*1024*1024 || !QJsonDocument::fromJson(data).isObject()) {
+        if(error)*error="Invalid or oversized Tickx JSON.";return false;
+    }
+    QWidget parent;QWidget* child=nullptr;char message[2048]{};const bool legacy=isPreview(data);
+    const int code=legacy?runtime.preview(&parent,&child,message,sizeof(message))
+        :runtime.create(data.constData(),size_t(data.size()),qVersion(),&parent,&child,message,sizeof(message));
+    const bool ok=code==0 && child && (legacy ? runtime.setPreview(child,data.constData(),size_t(data.size()),message,sizeof(message))==0
+        : child->property("wavewidgets.capabilities").toStringList().contains("wave-style/v1"));
+    if(!ok && error)*error=QString::fromUtf8(message);return ok;
 }
 QString WaveBlockContent::initialProject() {
-    const auto identity=QUuid::createUuid().toString(QUuid::WithoutBraces);
-    return QString::fromUtf8(QJsonDocument(QJsonObject{{"schemaVersion",1},{"projectId",identity},{"name","Wave"},
-        {"timebase",QJsonObject{{"picosecondsPerTick","1000"}}},{"clockDomains",QJsonArray{}},
-        {"scenarios",QJsonArray{QJsonObject{{"id","scenario"},{"name","Wave"},{"durationTick","100"},
-            {"lanes",QJsonArray{QJsonObject{{"id","signal"},{"name","signal"},{"kind","bit"},{"width",1},
-                {"segments",QJsonArray{QJsonObject{{"id","value"},{"startTick","0"},{"endTick","100"},{"value","0"}}}}}}},
-            {"events",QJsonArray{}},{"relations",QJsonArray{}},{"markers",QJsonArray{}}}}},
-        {"importedTraces",QJsonArray{}},{"linkedResources",QJsonArray{}},{"exportSettings",QJsonObject{}}}).toJson(QJsonDocument::Compact));
+    if(!api().error.isEmpty())return {};
+    QWidget parent;QWidget* child=nullptr;char message[2048]{};
+    if(api().create(nullptr,0,qVersion(),&parent,&child,message,sizeof(message))!=0 || !child
+        || !child->property("wavewidgets.capabilities").toStringList().contains("wave-style/v1"))return {};
+    return QString::fromUtf8(snapshot(child,api().project));
 }
 WaveBlockContent::WaveBlockContent(DocumentBlockModel* value,const QString& blockId,QWidget* parent)
-    : QWidget(parent),model(value),id(blockId) {
-    setObjectName("waveBlockContent"); auto* layout=new QVBoxLayout(this); layout->setContentsMargins(0,0,0,0);
-    tabs=UiControls::tabWidget(this); tabs->setObjectName("waveBlockTabs"); layout->addWidget(tabs,1);
-    status=UiControls::label(this); status->setWordWrap(true); layout->addWidget(status); status->hide();
-    connect(model,&DocumentBlockModel::contentsFlushRequested,this,[this](QString* error) { if (error->isEmpty()) flush(error); });
-    connect(tabs,&QTabWidget::currentChanged,this,[this](int) { if (editor && tabs->currentWidget()==preview) { QString issue; flush(&issue); refreshPreview(accepted.toUtf8()); } });
+    :QWidget(parent),model(value),id(blockId) {
+    setObjectName("waveBlockContent");auto* row=new QVBoxLayout(this);row->setContentsMargins(0,0,0,0);row->setSpacing(2);
+    status=UiControls::label(this);status->setWordWrap(true);row->addWidget(status);status->hide();
+    savedView=QJsonDocument::fromJson(QSettings().value(viewKey()).toByteArray()).object();
+    bindModel();
 }
-void WaveBlockContent::present(const QString& payload,bool locked) {
-    if (updating) return;
-    QScopedValueRollback<bool> guard(updating,true); readOnly=locked;
-    const auto bytes=normalized(payload.toUtf8()); auto& runtime=api();
-    if (!runtime.error.isEmpty()) { status->setText(runtime.error); status->show(); return; }
-    char error[2048]{};
-    if (accepted.toUtf8()!=bytes) {
-        QWidget* replacement=nullptr;
-        if (!isPreview(bytes)) {
-            if (runtime.create(bytes.constData(),size_t(bytes.size()),qVersion(),this,&replacement,error,sizeof(error))!=0) { status->setText(QString::fromUtf8(error)); status->show(); return; }
-            if (replacement->property("wavewidgets.contract").toString()!="wave-workbench.stimulus-editor/v1") { delete replacement; status->setText("Unexpected Tickx editor contract."); status->show(); return; }
-        }
-        const bool restoreFocus=editor && (editor->hasFocus() || editor->isAncestorOf(QApplication::focusWidget()));
-        const bool editingTab=!preview || tabs->currentWidget()==editor;
-        // The public timing-update API creates an undo command. A host history
-        // restore must instead establish a new native history baseline.
-        delete editor; editor=replacement;
-        if (editor) { tabs->insertTab(0,editor,"Edit"); editor->installEventFilter(this); }
-        if (!preview) {
-            if (runtime.preview(this,&preview,error,sizeof(error))!=0) { status->setText(QString::fromUtf8(error)); status->show(); return; }
-            tabs->addTab(preview,"Preview"); previewGeneration=0;
-        }
-        accepted=QString::fromUtf8(bytes);
-        tabs->setCurrentWidget(editingTab && editor ? editor : preview);
-        if (editor) nativeBaseline=QString::fromUtf8(snapshotBytes(editor,nullptr));
-        refreshPreview(bytes);
-        if (restoreFocus) focusContent();
-    }
-    if (editor) {
-        editor->setEnabled(!readOnly); tabs->setTabEnabled(tabs->indexOf(editor),!readOnly);
-        if (readOnly) tabs->setCurrentWidget(preview);
-    }
-    if (preview) preview->setProperty("themeName",InsightVisualStyle::theme().textPrimary.lightness()>InsightVisualStyle::theme().panelBackground.lightness() ? "dark" : "light");
+void WaveBlockContent::rebind(DocumentBlockModel* value){
+    if(!value || value==model || !value->find(id))return;
+    saveView();if(model)disconnect(model,nullptr,this,nullptr);
+    model=value;bindModel();updateState();updateHistory();saveView();
 }
-void WaveBlockContent::refreshPreview(const QByteArray& payload) {
-    if (!preview) return;
-    QString issue; auto bytes=isPreview(payload) ? payload : projectPreview(payload,&issue);
-    if (!bytes.isEmpty()) {
-        auto render=QJsonDocument::fromJson(bytes).object(); render["generation"]=double(++previewGeneration);
-        bytes=QJsonDocument(render).toJson(QJsonDocument::Compact);
+void WaveBlockContent::bindModel(){
+    connect(model,&DocumentBlockModel::contentsFlushRequested,this,[this](QString* error){if(error->isEmpty())flush(error);});
+    connect(model,&DocumentBlockModel::changed,this,[this]{
+        if(!publishing && model)if(const auto* block=model->find(id))present(block->text,readOnly,editing);
+    });
+    connect(model,&DocumentBlockModel::historyChanged,this,[this]{if(!updating && !publishing)updateHistory();});
+}
+WaveBlockContent::~WaveBlockContent(){
+    if(editor){char message[256]{};api().observe(editor,nullptr,nullptr,message,sizeof(message));}
+    saveView();
+}
+QString WaveBlockContent::viewKey() const{return "WaveBlockViews/"+(model?model->documentId():QString())+"/"+id;}
+void WaveBlockContent::saveView(){if(model && !savedView.isEmpty())QSettings().setValue(viewKey(),QJsonDocument(savedView).toJson(QJsonDocument::Compact));}
+bool WaveBlockContent::fail(const QString& message,QString* error){
+    const auto text=message.isEmpty()?QStringLiteral("Tickx could not apply this operation."):message;
+    if(error)*error=text;status->setText(text);status->show();return false;
+}
+bool WaveBlockContent::present(const QString& payload,bool locked,bool editMode) {
+    if(updating || publishing)return true;
+    QScopedValueRollback<bool> guard(updating,true);auto& runtime=api();
+    if(!runtime.error.isEmpty())return fail(runtime.error);
+    const auto bytes=normalized(payload.toUtf8());char message[2048]{};
+    if(isPreview(bytes)) {
+        if(editMode)return fail("Legacy Wave previews are read-only.");
+        if(editor)return fail("A project cannot be replaced by a legacy preview in place.");
+        if(!preview){if(runtime.preview(this,&preview,message,sizeof(message))!=0)return fail(QString::fromUtf8(message));
+            static_cast<QVBoxLayout*>(layout())->insertWidget(0,preview,1);}
+        if(accepted.toUtf8()!=bytes && runtime.setPreview(preview,bytes.constData(),size_t(bytes.size()),message,sizeof(message))!=0)
+            return fail(QString::fromUtf8(message));
+        accepted=QString::fromUtf8(bytes);readOnly=locked;editing=false;status->hide();return true;
     }
-    char error[2048]{};
-    if (!bytes.isEmpty() && api().setPreview(preview,bytes.constData(),size_t(bytes.size()),error,sizeof(error))!=0) issue=QString::fromUtf8(error);
-    status->setText(issue); status->setVisible(!issue.isEmpty());
+    if(preview)return fail("Legacy preview data is read-only.");
+    const bool created=!editor;
+    if(created){
+        if(runtime.create(bytes.constData(),size_t(bytes.size()),qVersion(),this,&editor,message,sizeof(message))!=0 || !editor)
+            return fail(QString::fromUtf8(message));
+        if(editor->property("wavewidgets.contract").toString()!="wave-workbench.wave-editor/v1"
+            || !editor->property("wavewidgets.capabilities").toStringList().contains("wave-style/v1")){
+            delete editor;editor=nullptr;return fail("The required Tickx editor and wave-style/v1 capability are unavailable.");}
+        static_cast<QVBoxLayout*>(layout())->insertWidget(0,editor,1);
+    } else if(accepted.toUtf8()!=bytes && runtime.sync(editor,bytes.constData(),size_t(bytes.size()),message,sizeof(message))!=0)
+        return fail(QString::fromUtf8(message));
+    const auto& theme=InsightVisualStyle::theme();
+    QJsonObject options{{"mode",editMode?"edit":"preview"},{"readOnly",locked},{"historyOwner","host"},
+        {"canUndo",model && model->canUndo()},{"canRedo",model && model->canRedo()},
+        {"theme",theme.textPrimary.lightness()>theme.panelBackground.lightness()?"dark":"light"}};
+    if(created && !savedView.isEmpty())options["view"]=savedView;
+    const auto config=QJsonDocument(options).toJson(QJsonDocument::Compact);
+    if(runtime.configure(editor,config.constData(),size_t(config.size()),message,sizeof(message))!=0){if(created){delete editor;editor=nullptr;}return fail(QString::fromUtf8(message));}
+    if(created && runtime.observe(editor,&WaveBlockContent::callback,this,message,sizeof(message))!=0){delete editor;editor=nullptr;return fail(QString::fromUtf8(message));}
+    accepted=QString::fromUtf8(bytes);readOnly=locked;editing=editMode;status->hide();updateState();return true;
+}
+void WaveBlockContent::callback(void* context,const char* json,size_t size) {
+    auto* self=static_cast<WaveBlockContent*>(context);
+    const auto event=QJsonDocument::fromJson(QByteArray(json,qsizetype(size))).object().value("event").toString();
+    if(event=="changed") {
+        QString issue;const auto bytes=snapshot(self->editor,api().project,&issue);
+        if(bytes.isEmpty()){QTimer::singleShot(0,self,[self,issue]{self->fail(issue);});return;}
+        self->pendingProjects.append(bytes);
+        if(!self->scheduled){self->scheduled=true;QTimer::singleShot(0,self,[self]{self->scheduled=false;self->publishPending();});}
+    } else if(event=="undoRequested" || event=="redoRequested") {
+        QTimer::singleShot(0,self,[self,redo=event=="redoRequested"]{self->replay(redo);});
+    } else if(event=="viewChanged" || event=="preferredHeightChanged") {
+        QTimer::singleShot(0,self,[self]{self->updateState();});
+    }
+}
+void WaveBlockContent::publishProject(const QByteArray& bytes) {
+    if(!model || !model->find(id) || bytes.isEmpty())return;
+    accepted=QString::fromUtf8(bytes);
+    if(normalized(model->find(id)->text.toUtf8())==bytes)return;
+    QScopedValueRollback<bool> guard(publishing,true);
+    model->endTextSession();model->editText(id,accepted);model->endTextSession();
+}
+void WaveBlockContent::publishPending(){
+    const auto values=std::exchange(pendingProjects,{});
+    for(const auto& bytes:values)publishProject(bytes);
+    updateState();updateHistory();
 }
 bool WaveBlockContent::flush(QString* error) {
-    if (!editor || updating || readOnly || !model) return true;
-    QScopedValueRollback<bool> guard(updating,true);
-    const auto bytes=snapshotBytes(editor,error); if(bytes.isEmpty()) return false;
-    if (bytes!=nativeBaseline.toUtf8()) { nativeBaseline=accepted=QString::fromUtf8(bytes); model->editText(id,accepted); }
-    return true;
+    if(!editor || updating || publishing || !model)return true;
+    char message[2048]{};
+    if(api().action(editor,"commit",message,sizeof(message))!=0)return fail(QString::fromUtf8(message),error);
+    const auto bytes=snapshot(editor,api().project,error);if(bytes.isEmpty())return fail(error?*error:QString(),error);
+    publishPending();publishProject(bytes);updateState();updateHistory();saveView();status->hide();return true;
 }
-bool WaveBlockContent::eventFilter(QObject* object,QEvent* event) {
-    if (object==editor && event->type()==QEvent::DynamicPropertyChange
-        && static_cast<QDynamicPropertyChangeEvent*>(event)->propertyName()=="wavewidgets.stateRevision") edited();
-    return false;
+void WaveBlockContent::updateState(){
+    if(!editor)return;
+    const auto state=QJsonDocument::fromJson(snapshot(editor,api().state)).object();
+    if(state.isEmpty())return;savedView=state.value("view").toObject();
+    if(model)model->setPresentationHeight(id,qBound(160,state.value("preferredHeight").toInt(240),540));
 }
-void WaveBlockContent::edited() {
-    if (updating) return;
-    QString error; if (!flush(&error)) { status->setText(error); status->show(); }
+void WaveBlockContent::updateHistory(){
+    if(!editor || !model || updating)return;
+    const auto config=QJsonDocument(QJsonObject{{"canUndo",model->canUndo()},{"canRedo",model->canRedo()}}).toJson(QJsonDocument::Compact);
+    char message[2048]{};if(api().configure(editor,config.constData(),size_t(config.size()),message,sizeof(message))!=0)fail(QString::fromUtf8(message));
 }
-void WaveBlockContent::focusContent() {
-    auto* view=tabs->currentWidget(); if (!view) return;
-    auto* canvas=view==editor ? editor->findChild<QWidget*>("stimulusCanvas") : view;
-    if (canvas) canvas->setFocus(Qt::OtherFocusReason);
+void WaveBlockContent::replay(bool redo){
+    QString issue;if(readOnly || !model || !flush(&issue))return;
+    if(!model->undoAssociation(redo))if(auto* document=qobject_cast<QTextDocument*>(model->parent())){
+        model->beginTextReplay();if(redo)document->redo();else document->undo();model->endTextReplay();
+    }
+    if(const auto* block=model->find(id))present(block->text,readOnly,editing);
+    updateHistory();
+}
+void WaveBlockContent::focusContent(){
+    auto* canvas=editor?editor->findChild<QWidget*>("waveEditorCanvas"):preview;
+    if(canvas)canvas->setFocus(Qt::OtherFocusReason);
 }

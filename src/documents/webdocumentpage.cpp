@@ -36,7 +36,7 @@ WebDocumentPage::WebDocumentPage(std::shared_ptr<WebDocumentSession> session, QW
     const QString profileRoot = qEnvironmentVariable("ZEROSLACK_PROFILE_ROOT");
     const QString profile = options.profileDirectory.isEmpty()
         ? (profileRoot.isEmpty() ? QStandardPaths::writableLocation(QStandardPaths::CacheLocation) : profileRoot) + QStringLiteral("/document-webview") : options.profileDirectory;
-    web = new WebEditorContainer(runtime, profile, documentKind() == Kind::Markdown ? QStringLiteral("markdown") : QStringLiteral("blocks"), this);
+    web = new WebEditorContainer(runtime, profile, QStringLiteral("markdown"), this);
     web->setAssetResolver([weak = std::weak_ptr<WebDocumentSession>(document)](const QUrl& url) {
         const auto session = weak.lock(); return session ? session->asset(url) : WebEditorResource{};
     });
@@ -75,13 +75,10 @@ void WebDocumentPage::releaseView() {
 }
 bool WebDocumentPage::supportsFile(const QString& path) { return WebDocumentSession::supportsFile(path); }
 WebDocumentPage::Kind WebDocumentPage::kindForFile(const QString& path) { return WebDocumentSession::kindForFile(path); }
-bool WebDocumentPage::validateBlockPackage(const QJsonObject& package, QString* error) { return WebDocumentSession::validateBlockPackage(package, error); }
 bool WebDocumentPage::openFile(const QString& path, QString* error) { return document->openFile(path, error); }
 bool WebDocumentPage::setInitialContent(const QString& text, QString* error) { return document->setInitialContent(text, error); }
-bool WebDocumentPage::importMarkdown(const QString& path, QString* error) { return document->importMarkdown(path, error); }
 QString WebDocumentPage::title() const { return document->title(); }
 bool WebDocumentPage::save(bool saveAs, const QString& explicitPath) { document->setPresentationView(this); return document->save(saveAs, explicitPath); }
-bool WebDocumentPage::exportMarkdown() { document->setPresentationView(this); return document->exportMarkdown(); }
 bool WebDocumentPage::confirmClose() { return document->prepareViewClose(this); }
 bool WebDocumentPage::captureRecovery(QString* text, quint64* revision) { return document->captureRecovery(text, revision); }
 bool WebDocumentPage::restoreRecovery(const QString& text, QString* error) { return document->restoreRecovery(text, error); }

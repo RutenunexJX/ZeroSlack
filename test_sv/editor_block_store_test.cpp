@@ -1,4 +1,5 @@
 #include "documentblockstore.h"
+#include "documentreferenceservice.h"
 #include "documentblocktransfer.h"
 #include "blockdropadapter.h"
 #include "waveblockcontent.h"
@@ -26,6 +27,9 @@
 #include <QDesktopServices>
 #ifdef Q_OS_WIN
 #include <windows.h>
+#include <atomic>
+#include <chrono>
+#include <thread>
 #endif
 
 namespace {
@@ -58,6 +62,97 @@ class EditorBlockStoreTest : public QObject {
         };
     }
 private slots:
+    void semanticReferencesKeepBindingsAndIndependentRelations() {
+        const QString code="module top;\nassign ready = valid;\nendmodule\n";
+        editor->setPlainText(code);QVERIFY(write(source,code.toUtf8()));
+        TSDocument syntax;syntax.setText(code);
+        const auto binding=PinloomSourceSelection::fromSyntaxAnchor(directory->path(),source,code,syntax.bindableCodeAnchorAt(code.indexOf("assign")));
+        QVERIFY(binding.isValid());
+        const DocumentReferenceService::Selection chosen{"https://example.invalid/specification","Specification",true};
+        const auto before=model()->serialize();
+        QVERIFY(DocumentReferenceService::insertSemantic(model(),binding,code,{},&error).isEmpty());QCOMPARE(model()->serialize(),before);
+        const auto first=DocumentReferenceService::insertSemantic(model(),binding,code,chosen,&error);QVERIFY2(!first.isEmpty(),qPrintable(error));
+        const auto second=DocumentReferenceService::insertSemantic(model(),binding,code,chosen,&error);QVERIFY(!second.isEmpty());QVERIFY(first!=second);
+        QCOMPARE(model()->items().size(),2);QCOMPARE(model()->find(first)->reference.value("source").toMap(),binding.toVariantMap());
+        DocumentReferenceService::refresh(model(),source,code,&syntax,nullptr);QVERIFY(!model()->presentation(first).missing);
+        const auto frozen=model()->serialize();const auto revision=model()->revision();
+        DocumentReferenceService::refresh(model(),source,code,&syntax,nullptr);QCOMPARE(model()->revision(),revision);QCOMPARE(model()->serialize(),frozen);
+        QTextCursor edit(editor->document());edit.setPosition(0);edit.insertText("// prefix\n");
+        const auto moved=editor->toPlainText();syntax.setText(moved);
+        DocumentReferenceService::refresh(model(),source,moved,&syntax,nullptr);
+        QVERIFY(!model()->presentation(first).missing);QCOMPARE(model()->presentation(first).start,binding.startPosition+10);
+        QVERIFY(DocumentReferenceService::setDisplay(model(),first,"embedded"));QCOMPARE(model()->find(first)->uri,chosen.uri);
+        QCOMPARE(model()->find(first)->reference.value("source").toMap(),binding.toVariantMap());
+        QVERIFY(model()->undoAssociation(false));QVERIFY(model()->find(first)->compactReference());
+        QTextDocument target;target.setPlainText("destination\n");auto* destination=DocumentBlockModel::get(&target);
+        const auto copied=model()->transferTo(destination,first,QTextCursor(&target),true);QVERIFY(!copied.isEmpty());QVERIFY(copied!=first);
+        QCOMPARE(destination->find(copied)->reference.value("sourceKind").toString(),QString("position"));
+        QCOMPARE(destination->find(copied)->uri,chosen.uri);QCOMPARE(model()->items().size(),2);
+        editor->setPlainText("module top;\nendmodule\n");syntax.setText(editor->toPlainText());
+        DocumentReferenceService::refresh(model(),source,editor->toPlainText(),&syntax,nullptr);
+        QVERIFY(model()->presentation(first).missing);QVERIFY(!model()->presentation(first).referenceStatus.isEmpty());
+        QVERIFY(model()->find(first));QCOMPARE(model()->find(first)->uri,chosen.uri);
+    }
+    void legacyReferenceMappingRoundTripsAndMovesAtomically() {
+        const QString code="module top;\nassign ready = valid;\nendmodule\n";
+        editor->setPlainText(code);QVERIFY(write(source,code.toUtf8()));
+        TSDocument syntax;syntax.setText(code);
+        const auto binding=PinloomSourceSelection::fromSyntaxAnchor(directory->path(),source,code,syntax.bindableCodeAnchorAt(code.indexOf("assign")));
+        PinloomCodeLinkStore legacy;legacy.setWorkspaceRoot(directory->path());
+        const QUrl uri("pinloom://entry/reference-one");
+        QVERIFY2(legacy.addLink(binding,uri,"Reference one",PinloomHostIdentity::fromUri(uri).toVariantMap(),&error),qPrintable(error));
+        const auto bytes=read(legacy.storagePath());const auto anchors=legacy.linksForDocument(source,code,&syntax);QCOMPARE(anchors.size(),1);
+        const auto linkId=anchors.first().anchor.links.first().id;
+        const auto id=DocumentReferenceService::convertLegacy(model(),anchors.first(),linkId,"embedded",&error);QVERIFY2(!id.isEmpty(),qPrintable(error));
+        QVERIFY(model()->find(id)->uri.isEmpty());QVERIFY(model()->find(id)->caption.isEmpty());
+        QVERIFY(DocumentReferenceService::hasLegacy(model(),anchors.first().anchor.id,linkId));
+        DocumentReferenceService::refresh(model(),source,code,&syntax,&legacy);QCOMPARE(model()->presentation(id).uri,uri.toString());
+        const auto display=*model()->find(id);
+        QVERIFY(DocumentReferenceService::setDisplay(model(),id,"compact"));QVERIFY(DocumentReferenceService::setDisplay(model(),id,"embedded"));
+        QCOMPARE(model()->items().size(),1);QCOMPARE(model()->find(id)->height,display.height);QCOMPARE(model()->find(id)->appearance,display.appearance);
+        QVERIFY2(save(),qPrintable(error));const auto saved=model()->serialize();
+        QTextDocument restored;restored.setPlainText(code);auto* again=DocumentBlockModel::get(&restored);
+        QVERIFY(again->restore(saved,&error));DocumentReferenceService::refresh(again,source,code,&syntax,&legacy);
+        QCOMPARE(again->presentation(id).uri,uri.toString());QCOMPARE(read(legacy.storagePath()),bytes);
+        const auto stamp=model()->revision();QVERIFY(model()->remove(id));QVERIFY(model()->find(id)->removedReference());
+        QVERIFY(model()->undoAssociation(false));QVERIFY(!model()->find(id)->removedReference());QVERIFY(model()->revision()>stamp);
+        QTextDocument target;target.setPlainText("destination\n");auto* destination=DocumentBlockModel::get(&target);
+        QCOMPARE(model()->transferTo(destination,id,QTextCursor(&target),false),id);
+        QVERIFY(!model()->find(id));QCOMPARE(model()->items().size(),1);QVERIFY(model()->items().first().removedReference());
+        QCOMPARE(destination->find(id)->uri,uri.toString());QCOMPARE(destination->find(id)->reference.value("sourceKind").toString(),QString("position"));
+        QVERIFY(destination->undoAssociation(false));QVERIFY(model()->find(id));QVERIFY(!destination->find(id));
+        QVERIFY(model()->undoAssociation(true));QVERIFY(destination->find(id));QVERIFY(!model()->find(id));QCOMPARE(read(legacy.storagePath()),bytes);
+    }
+    void referenceReplyCannotRebindIdentityOrDisplay() {
+        QList<PinloomHostClient::RawReplyHandler> replies;QObject owner;
+        PinloomHostClient client([&](const auto&,const auto& reply){replies.append(reply);},&owner);
+        EditorAssociatedBlock block;block.type="reference";block.uri="pinloom://entry/reference-one";
+        const auto id=model()->insert(block,editor->textCursor());
+        QJsonObject entry{{"identity",QJsonObject{{"entryId","different"}}},{"uri","pinloom://entry/different"},{"type","note"},{"title","Wrong object"}};
+        QJsonObject response{{"entry",entry},{"content","Wrong content"}};
+        EditorBlockPreview preview(model(),&client,&owner);EditorBlockPreviewResult result;
+        preview.request(id,[&](const auto& value){result=value;});QTRY_COMPARE(replies.size(),1);
+        replies.takeFirst()(response,{});QTRY_VERIFY(!result.loading);QVERIFY(result.status.contains("different target"));QVERIFY(result.text.isEmpty());
+        bool done=false;EditorBlockPreview::inspectOriginal(model(),&client,id,&owner,[&](const auto&){done=true;});QTRY_COMPARE(replies.size(),1);
+        QVERIFY(DocumentReferenceService::setDisplay(model(),id,"compact"));
+        replies.takeFirst()(response,{});QCoreApplication::processEvents();QVERIFY(!done);
+    }
+    void wavePresentationSurvivesDetachCrossFileMoveAndPairedUndo() {
+        QTabWidget tabs;tabs.resize(980,700);tabs.show();TabManager manager(&tabs);
+        QVERIFY(manager.openFileInTab(source));auto* left=manager.getCurrentEditor();auto* owner=manager.sharedDocumentForEditor(left);
+        const auto id=left->blockModel()->insert("wave",left->textCursor(),WaveBlockContent::initialProject());QVERIFY(!id.isEmpty());
+        QWidget* native=nullptr;QTRY_VERIFY((native=left->findChild<QWidget*>("WaveEditor")));const QPointer<QWidget> original=native;
+        auto* page=manager.detachAssociatedBlock(owner,id);QVERIFY(page);QCOMPARE(page->findChild<QWidget*>("WaveEditor"),original.data());
+        const auto second=directory->filePath("second.sv");QVERIFY(write(second,"module second; endmodule\n"));QVERIFY(manager.openFileInTab(second));
+        auto* right=manager.getCurrentEditor();auto* receiving=manager.sharedDocumentForEditor(right);
+        const auto captured=DocumentBlockTransfer::capture(owner,id);QString issue;
+        QCOMPARE(DocumentBlockTransfer::apply(captured,receiving,right->textCursor(),DocumentBlockTransfer::Mode::Move,{},&issue),id);
+        QTRY_VERIFY(right->findChild<QWidget*>("WaveEditor")==original.data());QVERIFY(original);QVERIFY(!left->blockModel()->find(id));
+        QVERIFY(right->blockModel()->undoAssociation(false));QTRY_COMPARE(manager.associatedBlockPages().size(),1);
+        page=manager.associatedBlockPages().first();QCOMPARE(page->ownerDocument(),owner);QCOMPARE(page->findChild<QWidget*>("WaveEditor"),original.data());
+        QVERIFY(left->blockModel()->undoAssociation(true));QTRY_VERIFY(right->findChild<QWidget*>("WaveEditor")==original.data());QVERIFY(original);
+        QCOMPARE(read(source),QByteArray("alpha\nbeta\n"));QCOMPARE(read(second),QByteArray("module second; endmodule\n"));
+    }
     void wholeBlockClipboardAndToolsLeaveTextEditingNative() {
         QTabWidget tabs; tabs.resize(950,680); tabs.show(); tabs.raise(); tabs.activateWindow();
         TabManager manager(&tabs); QVERIFY(manager.openFileInTab(source));
@@ -73,18 +168,24 @@ private slots:
         QTest::mouseDClick(frame,Qt::LeftButton,Qt::NoModifier,QPoint(50,50)); QVERIFY(frame->hasFocus());
         QCOMPARE(code->textCursor().position(),sourceCursor.position());
         QCOMPARE(code->textCursor().anchor(),sourceCursor.anchor());
-        QTest::keyClick(frame,Qt::Key_Return); QVERIFY(content->isEditing()); QTRY_VERIFY(text->hasFocus());
+        QTest::keyClick(frame,Qt::Key_Return); QVERIFY(!content->isEditing());
+        auto* edit=frame->findChild<QToolButton*>("blockEditToggle");QVERIFY(edit);
+        QTest::mouseClick(edit,Qt::LeftButton); QVERIFY(content->isEditing()); QTRY_VERIFY(text->hasFocus());
         QCursor::setPos(frame->mapToGlobal(QPoint(45,frame->height()-10)));
-        EditorBlockContent::refreshTools(frame,tools); QVERIFY(!tools->isVisible());
+        EditorBlockContent::refreshTools(frame,tools); QVERIFY(edit->isVisible()); QVERIFY(edit->isChecked());
         text->selectAll(); QTest::keyClick(text,Qt::Key_C,Qt::ControlModifier);
         QCOMPARE(QApplication::clipboard()->text(),QString("Native text"));
         QVERIFY(!QApplication::clipboard()->mimeData()->hasFormat("application/x-zeroslack-block+json"));
         QTest::keyClick(text,Qt::Key_X,Qt::ControlModifier); QVERIFY(blocks->find(id)); QCOMPARE(text->toPlainText(),QString());
         QTest::keyClick(text,Qt::Key_V,Qt::ControlModifier); QCOMPARE(text->toPlainText(),QString("Native text"));
-        QTest::keyClick(text,Qt::Key_Escape); QVERIFY(!content->isEditing()); QVERIFY(frame->hasFocus());
-        QTest::keyClick(frame,Qt::Key_Tab); QVERIFY(tools->isAncestorOf(QApplication::focusWidget()));
+        QTest::keyClick(text,Qt::Key_Escape); QVERIFY(content->isEditing());
+        QTest::mouseClick(edit,Qt::LeftButton); QVERIFY(!content->isEditing());
+        auto* handle=code->findChild<QToolButton*>("editorBlockDragHandle");QVERIFY(handle);
+        QTest::mouseClick(handle,Qt::LeftButton);QTRY_VERIFY(frame->hasFocus());
+        QTest::keyClick(frame,Qt::Key_Tab); QCOMPARE(QApplication::focusWidget(),handle);
         EditorBlockContent::refreshTools(frame,tools); QVERIFY(tools->isVisible());
-        QTest::keyClick(QApplication::focusWidget(),Qt::Key_Escape); QVERIFY(frame->hasFocus());
+        QTest::keyClick(QApplication::focusWidget(),Qt::Key_Escape); QCOMPARE(QApplication::focusWidget(),handle);
+        QTest::mouseClick(handle,Qt::LeftButton);QTRY_VERIFY(frame->hasFocus());
         QTest::keyClick(frame,Qt::Key_C,Qt::ControlModifier);
         QVERIFY(QApplication::clipboard()->mimeData()->hasFormat("application/x-zeroslack-block+json"));
         auto* gutter=code->findChild<QWidget*>("editorLineNumberGutter"); QVERIFY(gutter);
@@ -231,7 +332,7 @@ private slots:
         QVERIFY(!manager.detachAssociatedBlock(document,id,nullptr,[](auto*) { return false; },true)); QCOMPARE(blocks->serialize(),before);
         auto* page=manager.detachAssociatedBlock(document,id,nullptr,{},true); QVERIFY(page); QVERIFY(page->blockId()!=id); QVERIFY(!blocks->find(id)->detached);
         const auto duplicate=page->blockId(); QVERIFY(blocks->find(duplicate)->detached); QVERIFY(blocks->undoAssociation(false)); QVERIFY(!blocks->find(duplicate)); QVERIFY(blocks->find(id));
-        auto* drag=manager.findChild<AssociatedBlockDragController*>(); QVERIFY(drag); QVERIFY(drag->copyBlock(document,id,true)); QVERIFY(blocks->find(id));
+        auto* drag=manager.findChild<AssociatedBlockDragController*>(); QVERIFY(drag); QVERIFY2(drag->copyBlock(document,id,true),qPrintable(blocks->error())); QVERIFY(blocks->find(id));
         manager.createNewTab(); auto* target=manager.getCurrentEditor(); auto* receiving=manager.sharedDocumentForEditor(target);
         receiving->setReadOnly(true); QVERIFY(!drag->pasteBlock(target,target->textCursor())); QVERIFY(blocks->find(id));
         receiving->setReadOnly(false); QVERIFY(drag->pasteBlock(target,target->textCursor())); QVERIFY(!blocks->find(id)); QVERIFY(target->blockModel()->find(id));
@@ -249,10 +350,11 @@ private slots:
         QCOMPARE(code->findChildren<QFrame*>("editorBlockShell").size(),0);
         manager.closeTab(tabs.indexOf(code)); QVERIFY(document); QCOMPARE(document->viewCount(),0); QCOMPARE(document->consumerCount(),1);
         auto* text=page->findChild<QTextEdit*>("editorBlockText"); QVERIFY(text);
+        auto* edit=page->findChild<QToolButton*>("blockEditToggle");QVERIFY(edit);QTest::mouseClick(edit,Qt::LeftButton);QVERIFY(!text->isReadOnly());
         text->setPlainText("Still editable without a code view"); page->finishEditing();
         QCOMPARE(blocks->find(id)->text,text->toPlainText()); QVERIFY(manager.saveCurrentTab());
         QCOMPARE(read(source),original); QVERIFY(!document->dirty());
-        text->setPlainText("Uncommitted note"); page->finishEditing();
+        QTest::mouseClick(edit,Qt::LeftButton);QVERIFY(!text->isReadOnly());text->setPlainText("Uncommitted note"); page->finishEditing();
         manager.unsavedDocumentManagerForTesting()->setDecisionProvider([](const auto&,QWidget*) { return UnsavedDocumentBatchDecision::Cancel; });
         manager.closeTab(tabs.indexOf(page)); QCOMPARE(manager.currentAssociatedBlock(),page); QVERIFY(document->dirty());
         const auto sidecar=DocumentBlockStore::get(blocks)->storagePath(); QVERIFY(write(sidecar,"{external change"));
@@ -355,9 +457,297 @@ private slots:
         QTest::newRow("owner-gutter")<<QString("gutter");
         QTest::newRow("tab-bar")<<QString("tab");
         QTest::newRow("other-owner-gutter")<<QString("other");
-        QTest::newRow("body-control-copy")<<QString("copy");
+        QTest::newRow("gutter-control-copy")<<QString("copy");
         QTest::newRow("page-tab-control-copy")<<QString("tab-copy");
         QTest::newRow("page-tab-return-to-same-group")<<QString("tab-return");
+    }
+    void sustainedBlockGripNativeDrag_data() {
+        QTest::addColumn<QString>("presentation");
+        QTest::addColumn<bool>("crossFile");
+        QTest::addColumn<bool>("cancel");
+        QTest::newRow("inline-same-file-copy") << QString("inline") << false << false;
+        QTest::newRow("inline-cross-file-copy") << QString("inline") << true << false;
+        QTest::newRow("inline-escape") << QString("inline") << false << true;
+        QTest::newRow("floating-page-copy") << QString("floating") << false << false;
+        QTest::newRow("floating-page-escape") << QString("floating") << false << true;
+        QTest::newRow("docked-page-copy") << QString("docked") << false << false;
+        QTest::newRow("docked-page-escape") << QString("docked") << false << true;
+    }
+    void sustainedBlockGripNativeDrag() {
+#ifndef Q_OS_WIN
+        QSKIP("Requires Windows native held-button drag");
+#else
+        if (QGuiApplication::platformName() != "windows") QSKIP("Requires native Windows QPA");
+        QFETCH(QString, presentation); QFETCH(bool, crossFile); QFETCH(bool, cancel);
+        QVERIFY2(!(GetAsyncKeyState(VK_LBUTTON) & 0x8000)
+                 && !(GetAsyncKeyState(VK_CONTROL) & 0x8000)
+                 && !(GetAsyncKeyState(VK_ESCAPE) & 0x8000), "Native input must initially be idle");
+        QWidget host; std::unique_ptr<QTabWidget> owned(UiControls::editorTabWidget());
+        auto& tabs=*owned; TabManager manager(&tabs);
+        manager.setCrashRecoveryService(std::make_unique<CrashRecoveryService>(directory->filePath("native-recovery")));
+        auto* split = manager.editorSplitController(); split->setHost(&host);
+        host.setWindowFlag(Qt::WindowStaysOnTopHint);
+        host.setGeometry(QRect(QGuiApplication::primaryScreen()->availableGeometry().topLeft() + QPoint(120,120), QSize(1100,780)));
+        host.show(); host.raise(); host.activateWindow(); QVERIFY(QTest::qWaitForWindowActive(&host));
+        QVERIFY(manager.openFileInTab(source));
+        auto* code = manager.getCurrentEditor(); auto* owner = manager.sharedDocumentForEditor(code);
+        auto* blocks = code->blockModel(); const auto id = blocks->insert("text", code->textCursor(), "Native held block");
+        auto* destination = code;
+        if (crossFile) {
+            const auto other = directory->filePath("destination.sv"); QVERIFY(write(other,"one\ntwo\nthree\n"));
+            QVERIFY(manager.openFileInTab(other)); destination = manager.getCurrentEditor();
+            auto* receiving = split->createSplit(&tabs, EditorSplitDirection::Right); QVERIFY(receiving);
+            QVERIFY(split->movePage(destination, receiving)); tabs.setCurrentWidget(code);
+        }
+        auto* receivingBlocks = destination->blockModel();
+        code->selectAssociatedBlock(id);
+        QPointer<QWidget> handle;
+        QTRY_VERIFY((handle = code->findChild<QToolButton*>("editorBlockDragHandle")) && handle->isVisible());
+        auto* gutter = destination->findChild<QWidget*>("editorLineNumberGutter"); QVERIFY(gutter);
+        QCoreApplication::processEvents();
+        const int destinationPosition = destination->document()->findBlockByNumber(1).position();
+        QPoint dropPoint = gutter->mapToGlobal(QPoint(gutter->width()/2, qRound(destination->blockGeometry(1).top+5)));
+        QVERIFY(gutter->rect().contains(gutter->mapFromGlobal(dropPoint)));
+        QPointer<AssociatedBlockPage> page;
+        if (presentation != "inline") {
+            page = manager.detachAssociatedBlock(owner,id); QVERIFY(page);
+            tabs.setCurrentWidget(code); QCoreApplication::processEvents();
+            dropPoint=gutter->mapToGlobal(QPoint(gutter->width()/2,qRound(destination->blockGeometry(1).top+5)));
+            if (presentation == "floating") {
+                auto* group = split->floatPage(page, dropPoint + QPoint(80,80)); QVERIFY(group);
+                auto* floating = group->window();
+                floating->setGeometry(QRect(dropPoint-QPoint(80,110),QSize(500,330)));
+                tabs.setCurrentWidget(code); floating->show(); floating->raise(); floating->activateWindow();
+                QVERIFY(QTest::qWaitForWindowActive(floating));
+            } else tabs.setCurrentWidget(page);
+            QTRY_VERIFY((handle=page->findChild<QToolButton*>("associatedBlockDragHandle")));
+            page->setFocus(); QTRY_VERIFY(handle->isVisible());
+        }
+        blocks->editText(id,"History sentinel"); blocks->endTextSession();
+        QVERIFY(blocks->undoAssociation(false)); QCOMPARE(blocks->find(id)->text,QString("Native held block"));
+        QVERIFY(blocks->canRedo());
+        const auto before = blocks->serialize(), receivingBefore = receivingBlocks->serialize();
+        const auto revision = blocks->revision(), receivingRevision = receivingBlocks->revision();
+        const auto sourceText = code->toPlainText(), destinationText = destination->toPlainText();
+        const auto sourceTextUndo = code->document()->availableUndoSteps();
+        const auto sourceTextRedo = code->document()->availableRedoSteps();
+        const auto originalGroup = page ? split->groupForPage(page) : nullptr;
+        const auto originalWindow = page ? page->window() : nullptr;
+        const auto windowGeometry = originalWindow ? originalWindow->geometry() : QRect();
+        const auto pageGeometry = page ? page->geometry() : QRect();
+        const int groupCount = split->groups().size();
+        auto* controller = manager.findChild<AssociatedBlockDragController*>(); QVERIFY(controller);
+        QSignalSpy finished(controller,&AssociatedBlockDragController::gestureFinished);
+        const QPoint previousCursor = QCursor::pos();
+        std::atomic_bool leftHeld=false, controlHeld=false, escapeHeld=false;
+        const auto mouseButton = [&](bool down) {
+            INPUT event{}; event.type=INPUT_MOUSE; event.mi.dwFlags=down ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP;
+            const bool ok=SendInput(1,&event,sizeof(event))==1; if(ok) leftHeld=down; return ok;
+        };
+        const auto key = [&](WORD value,bool down) {
+            INPUT event{}; event.type=INPUT_KEYBOARD; event.ki.wVk=value; event.ki.dwFlags=down ? 0 : KEYEVENTF_KEYUP;
+            const bool ok=SendInput(1,&event,sizeof(event))==1;
+            if(ok && value==VK_CONTROL) controlHeld=down;
+            if(ok && value==VK_ESCAPE) escapeHeld=down;
+            return ok;
+        };
+        const auto ownsForeground = [] {
+            DWORD process=0; GetWindowThreadProcessId(GetForegroundWindow(),&process);
+            return process==GetCurrentProcessId();
+        };
+        const auto nativePoint = [&](const QPoint& point) {
+            POINT native{}; ClientToScreen(reinterpret_cast<HWND>(host.winId()),&native);
+            const auto local=host.mapFromGlobal(point); const auto dpr=host.devicePixelRatioF();
+            native.x+=qRound(local.x()*dpr); native.y+=qRound(local.y()*dpr);
+            return native;
+        };
+        const auto moveCursor = [](POINT native) {
+            DWORD process=0; GetWindowThreadProcessId(WindowFromPoint(native),&process);
+            if(process!=GetCurrentProcessId()) return false;
+            INPUT event{}; event.type=INPUT_MOUSE;
+            event.mi.dwFlags=MOUSEEVENTF_MOVE|MOUSEEVENTF_ABSOLUTE|MOUSEEVENTF_VIRTUALDESK;
+            event.mi.dx=MulDiv(native.x-GetSystemMetrics(SM_XVIRTUALSCREEN),65535,GetSystemMetrics(SM_CXVIRTUALSCREEN)-1);
+            event.mi.dy=MulDiv(native.y-GetSystemMetrics(SM_YVIRTUALSCREEN),65535,GetSystemMetrics(SM_CYVIRTUALSCREEN)-1);
+            return SendInput(1,&event,sizeof(event))==1;
+        };
+        const auto releaseInput = qScopeGuard([&] {
+            if(controller->dragInProgress()) QDrag::cancel();
+            if(leftHeld) mouseButton(false); if(controlHeld) key(VK_CONTROL,false); if(escapeHeld) key(VK_ESCAPE,false);
+            QCursor::setPos(previousCursor);
+        });
+        handle->setFocus(); QTRY_COMPARE(QApplication::focusWidget(),handle.data());
+        const QPointer<QWidget> originalFocus=QApplication::focusWidget();
+        const auto capture=[&](const QString& phase) {
+            const auto path=qEnvironmentVariable("ZEROSLACK_TEST_ARTIFACT_DIR");
+            if(path.isEmpty()) return;
+            const auto stem=path+"/"+QString::fromUtf8(QTest::currentDataTag())+"-"+phase;
+            host.grab().save(stem+"-host.png");
+            if(page && page->window()!=&host && page->window()->isVisible()) page->window()->grab().save(stem+"-page.png");
+        };
+        capture("before");
+        const auto pressPoint=handle->mapToGlobal(handle->rect().center());
+        const auto pressNative=nativePoint(pressPoint);
+        const auto thresholdNative=nativePoint(pressPoint+QPoint(28,0));
+        const auto dropNative=nativePoint(dropPoint);
+        QVERIFY(moveCursor(pressNative)); QTest::qWait(80); QVERIFY(ownsForeground());
+        QVERIFY(mouseButton(true)); QTRY_VERIFY(GetAsyncKeyState(VK_LBUTTON)&0x8000);
+        QTest::qWait(80);
+        QVERIFY(!controller->dragInProgress());
+        QTimer observer; observer.setInterval(20);
+        QElapsedTimer elapsed; elapsed.start();
+        QPointer<QDrag> nativeDrag;
+        std::atomic_bool execObserved=false, targetReady=false, copyObserved=false, gestureDone=false, done=false, stopInput=false;
+        std::atomic_bool modifierWhileHeld=false;
+        std::atomic_int inputFailure=0, inputStage=0;
+        bool hiddenObserved=false, markerObserved=false;
+        QList<int> nativeActions;
+        int nativeSignalsWhileHeld=0, nativeEventsWhileHeld=0;
+        struct DragEventProbe final : QObject {
+            std::function<void(QDropEvent*)> capture;
+            bool eventFilter(QObject*,QEvent* event) override {
+                if(event->type()==QEvent::DragEnter || event->type()==QEvent::DragMove)
+                    capture(static_cast<QDropEvent*>(event));
+                return false;
+            }
+        } probe;
+        probe.capture=[&](QDropEvent* event) {
+            if(controller->dragInProgress() && (GetAsyncKeyState(VK_LBUTTON)&0x8000)
+                && event->mimeData()->hasFormat("application/x-zeroslack-associated-block")) ++nativeEventsWhileHeld;
+        };
+        qApp->installEventFilter(&probe);
+        connect(&observer,&QTimer::timeout,&observer,[&] {
+            if(!nativeDrag && controller->dragInProgress()) {
+                nativeDrag=controller->findChild<QDrag*>();
+                if(nativeDrag) connect(nativeDrag,&QDrag::actionChanged,&observer,[&](Qt::DropAction action) {
+                    nativeActions.append(int(action));
+                    if(GetAsyncKeyState(VK_LBUTTON)&0x8000) ++nativeSignalsWhileHeld;
+                    if(action==Qt::CopyAction && (GetAsyncKeyState(VK_LBUTTON)&0x8000)
+                        && (GetAsyncKeyState(VK_CONTROL)&0x8000)) copyObserved=true;
+                    qInfo()<<"A01_NATIVE_ACTION"<<action<<"leftHeld"<<bool(GetAsyncKeyState(VK_LBUTTON)&0x8000)
+                           <<"controlHeld"<<bool(GetAsyncKeyState(VK_CONTROL)&0x8000)<<"elapsedMs"<<elapsed.elapsed();
+                });
+            }
+            if(nativeDrag && controller->dragInProgress() && (GetAsyncKeyState(VK_LBUTTON)&0x8000)
+                && nativeDrag->supportedActions()==(Qt::MoveAction|Qt::CopyAction)) {
+                if(!execObserved) qInfo()<<"A01_EXEC_ENTERED"<<nativeDrag->source()<<nativeDrag->supportedActions()<<elapsed.elapsed();
+                execObserved=true;
+            }
+            if(inputStage>=2 && controller->dragInProgress()) {
+                auto* marker=destination->findChild<QLabel*>("associatedBlockDropMarker");
+                const auto cursor=gutter->mapFromGlobal(QCursor::pos());
+                markerObserved=markerObserved || (marker && marker->isVisible()
+                    && marker->property("sourceLine").toInt()==1 && gutter->rect().contains(cursor)
+                    && (QCursor::pos()-dropPoint).manhattanLength()<=2);
+                if(page) hiddenObserved=hiddenObserved || !page->isVisible();
+                else for(auto* content:code->findChildren<QWidget*>("editorBlockContent"))
+                    hiddenObserved=hiddenObserved || (content->property("blockDragHidden").toBool() && !content->isVisible());
+                if(markerObserved && hiddenObserved && !targetReady) {
+                    qInfo()<<"A01_TARGET_READY"<<presentation<<"hidden"<<hiddenObserved<<"marker"<<markerObserved;
+                    capture("held-target");
+                    targetReady=true;
+                }
+            }
+            gestureDone=finished.count()>0;
+            if(inputFailure!=0 && controller->dragInProgress()) QDrag::cancel();
+        });
+        observer.start();
+        // Windows OLE startup can block Qt timers while waiting for native
+        // mouse input. Only the sender uses a worker; all widget reads stay here.
+        std::thread sender([&] {
+            const auto start=std::chrono::steady_clock::now();
+            const auto milliseconds=[&] { return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-start).count(); };
+            qint64 stageStarted=0; int tick=0;
+            while(!stopInput && !done) {
+                const auto now=milliseconds();
+                if(now>8000) { inputFailure=1; break; }
+                if(!ownsForeground()) { inputFailure=2; break; }
+                if(inputStage==0 && now>80) {
+                    inputStage=1; stageStarted=now;
+                }
+                POINT point=inputStage<2 ? thresholdNative : dropNative;
+                point.x+=(tick++%2);
+                if(inputStage>=1 && inputStage<=3 && !moveCursor(point)) { inputFailure=3; break; }
+                if(inputStage==1 && execObserved && now-stageStarted>140) {
+                    inputStage=2; stageStarted=now;
+                } else if(inputStage==2 && targetReady && now-stageStarted>220) {
+                    if(!(GetAsyncKeyState(VK_LBUTTON)&0x8000)) { inputFailure=6; break; }
+                    if(!key(cancel ? VK_ESCAPE : VK_CONTROL,true)) { inputFailure=4; break; }
+                    modifierWhileHeld=(GetAsyncKeyState(VK_LBUTTON)&0x8000)
+                        && (GetAsyncKeyState(cancel ? VK_ESCAPE : VK_CONTROL)&0x8000);
+                    inputStage=3; stageStarted=now;
+                } else if(inputStage==3) {
+                    if(cancel && gestureDone) done=true;
+                    else if(!cancel && copyObserved && now-stageStarted>180) {
+                        if(!mouseButton(false)) { inputFailure=5; break; }
+                        inputStage=4;
+                    }
+                } else if(inputStage==4 && gestureDone) done=true;
+                std::this_thread::sleep_for(std::chrono::milliseconds(40));
+            }
+            if(inputFailure!=0 && ownsForeground()) key(VK_ESCAPE,true);
+            if(leftHeld) mouseButton(false);
+            if(controlHeld) key(VK_CONTROL,false);
+            if(escapeHeld) key(VK_ESCAPE,false);
+            done=true;
+        });
+        const auto joinSender=qScopeGuard([&] { stopInput=true; if(sender.joinable()) sender.join(); observer.stop(); });
+        QTRY_VERIFY_WITH_TIMEOUT(done.load(),10000);
+        sender.join(); observer.stop();
+        qInfo()<<"A01_NATIVE_RESULT"<<presentation<<"crossFile"<<crossFile<<"cancel"<<cancel
+               <<"exec"<<execObserved.load()<<"nativeActions"<<nativeActions<<"signalsWhileHeld"<<nativeSignalsWhileHeld<<"eventsWhileHeld"<<nativeEventsWhileHeld
+               <<"hidden"<<hiddenObserved<<"marker"<<markerObserved<<"modifierWhileHeld"<<modifierWhileHeld.load()
+               <<"finished"<<finished.count()<<"stage"<<inputStage.load()<<"failure"<<inputFailure.load();
+        if(inputFailure!=0) {
+            capture("failed");
+            auto* marker=destination->findChild<QLabel*>("associatedBlockDropMarker");
+            qInfo()<<"A01_FAILED_TARGET"<<dropPoint<<"cursor"<<QCursor::pos()<<"gutter"<<gutter->mapToGlobal(QPoint())<<gutter->size()
+                   <<"lineOne"<<destination->blockGeometry(1).top<<"markerLine"<<(marker ? marker->property("sourceLine").toInt() : -1);
+        }
+        QCOMPARE(inputFailure.load(),0);
+        QVERIFY(!(GetAsyncKeyState(VK_LBUTTON)&0x8000));
+        QVERIFY(!(GetAsyncKeyState(VK_CONTROL)&0x8000)); QVERIFY(!(GetAsyncKeyState(VK_ESCAPE)&0x8000));
+        QVERIFY(execObserved); QVERIFY(nativeEventsWhileHeld>0); QVERIFY(hiddenObserved); QVERIFY(markerObserved); QVERIFY(modifierWhileHeld);
+        QCOMPARE(finished.count(),1); QVERIFY(!controller->dragInProgress());
+        QTRY_VERIFY(controller->findChildren<QDrag*>().isEmpty());
+        QVERIFY(!GetCapture()); QVERIFY(!QWidget::mouseGrabber()); QVERIFY(!QGuiApplication::overrideCursor());
+        for(auto* window:QGuiApplication::allWindows())
+            if(window->objectName()=="QWindowsDragCursorWindow") QVERIFY(!window->isVisible());
+        QVERIFY(!destination->findChild<QLabel*>("associatedBlockDropMarker"));
+        for(auto* overlay:host.findChildren<QWidget*>("editorDropPreviewOverlay")) QVERIFY(!overlay->isVisible());
+        for(auto* content:code->findChildren<QWidget*>("editorBlockContent")) QVERIFY(!content->property("blockDragHidden").toBool());
+        QVERIFY(handle); QCOMPARE(handle->cursor().shape(),Qt::OpenHandCursor);
+        QCOMPARE(code->toPlainText(),sourceText); QCOMPARE(destination->toPlainText(),destinationText);
+        QCOMPARE(code->document()->availableUndoSteps(),sourceTextUndo);
+        QCOMPARE(code->document()->availableRedoSteps(),sourceTextRedo);
+        QCOMPARE(split->groups().size(),groupCount);
+        if(page) {
+            QCOMPARE(page->ownerDocument(),owner); QCOMPARE(page->blockId(),id);
+            QCOMPARE(split->groupForPage(page),originalGroup); QCOMPARE(page->window(),originalWindow);
+            if(cancel || presentation=="floating") QTRY_VERIFY(page->isVisible());
+            else QCOMPARE(originalGroup->currentWidget(),code);
+            QCOMPARE(page->window()->geometry(),windowGeometry); QCOMPARE(page->geometry(),pageGeometry);
+        }
+        capture("after");
+        if(cancel) {
+            QCOMPARE(blocks->serialize(),before); QCOMPARE(receivingBlocks->serialize(),receivingBefore);
+            QCOMPARE(blocks->revision(),revision); QCOMPARE(receivingBlocks->revision(),receivingRevision);
+            QTRY_COMPARE(QApplication::focusWidget(),originalFocus.data());
+            QVERIFY(blocks->canRedo()); QVERIFY(blocks->undoAssociation(true));
+            QCOMPARE(blocks->find(id)->text,QString("History sentinel"));
+            QVERIFY(blocks->undoAssociation(false)); QCOMPARE(blocks->serialize(),before);
+        } else {
+            QVERIFY(nativeSignalsWhileHeld>0); QVERIFY(copyObserved);
+            QVERIFY(nativeActions.contains(int(Qt::CopyAction))); QVERIFY(blocks->find(id));
+            QCOMPARE(blocks->find(id)->detached,presentation!="inline");
+            QCOMPARE(receivingBlocks->items().size(),crossFile ? 1 : 2);
+            QString duplicate; for(const auto& item:receivingBlocks->items()) if(item.id!=id) duplicate=item.id;
+            QVERIFY(!duplicate.isEmpty()); QCOMPARE(receivingBlocks->find(duplicate)->text,QString("Native held block"));
+            QCOMPARE(receivingBlocks->find(duplicate)->start,destinationPosition); QVERIFY(!receivingBlocks->find(duplicate)->detached);
+            if(crossFile) QCOMPARE(blocks->serialize(),before);
+            QVERIFY(receivingBlocks->undoAssociation(false)); QCOMPARE(blocks->serialize(),before); QCOMPARE(receivingBlocks->serialize(),receivingBefore);
+            QVERIFY(receivingBlocks->undoAssociation(true)); QVERIFY(receivingBlocks->find(duplicate));
+        }
+#endif
     }
     void releasedGripUsesTheNormalDropTransaction() {
 #ifndef Q_OS_WIN
@@ -376,7 +766,6 @@ private slots:
         QTRY_VERIFY((handle=code->findChild<QToolButton*>("editorBlockDragHandle")));
         auto* drag=manager.findChild<AssociatedBlockDragController*>(); QVERIFY(drag);
         auto* destination=code;
-        if (target=="copy") handle=code->findChild<QFrame*>("editorBlockShell");
         if (target=="tab-copy" || target=="tab-return") {
             QVERIFY(manager.detachAssociatedBlock(document,id));
             handle=tabs.tabBar();
@@ -600,6 +989,57 @@ private slots:
         });
         editor->editorBlockInsertRequested({{"blockType","reference"}},editor->textCursor());
         QVERIFY(handled); QVERIFY(model()->items().isEmpty()); QVERIFY(editor->toPlainText().startsWith("changed "));
+    }
+    void referencePickerNeverExecutesClipInsertion() {
+        const QJsonObject identity{{"entryId","clip:review"},{"clipId","review"}};
+        const QJsonObject entry{{"identity",identity},{"type","clip"},{"title","Review note"},{"uri","pinloom://entry/clip:review?clip=review"}};
+        int opens=0;
+        PinloomHostClient client([&](const QJsonObject& request,const auto& reply) {
+            if(request["method"]=="search") reply({{"entries",QJsonArray{entry}}},{});
+            else if(request["method"]=="resolve") reply({{"entry",entry},{"content","Reference text"}},{});
+            else { ++opens; reply({{"message","inserted"}},{}); }
+        });
+        PinloomReferencePicker picker(&client,{},editor.get()); picker.show();
+        auto* view=picker.findChild<PinloomContextView*>(); QVERIFY(view);
+        QTRY_COMPARE(view->previewState(),QString("preview"));
+        view->openButton()->click(); QCoreApplication::processEvents();
+        QCOMPARE(opens,0);
+        QVERIFY(!view->openButton()->isEnabled());
+        QVERIFY(view->openButton()->toolTip().contains("no available original source"));
+        QVERIFY(picker.findChild<QPushButton*>("referencePickerInsert")->isEnabled());
+        QCOMPARE(editor->toPlainText(),QString("alpha\nbeta\n"));
+    }
+    void referencePickerRequiresVerifiedPdfLocation() {
+        const QJsonObject identity{{"entryId","anchor:review"},{"resourceId","pdf"},{"anchorId","region"}};
+        const QJsonObject entry{{"identity",identity},{"type","anchor"},{"title","Review PDF"},{"uri","pinloom://entry/anchor:review?resource=pdf&anchor=region"}};
+        int opens=0;
+        PinloomHostClient client([&](const QJsonObject& request,const auto& reply) {
+            if(request["method"]=="search") reply({{"entries",QJsonArray{entry}}},{});
+            else if(request["method"]=="resolve") reply({{"entry",entry},{"content","PDF region"},{"details",QJsonObject{{"locatorType","sumatrapdf.rect"}}}},{});
+            else { ++opens; reply({{"state","open_requested"},{"message","accepted"}},{}); }
+        });
+        PinloomReferencePicker picker(&client,{},editor.get()); picker.show();
+        auto* view=picker.findChild<PinloomContextView*>(); QVERIFY(view);
+        QTRY_COMPARE(view->previewState(),QString("preview"));
+        QVERIFY(view->openButton()->isEnabled()); view->openButton()->click();
+        QTRY_COMPARE(opens,1);
+        QVERIFY(view->statusText().contains("did not confirm the PDF location"));
+    }
+    void referencePickerShowsResultsAndReadablePreview() {
+        const auto entry=[](const QString& id) {
+            return QJsonObject{{"identity",QJsonObject{{"entryId",id}}},{"type","code"},{"title",id},{"uri","pinloom://entry/"+id}};
+        };
+        const auto first=entry("first"), second=entry("second");
+        PinloomHostClient client([&](const QJsonObject& request,const auto& reply) {
+            if(request["method"]=="search") reply({{"entries",QJsonArray{first,second}}},{});
+            else reply({{"entry",first},{"content","Reference preview"}},{});
+        });
+        PinloomReferencePicker picker(&client,{},editor.get()); picker.show();
+        auto* view=picker.findChild<PinloomContextView*>(); QVERIFY(view);
+        QTRY_COMPARE(view->previewState(),QString("preview"));
+        auto* list=view->resultList(); QTRY_COMPARE(list->count(),2);
+        QTRY_VERIFY(list->viewport()->rect().contains(list->visualItemRect(list->item(1))));
+        QVERIFY(view->previewEditor()->height()>=view->fontMetrics().height()*6);
     }
     void blockOnlyPreservesSource() {
         const auto before = read(source); const auto modified = QFileInfo(source).lastModified(); const auto id = note();
@@ -836,8 +1276,10 @@ private slots:
         QSignalSpy status(code,&MyCodeEditor::editorStatusMessageRequested);
         QKeyEvent enter(QEvent::KeyPress,Qt::Key_Return,Qt::NoModifier); QApplication::sendEvent(frame,&enter);
         auto* content=static_cast<EditorBlockContent*>(frame->findChild<QWidget*>("editorBlockContent")); QVERIFY(content);
+        QVERIFY(!content->isEditing());auto* edit=frame->findChild<QToolButton*>("blockEditToggle");QVERIFY(edit);QTest::mouseClick(edit,Qt::LeftButton);
         QVERIFY(content->isEditing()); QVERIFY(status.isEmpty()); QCOMPARE(opens,0);
-        QKeyEvent escape(QEvent::KeyPress,Qt::Key_Escape,Qt::NoModifier); QApplication::sendEvent(preview,&escape); QVERIFY(!content->isEditing());
+        QKeyEvent escape(QEvent::KeyPress,Qt::Key_Escape,Qt::NoModifier); QApplication::sendEvent(preview,&escape); QVERIFY(content->isEditing());
+        QTest::mouseClick(edit,Qt::LeftButton);QVERIFY(!content->isEditing());
         document["details"]=QJsonObject{{"sourceUri","https://example.invalid/original"}};
         QMetaObject::invokeMethod(menu,"aboutToShow",Qt::DirectConnection); QTRY_VERIFY(original->isEnabled());
         document["details"]=QJsonObject{{"sourceUri",""}}; const auto before=status.count(); original->trigger();

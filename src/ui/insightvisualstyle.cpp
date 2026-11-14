@@ -875,6 +875,14 @@ QColor InsightVisualStyle::subtleBorder(const QColor& surface, const QColor& for
 {
     return mix(surface, foreground, surface.lightnessF() > 0.5 ? 0.10 : 0.12);
 }
+QColor InsightVisualStyle::workspaceRegionSurface(bool primary)
+{
+    const auto& t=theme();return primary?t.canvasBackground:mix(t.panelBackground,t.textPrimary,0.045);
+}
+QColor InsightVisualStyle::workspaceTabSelected(bool focused)
+{
+    const auto& t=theme();return mix(t.panelBackground,t.textPrimary,focused?0.14:0.095);
+}
 
 QString InsightVisualStyle::panelStyleSheet(const QString& objectName)
 {
@@ -1148,6 +1156,13 @@ QString InsightVisualStyle::applicationStyleSheet(ThemeMode mode)
         .arg(t.hover.name(), t.itemView.selectedBackground.name(), t.accent.name(),
              mix(t.dock.background, t.textPrimary, 0.12).name());
     const QColor navigationBase = mix(t.panelBackground, t.textPrimary, 0.025);
+    result += QStringLiteral(
+        "QWidget[workspaceRegionSurface=main] { background: %1; }"
+        "QWidget[workspaceRegionSurface=auxiliary] { background: %2; }"
+        "QTabWidget[workspaceRegionGroup=true]::pane { background: transparent; border: 1px solid %3; }"
+        "QTabWidget[workspaceRegionGroup=true][workspaceRegionFocused=true]::pane { border-color: %4; }"
+        "QTabBar[workspaceRegionGroup=true] { background: transparent; }")
+        .arg(workspaceRegionSurface(true).name(),workspaceRegionSurface(false).name(),t.border.name(),t.borderStrong.name());
     const QColor navigationHover = mix(navigationBase, t.textPrimary, 0.09);
     const QColor navigationSelected = mix(navigationBase, t.accent, 0.20);
     result += QStringLiteral(

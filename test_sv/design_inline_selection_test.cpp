@@ -26,6 +26,7 @@
 #include "usertemplateservice.h"
 #include "crashrecoveryservice.h"
 #include "testuistyle.h"
+#include "semanticdependencygraph.h"
 #include "../src/workspace/designprojectservice.h"
 #include <QtTest>
 #include <QScreen>
@@ -94,6 +95,47 @@ void capture(QWidget& widget, const QString& name) {
 class DesignInlineSelectionTest : public QObject {
     Q_OBJECT
 private slots:
+    void sourceTopPersistenceAndProjection() {
+        QTemporaryDir dir;QVERIFY(dir.isValid());
+        const auto top=dir.filePath("top.sv"), tb=dir.filePath("tb.sv"), leaf=dir.filePath("leaf.sv"),
+            pkg=dir.filePath("types.sv"), header=dir.filePath("defs.svh"), unused=dir.filePath("unused.sv"),
+            dup1=dir.filePath("a.sv"), dup2=dir.filePath("b.sv");
+        QHash<QString,QString> contents{{top,"module top; import types::*; leaf u(); endmodule"},
+            {tb,"`include \"defs.svh\"\nmodule tb; top dut(); endmodule"},{leaf,"module leaf; endmodule"},
+            {pkg,"package types; parameter N=1; endpackage"},{header,"`define WIDTH 1\n"},
+            {unused,"module unused; endmodule"},{dup1,"module duplicate; endmodule"},{dup2,"module duplicate; endmodule"}};
+        ProjectSnapshot project;project.workspaceRoot=dir.path();project.includeDirs={dir.path()};
+        for(auto it=contents.cbegin();it!=contents.cend();++it){QVERIFY(put(it.key(),it.value().toUtf8()));project.allFiles<<it.key();
+            project.systemVerilogFiles<<it.key();project.sourceRoles.insert(it.key(),SymbolTaxonomy::sourceRoleForFileName(it.key()));}
+        const auto topSymbol=module("top",top),tbSymbol=module("tb",tb),leafSymbol=module("leaf",leaf);
+        QList<SemanticSymbolRecord> symbols{topSymbol,tbSymbol,leafSymbol,module("unused",unused),module("duplicate",dup1),module("duplicate",dup2),
+            instance("u",topSymbol,"leaf",leafSymbol.stableKey),instance("dut",tbSymbol,"top",topSymbol.stableKey)};
+        SemanticIndex index;index.setSnapshot(std::make_shared<SemanticIndexSnapshot>(SemanticIndexSnapshot::fromSymbolRecords(symbols,{}, {},contents)));
+        const auto token=index.snapshotToken();const auto hierarchy=HierarchyService(token).automaticDesignHierarchy();
+        const auto projection=DesignTreeProjection::build(hierarchy,token,project,{top,"top"},{tb,"tb"},{});
+        DesignHierarchyModel model;model.setReport(hierarchy,projection);QTRY_VERIFY(!model.applying());QCOMPARE(model.rowCount(),4);
+        QCOMPARE(model.report()->nodes.size(),hierarchy.nodes.size());
+        const auto hasFile=[&](const QString& section,const QString& file){for(const auto& row:projection->nodes)
+            if(row.parentId=="section/"+section && row.file==file && row.semantic.id.isEmpty())return true;return false;};
+        QVERIFY(hasFile("Headers",header));QVERIFY(hasFile("Sources",pkg));QVERIFY(hasFile("Simulation",pkg));
+        if(!hasFile("Unreferenced",unused)) {
+            qWarning()<<"Unresolved hierarchy"<<hierarchy.unresolvedModules;
+            const auto facts=SemanticDependencyGraph::build(project,contents,{}).fileFacts();
+            for(auto it=facts.cbegin();it!=facts.cend();++it)if(it->parseError)qWarning()<<"Incomplete parse"<<it.key();
+        }
+        QVERIFY(hasFile("Unreferenced",unused));QVERIFY(hasFile("Unreferenced",dup1));QVERIFY(hasFile("Unreferenced",dup2));
+        for(int i=0;i<4;++i)QVERIFY(model.node(model.index(i,0)).id.isEmpty());
+        DesignProjectService service;QVERIFY(service.setWorkspace(dir.path()).isEmpty());
+        QVERIFY(service.setSourceTop(top,"top").isEmpty());QCOMPARE(service.sourceTop(),qMakePair(top,QString("top")));
+        DesignProjectService reopened;QVERIFY(reopened.setWorkspace(dir.path()).isEmpty());QCOMPARE(reopened.sourceTop(),service.sourceTop());
+        QVERIFY(!service.setSourceTop(dir.path()+"/../outside.sv","outside").isEmpty());QCOMPARE(service.sourceTop(),reopened.sourceTop());
+        QVERIFY(service.setSourceTop(dup2,"duplicate").isEmpty());QCOMPARE(service.sourceTop().first,dup2);
+        QVERIFY(QFile::remove(dup2));DesignProjectService missing;QVERIFY(missing.setWorkspace(dir.path()).isEmpty());
+        QCOMPARE(missing.sourceTop(),service.sourceTop());
+        const auto missingView=DesignTreeProjection::build(hierarchy,token,project,{dir.filePath("missing.sv"),"missing"},{tb,"tb"},{});
+        QVERIFY(missingView->nodeById.contains("section/Sources/missing"));
+        QVERIFY(missingView->childrenById.value("section/Unreferenced").isEmpty());
+    }
     void measuredSemanticAndModuleWorkflow() {
         QTemporaryDir data; QVERIFY(data.isValid());
         const auto configured = qEnvironmentVariable("ZEROSLACK_WORKFLOW_FIXTURE");
@@ -597,7 +639,8 @@ private slots:
         QVERIFY(window.workspaceManager->openWorkspace(workspace)); auto* nav=window.findChild<NavigationWidget*>();QVERIFY(nav);
         nav->setActiveTab(NavigationWidget::DesignTab);auto* view=tree(*nav);auto* model=qobject_cast<DesignHierarchyModel*>(view->model());
         QTRY_COMPARE_WITH_TIMEOUT(window.workspaceManager->getSystemVerilogFiles().size(),8,20000);
-        QTRY_COMPARE_WITH_TIMEOUT(model->rowCount(),8,30000);
+        QTRY_COMPARE_WITH_TIMEOUT(model->rowCount(),4,30000);
+        QTRY_VERIFY_WITH_TIMEOUT(model->report()->rootModules.size()>=8,30000);
         for(const auto& name:names)QVERIFY(model->report()->rootModules.contains(name));
         QVERIFY(model->report()->rootModules.contains("top"));QVERIFY(!model->report()->rootModules.contains("branch"));
         const auto report=model->report();

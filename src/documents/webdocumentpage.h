@@ -27,8 +27,6 @@ public:
     static Kind kindForFile(const QString& path);
     bool openFile(const QString& path, QString* error = nullptr);
     bool setInitialContent(const QString& text, QString* error = nullptr);
-    bool importMarkdown(const QString& sourcePath, QString* error = nullptr);
-    bool exportMarkdown();
     QString fileName() const { return document->fileName(); }
     QString documentId() const { return document->documentId(); }
     QString viewIdentity() const { return viewId; }
@@ -52,7 +50,6 @@ public:
     void setAppearance(const QString& family, int sizePt, double lineHeight);
     void setTargetValidator(std::function<bool(const QString&, QString*)> validator);
     std::shared_ptr<void> lockForPathMutation(quint64 expectedRevision, QString* error);
-    static bool validateBlockPackage(const QJsonObject& package, QString* error);
 
 signals:
     void statusChanged();

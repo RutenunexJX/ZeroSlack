@@ -247,6 +247,9 @@ int main()
                       ActionSurface::GraphPanel).size()
                       == 10
                && !findActionById(QString::fromLatin1(ActionIds::GraphSetTopSelected)));
+    expect("sequential diagnostic actions and shortcuts are removed",
+           !findActionById(QStringLiteral("workspace.nextDiagnostic"))
+               && !findActionById(QStringLiteral("workspace.previousDiagnostic")));
     expect("Wave Simulation command routes are removed",
            !findActionById(QStringLiteral("waveSimulation.runCurrentContext"))
                && !findActionById(QStringLiteral("waveSimulation.observeSignal"))
@@ -632,16 +635,6 @@ int main()
          "ui.workspace.configure",
          ActionRequirements::Workspace,
          ""},
-        {ActionIds::WorkspaceNextDiagnostic,
-         "nextDiagnosticAction",
-         "ui.diagnostics.next",
-         ActionRequirements::Workspace,
-         "F8"},
-        {ActionIds::WorkspacePreviousDiagnostic,
-         "previousDiagnosticAction",
-         "ui.diagnostics.previous",
-         ActionRequirements::Workspace,
-         "Shift+F8"},
         {ActionIds::UserTemplatesOpenGlobal,
          "openGlobalUserTemplatesAction",
          "ui.userTemplates.openGlobal",
@@ -991,7 +984,7 @@ int main()
          true},
         {ActionIds::NavigationDesignSetTop,
          "navigation.design.setTop",
-         "Reveal in Design",
+         "Set as source top",
          ActionScope::Hierarchy,
          ActionRequirements::Workspace
              | ActionRequirements::Hierarchy,

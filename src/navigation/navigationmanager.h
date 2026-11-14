@@ -1,5 +1,6 @@
 #ifndef NAVIGATIONMANAGER_H
 #define NAVIGATIONMANAGER_H
+#include "designtreeprojection.h"
 
 #include "zeroslackexport.h"
 
@@ -160,6 +161,8 @@ private:
     struct NavigationCaches {
         QStringList fileList;
         DesignHierarchyReport designHierarchy;
+        std::shared_ptr<const DesignTreeProjection> projection;
+        QPair<QString,QString> sourceTop, simulationTop;
         QString fileHierarchyFilter;
         QList<DesignHierarchyRoot> designRoots;
         QString activeProjectId;
@@ -209,6 +212,8 @@ private:
     SemanticAnalysisTelemetry semanticAnalysisContext;
     struct DesignWorkRequest {
         SemanticSnapshotToken token;
+        ProjectSnapshot project;
+        QPair<QString,QString> sourceTop, simulationTop;
         QStringList files;
         QStringList candidateFiles;
         QString selectedTop;
@@ -224,6 +229,7 @@ private:
     };
     struct DesignWorkResult {
         DesignHierarchyReport hierarchy;
+        std::shared_ptr<const DesignTreeProjection> projection;
         QByteArray fingerprint;
         QByteArray anchorFingerprint;
         bool reusedStructure = false;

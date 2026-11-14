@@ -1,3 +1,4 @@
+#include "roundedicons.h"
 #include "candidatepopupnavigation.h"
 #include "filecommandcoordinator.h"
 #include "uitypography.h"
@@ -685,6 +686,7 @@ void CommandLayerPanel::showSearch(
                 .arg(match.command.name, match.command.description),
             candidateList);
         item->setData(Qt::UserRole, match.command.actionId);
+        item->setIcon(RoundedIcons::iconForAction(match.command.actionId));
         item->setToolTip(
             QStringLiteral("%1 match").arg(
                 commandLayerMatchRankName(match.rank)));
@@ -723,6 +725,7 @@ void CommandLayerPanel::showHelp(
                 .arg(entry.canonicalName, entry.displayText));
         candidateList->item(candidateList->count() - 1)
             ->setData(Qt::UserRole, entry.actionId);
+        candidateList->item(candidateList->count() - 1)->setIcon(RoundedIcons::iconForAction(entry.actionId));
     }
     candidateList->clearSelection();
     candidateList->setCurrentRow(-1);

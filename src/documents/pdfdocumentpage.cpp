@@ -32,9 +32,9 @@ PdfDocumentPage::PdfDocumentPage(QWidget* parent, const QString& restoredViewId)
         auto* value = UiControls::toolButton(this); value->setIcon(RoundedIcons::icon(icon)); value->setToolTip(tooltip); return value;
     };
     auto* navigation = new QHBoxLayout; navigation->setContentsMargins(4, 3, 4, 2); navigation->setSpacing(2);
-    auto* previous = button(RoundedIcons::Left, QStringLiteral("Previous Page"));
-    auto* next = button(RoundedIcons::Right, QStringLiteral("Next Page"));
-    auto* original = button(RoundedIcons::OpenProject, QStringLiteral("Open Original"));
+    auto* previous = button(RoundedIcons::PreviousPage, QStringLiteral("Previous Page"));
+    auto* next = button(RoundedIcons::NextPage, QStringLiteral("Next Page"));
+    auto* original = button(RoundedIcons::OpenOriginal, QStringLiteral("Open Original"));
     pageNumber = UiControls::spinBox(this); pageNumber->setObjectName(QStringLiteral("pdfPageNumber")); pageNumber->setRange(1, 1); pageNumber->setMinimumWidth(48); pageNumber->setToolTip(QStringLiteral("Page"));
     pageTotal = UiControls::label(QStringLiteral("/ —"), this);
     navigation->addWidget(previous); navigation->addWidget(pageNumber); navigation->addWidget(pageTotal); navigation->addWidget(next); navigation->addStretch(); navigation->addWidget(original);
@@ -44,8 +44,8 @@ PdfDocumentPage::PdfDocumentPage(QWidget* parent, const QString& restoredViewId)
     zoom->addItem(QStringLiteral("Fit Width"), QStringLiteral("page-width")); zoom->addItem(QStringLiteral("Fit Page"), QStringLiteral("page-fit"));
     for (int percent : {50, 75, 100, 125, 150, 200, 300}) zoom->addItem(QString::number(percent) + QLatin1Char('%'), QString::number(percent / 100.0));
     search = UiControls::lineEdit(this); search->setObjectName(QStringLiteral("pdfSearch")); search->setPlaceholderText(QStringLiteral("Find in PDF")); search->setMinimumWidth(30);
-    auto* findPrevious = button(RoundedIcons::Up, QStringLiteral("Previous Match"));
-    auto* findNext = button(RoundedIcons::Down, QStringLiteral("Next Match"));
+    auto* findPrevious = button(RoundedIcons::PreviousMatch, QStringLiteral("Previous Match"));
+    auto* findNext = button(RoundedIcons::NextMatch, QStringLiteral("Next Match"));
     reading->addWidget(zoom); reading->addWidget(search, 1); reading->addWidget(findPrevious); reading->addWidget(findNext); layout->addLayout(reading);
     auto* noticeRow = new QHBoxLayout; noticeRow->setContentsMargins(5, 0, 5, 0);
     notice = UiControls::label(QStringLiteral("Loading PDF…"), this); notice->setWordWrap(true);

@@ -318,6 +318,11 @@ void ElaTabBar::dragMoveEvent(QDragMoveEvent* event)
     {
         QMouseEvent moveEvent(QEvent::MouseMove, QPoint(event->pos().x(), 0), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
         QApplication::sendEvent(this, &moveEvent);
+        if (_hostedDragEnabled && event->mimeData()->property("ElaHostedTabDrag").toBool()) {
+            event->setDropAction(Qt::MoveAction);
+            event->accept();
+            return;
+        }
     }
     QWidget::dragMoveEvent(event);
 }
@@ -358,6 +363,11 @@ void ElaTabBar::dropEvent(QDropEvent* event)
         data->setProperty("TabDropIndex", tabAt(event->pos()));
 #endif
         Q_EMIT tabDragDrop(data);
+        if (_hostedDragEnabled && data->property("ElaHostedTabDrag").toBool()) {
+            event->setDropAction(Qt::MoveAction);
+            event->accept();
+            return;
+        }
     }
     QTabBar::dropEvent(event);
 }

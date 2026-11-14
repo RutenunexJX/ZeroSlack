@@ -22,6 +22,7 @@ public:
 
     virtual QString providerId() const = 0;
     virtual QString displayName() const = 0;
+    virtual bool showInToolRail() const { return true; }
     virtual QString iconKey() const
     {
         return {};

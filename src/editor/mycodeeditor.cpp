@@ -396,6 +396,8 @@ MyCodeEditor::MyCodeEditor(QWidget *parent)
     bindTemplateModel();
     slashSearch = std::make_unique<EditorSlashController>(this, &state->modes);
     blockHost = std::make_unique<EditorBlockHost>(this);
+    UiControls::enableSmoothScrolling(this);
+    state->diagnosticOverview=new EditorDiagnosticOverview(this,state.get());
 }
 
 MyCodeEditor::SynchronousEditTransaction::SynchronousEditTransaction(
@@ -1026,7 +1028,6 @@ void MyCodeEditor::paintEvent(QPaintEvent *event)
     state->paintGhostAnnotations(this, event);
     state->paintMultiCursor(this, event);
     state->paintColumnSelection(this, event);
-    state->paintDiagnosticOverview(this, event);
     QPainter painter(viewport());
 }
 
@@ -1037,6 +1038,7 @@ void MyCodeEditor::contextMenuEvent(QContextMenuEvent *event)
 }
 
 void MyCodeEditor::addBlockAssociationMenu(QMenu* menu) { if (blockHost && menu) blockHost->addAssociationActions(menu); }
+void MyCodeEditor::populateAssociatedBlockMenu(QMenu* menu, const QString& id) { if (blockHost && menu) blockHost->populateBlockMenu(menu,id); }
 
 EditorSemanticContext MyCodeEditor::editorSemanticContextForPosition(
     int cursorPosition,
@@ -1150,7 +1152,22 @@ void MyCodeEditor::cancelSlashSearch()
 DocumentBlockModel* MyCodeEditor::blockModel() const { return DocumentBlockModel::get(document()); }
 void MyCodeEditor::finishBlockEditing() { if (blockHost) blockHost->finishEditing(); }
 void MyCodeEditor::selectAssociatedBlock(const QString& id, bool edit) { if (blockHost) blockHost->select(id, edit); }
+EditorBlockContent* MyCodeEditor::takeAssociatedBlockContent(const QString& id) { return blockHost ? blockHost->takeContent(id) : nullptr; }
+void MyCodeEditor::adoptAssociatedBlockContent(const QString& id, EditorBlockContent* content) { if(blockHost)blockHost->adoptContent(id,content); }
 int MyCodeEditor::associatedBlockViewCount() const { return blockHost ? blockHost->viewCount() : 0; }
+void MyCodeEditor::setAssociatedBlocksVisible(bool visible) {
+    if(associatedBlocksVisible()==visible)return;
+    const QTextCursor reading(firstVisibleBlock());
+    const int top=cursorRect(reading).top();
+    setProperty("blockMarkersOnly",!visible);
+    invalidateViewProjection();
+    state->projection.ensure(this,state->folding.collapsedLineRanges());
+    state->projection.prepareVisibleGeometry(this);
+    verticalScrollBar()->setValue(verticalScrollBar()->value()+cursorRect(reading).top()-top);
+    viewport()->update();
+    if(blockHost)blockHost->updateVisible();
+    state->gutter.handleUpdateRequest(this,viewport()->rect(),0);
+}
 
 bool MyCodeEditor::insertOrdinaryTemplate(const QString& text,
     const CodeTemplateSlotList& inputs, int finalCursor, QString* error)
@@ -2351,6 +2368,8 @@ bool MyCodeEditor::viewProjectionActive() const
 void MyCodeEditor::invalidateViewProjection()
 {
     state->projection.invalidate();
+    emit viewProjectionChanged();
+    if(state->diagnosticOverview)state->diagnosticOverview->schedule();
     if (blockHost) blockHost->schedule();
 }
 

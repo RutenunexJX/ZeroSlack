@@ -1,4 +1,5 @@
 #include "tabmanager.h"
+#include "retireddocument.h"
 #include "documentrecoveryqueue.h"
 #include "editorfileidentity.h"
 #include "uidialogs.h"
@@ -19,7 +20,7 @@ void updateWebTabPresentation(QTabWidget* group, WebDocumentPage* page) {
     state.documentId = page->documentId(); state.viewId = page->viewIdentity();
     state.path = QDir::toNativeSeparators(page->fileName());
     state.title = page->fileName().isEmpty()
-        ? (page->documentKind() == WebDocumentPage::Kind::Markdown ? QStringLiteral("Untitled.md") : QStringLiteral("Untitled.zblock"))
+        ? QStringLiteral("Untitled.md")
         : QFileInfo(page->fileName()).fileName();
     state.dirty = page->dirty(); state.conflict = page->documentSession()->hasExternalConflict();
     state.readOnly = page->documentSession()->isProtected();
@@ -39,13 +40,6 @@ WebDocumentPage* TabManager::currentWebDocument() const {
     return group ? qobject_cast<WebDocumentPage*>(group->currentWidget()) : nullptr;
 }
 bool TabManager::hasCurrentDocument() const { return getCurrentEditor() || currentWebDocument() || currentPdfDocument() || currentAssociatedBlock(); }
-bool TabManager::importMarkdownDocument(const QString& requested) {
-    const QString source = requested.isEmpty() ? QFileDialog::getOpenFileName(activeTabWidget(), QStringLiteral("Import Markdown as Block Document"), QString(), QStringLiteral("Markdown (*.md *.markdown)")) : requested;
-    if (source.isEmpty()) return false;
-    auto* group = activeTabWidget(); auto* page = new WebDocumentPage(WebDocumentPage::Kind::Blocks, group); QString error;
-    if (!page->importMarkdown(source, &error)) { delete page; UiDialogs::warning(group, QStringLiteral("Import Markdown"), error); return false; }
-    registerWebDocument(page, group); return true;
-}
 WebDocumentPage* TabManager::createWebDocument(WebDocumentPage::Kind kind, const QString& text, const QString& region) {
     auto* group = region.isEmpty() ? activeTabWidget() : splitController->regionGroup(region);
     if (!group) return nullptr;
@@ -58,10 +52,11 @@ WebDocumentPage* TabManager::createWebDocumentFile(WebDocumentPage::Kind kind, c
     auto* group = region.isEmpty() ? activeTabWidget() : splitController->regionGroup(region);
     if (!group) return nullptr;
     QString target = requested;
-    const auto extension = kind == WebDocumentPage::Kind::Markdown ? QStringLiteral(".md") : QStringLiteral(".zblock");
+    const auto extension = QStringLiteral(".md");
     if (QFileInfo(target).suffix().isEmpty()) target += extension;
     QString why;
     const auto fail = [&]() -> WebDocumentPage* { if (error) *error = why; else UiDialogs::warning(group, QStringLiteral("Create Document"), why); return nullptr; };
+    if (!WebDocumentPage::supportsFile(target)) { why = RetiredDocument::isBlockDocument(target) ? RetiredDocument::message() : QStringLiteral("Use a Markdown file extension (.md or .markdown)."); return fail(); }
     if (QFileInfo::exists(target)) { why = QStringLiteral("A file already exists at this path. Choose another name."); return fail(); }
     QPointer<WebDocumentPage> page = new WebDocumentPage(kind, group);
     if (!page->setInitialContent(QString(), &why)) { delete page; return fail(); }
@@ -83,6 +78,7 @@ bool TabManager::openFileInRegion(const QString& path, const QString& region) {
     return current && (splitController->groupForPage(current) == group ? splitController->activatePage(current) : splitController->movePage(current, group));
 }
 WebDocumentPage* TabManager::openWebDocument(const QString& fileName, QTabWidget* group, const QString& viewId, const QString& documentId, QString* failure) {
+    if (!WebDocumentPage::supportsFile(fileName)) { if (failure) *failure = RetiredDocument::isBlockDocument(fileName) ? RetiredDocument::message() : QStringLiteral("Unsupported document type."); return nullptr; }
     if (!group) group = activeTabWidget(); if (!group) return nullptr;
     for (auto* existing : webDocuments()) if (EditorFileIdentity::same(existing->fileName(), fileName)) {
         if (existing->busy()) return nullptr;
@@ -93,7 +89,7 @@ WebDocumentPage* TabManager::openWebDocument(const QString& fileName, QTabWidget
     registerWebDocument(page, group); return page;
 }
 void TabManager::registerWebDocument(WebDocumentPage* page, QTabWidget* group) {
-    splitController->registerPage(page, {}, page->documentKind() == WebDocumentPage::Kind::Markdown ? QStringLiteral("markdown") : QStringLiteral("blocks"));
+    splitController->registerPage(page, {}, QStringLiteral("markdown"));
     connect(page, &WebDocumentPage::viewStateChanged, this, &TabManager::workspaceSessionStateChanged);
     auto* session = page->documentSession().get();
     if (!observedWebDocuments.contains(session)) {
@@ -130,7 +126,7 @@ void TabManager::registerWebDocument(WebDocumentPage* page, QTabWidget* group) {
     connect(page, &WebDocumentPage::fileCommandRequested, this, [this](const QString& command) {
         if (command == QStringLiteral("new")) createNewTab(); else if (command == QStringLiteral("open")) openFileInTab(QString());
     });
-    group->addTab(page, RoundedIcons::icon(page->documentKind() == WebDocumentPage::Kind::Markdown ? RoundedIcons::File : RoundedIcons::Grid), page->title()); group->setCurrentWidget(page); splitController->setActiveGroup(group);
+    group->addTab(page, RoundedIcons::icon(RoundedIcons::MarkdownFile), page->title()); group->setCurrentWidget(page); splitController->setActiveGroup(group);
     group->setTabToolTip(group->indexOf(page),page->fileName().isEmpty() ? page->title() : page->fileName());
     updateWebTabPresentation(group, page);
     emit webDocumentOpened(page);
@@ -166,7 +162,7 @@ void TabManager::checkpointWebRecovery(WebDocumentPage* page) {
     request.document.workspacePath = workspace;
     request.document.originalFilePath = page->fileName();
     if (page->fileName().isEmpty()) request.document.untitledDocumentId = QStringLiteral("web:") + page->documentId()
-        + (page->documentKind() == WebDocumentPage::Kind::Markdown ? QStringLiteral(".md") : QStringLiteral(".zblock"));
+        + QStringLiteral(".md");
     request.savedBaselineSha256 = page->savedBaseline();
     if (!recoveryQueue) recoveryQueue = std::make_unique<DocumentRecoveryQueue>(*crashRecoveryService,
         [this](QObject* owner, const auto& snapshot, const auto& result) { completeRecoverySnapshot(owner, snapshot, result); }, this);

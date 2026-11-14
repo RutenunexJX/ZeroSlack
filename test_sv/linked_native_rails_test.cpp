@@ -10,6 +10,14 @@
 #include "tabmanager.h"
 #include "testuistyle.h"
 #include "webeditorcontainer.h"
+#include "editorsplitcontroller.h"
+#include "documentblockmodel.h"
+#include "associatedblockpage.h"
+#include "editorblockcontent.h"
+#include "shareddocument.h"
+#include "uicontrols.h"
+#include <QDockWidget>
+#include <QToolButton>
 #include <QAbstractTextDocumentLayout>
 #include <QAbstractAnimation>
 #include <QApplication>
@@ -23,6 +31,7 @@
 #include <QLabel>
 #include <QLockFile>
 #include <QMainWindow>
+#include <QMenu>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QScrollBar>
@@ -78,7 +87,8 @@ struct Harness {
     QSet<QString> errorSources;
     bool defer = false, ready = false;
 
-    Harness() {
+    Harness(bool useElaTabs=false) {
+        if(useElaTabs){delete tabWidget;tabWidget=UiControls::editorTabWidget(page);}
         if (!temp.isValid()) return;
         file = temp.filePath("first.sv"); second = temp.filePath("second.sv");
         text = "module native_rails_fixture;\n";
@@ -325,6 +335,89 @@ bool parentInvariant(const QJsonArray& references) {
 class LinkedNativeRailsTest : public QObject {
     Q_OBJECT
 private slots:
+    void cleanModeSameLineMenusPreserveBlocks() {
+        Harness h(true);QVERIFY(h.ready);auto* editor=h.editor();auto* model=editor->blockModel();
+        EditorAssociatedBlock block;block.type="text";block.text="First";
+        QTextCursor at(editor->document()->findBlockByNumber(2));
+        const auto first=model->insert(block,at);block.text="Second";const auto second=model->insert(block,at);
+        QVERIFY(!first.isEmpty() && !second.isEmpty());
+        QTest::qWait(30);auto* gutter=editor->findChild<QWidget*>("editorLineNumberGutter");QVERIFY(gutter);
+        const int width=gutter->width();const auto before=model->serialize();
+        QVERIFY(h.controller->setMode(LinkedContextController::Mode::Clean));
+        QCOMPARE(gutter->width(),width);
+        const auto contentCount=editor->findChildren<QWidget*>("editorBlockContent").size();
+        QTest::mouseClick(gutter,Qt::LeftButton,Qt::NoModifier,QPoint(8,qRound(editor->blockGeometry(2).top)+5));
+        auto* menu=gutter->findChild<QMenu*>("collapsedBlockMenu");QVERIFY(menu);QCOMPARE(menu->actions().size(),2);
+        for(auto* action:menu->actions()) {
+            QVERIFY(action->menu());QStringList labels;for(auto* item:action->menu()->actions())labels<<item->text();
+            QVERIFY(labels.contains("Copy"));QVERIFY(labels.contains("Cut"));QVERIFY(labels.contains("Delete"));
+        }
+        menu->close();QCOMPARE(editor->findChildren<QWidget*>("editorBlockContent").size(),contentCount);QCOMPARE(model->serialize(),before);
+    }
+    void viewModesKeepOneLocalContentAndSourceHistory() {
+        Harness h(true);QVERIFY(h.ready);auto* editor=h.editor();auto* model=editor->blockModel();
+        EditorAssociatedBlock note;note.type="text";note.text="Retained note";note.height=100;
+        QTextCursor anchor(editor->document()->findBlockByNumber(2));const auto id=model->insert(note,anchor);QVERIFY(!id.isEmpty());
+        editor->selectAssociatedBlock(id);QTRY_VERIFY(editor->findChild<QWidget*>("editorBlockContent"));
+        QPointer<EditorBlockContent> content=static_cast<EditorBlockContent*>(editor->findChild<QWidget*>("editorBlockContent"));
+        QVERIFY(content->setEditing(true));model->markSaved();
+        const auto stored=model->serialize();const auto bytes=editor->toPlainText();const auto revision=model->revision();
+        const auto undoSteps=editor->document()->availableUndoSteps();const auto lower=editor->blockGeometry(3).top;
+        auto* buttons=h.controller->createModeButtons(&h.window);buttons->show();
+        QVERIFY(h.controller->setMode(LinkedContextController::Mode::Clean));
+        QVERIFY(!editor->associatedBlocksVisible());QVERIFY(!content->isVisible());QVERIFY(editor->blockGeometry(3).top<lower);
+        QCOMPARE(model->serialize(),stored);QVERIFY(!model->dirty());
+        QVERIFY(h.controller->setMode(LinkedContextController::Mode::Expanded));
+        QTRY_VERIFY(!h.tabs->associatedBlockPresentations().isEmpty());QVERIFY(content);
+        QTRY_VERIFY(h.rails()->isAncestorOf(content));QVERIFY(content->isEditing());
+        QCOMPARE(model->serialize(),stored);QCOMPARE(model->revision(),revision);QVERIFY(!model->dirty());
+        QVERIFY(h.controller->setMode(LinkedContextController::Mode::Editing));
+        QVERIFY(content);QVERIFY(editor->isAncestorOf(content));QTRY_VERIFY(content->isVisible());QVERIFY(content->isEditing());
+        QCOMPARE(editor->toPlainText(),bytes);QCOMPARE(editor->document()->availableUndoSteps(),undoSteps);
+        QCOMPARE(model->serialize(),stored);QVERIFY(!model->dirty());
+        QCOMPARE(h.tabs->associatedBlockPages().size(),0);
+        qInfo()<<"MODE1 native DPR"<<h.window.devicePixelRatioF();
+    }
+    void modeSwitchVetoPreservesModeAndFocus() {
+        Harness h(true);QVERIFY(h.ready);h.editor()->setFocus();auto* focus=QApplication::focusWidget();
+        const auto connection=connect(h.editor()->blockModel(),&DocumentBlockModel::contentsFlushRequested,&h.window,[](QString* error){*error="Invalid local field";});
+        QVERIFY(!h.controller->setMode(LinkedContextController::Mode::Expanded));
+        QCOMPARE(h.controller->mode(),LinkedContextController::Mode::Editing);QVERIFY(!h.controller->isActive());
+        QCOMPARE(QApplication::focusWidget(),focus);QVERIFY(h.editor()->associatedBlocksVisible());
+        disconnect(connection);QVERIFY(h.controller->setModeName("unknown-future-mode"));
+        QCOMPARE(h.controller->modeName(),QString("editing"));
+    }
+    void drawersKeepRegionIdentityAndNewTabPlacement() {
+        Harness h(true);QVERIFY(h.ready);auto* registry=h.tabs->editorSplitController();
+        QMap<QString,QWidget*> hosts;QMap<QString,QTabWidget*> groups;
+        for(const auto& region:QStringList{"left","bottom","right"}){
+            auto* dock=new QDockWidget(region,&h.window);dock->setObjectName("modeFixtureDock_"+region);
+            auto* host=new QWidget(dock);dock->setWidget(host);hosts[region]=host;
+            h.window.addDockWidget(region=="left"?Qt::LeftDockWidgetArea:region=="right"?Qt::RightDockWidgetArea:Qt::BottomDockWidgetArea,dock);
+            groups[region]=registry->registerRegion(region,host);dock->show();
+            auto* page=new QWidget;page->setObjectName("existing_"+region);registry->registerPage(page);groups[region]->addTab(page,region);
+        }
+        auto* original=groups["left"]->widget(0);auto* main=registry->regionGroup("main");
+        QVERIFY(h.controller->setMode(LinkedContextController::Mode::Expanded));
+        auto* left=h.window.findChild<QToolButton*>("expandedDrawerButton_left");auto* right=h.window.findChild<QToolButton*>("expandedDrawerButton_right");
+        QVERIFY(left && right);const auto railsSize=h.rails()->size();left->click();QVERIFY(left->isChecked());
+        QCOMPARE(registry->regionGroup("left"),groups["left"]);QVERIFY(groups["left"]->isVisible());
+        right->click();QVERIFY(right->isChecked());QVERIFY(!left->isChecked());QCOMPARE(h.rails()->size(),railsSize);
+        QVERIFY(registry->movePage(original,main));auto* added=new QWidget;registry->registerPage(added);groups["left"]->addTab(added,"New while expanded");
+        QVERIFY(h.controller->setMode(LinkedContextController::Mode::Editing));
+        QCOMPARE(registry->groupForPage(original),main);QCOMPARE(groups["left"]->widget(0),added);
+        for(const auto& region:hosts.keys()){QCOMPARE(registry->regionHost(region),hosts[region]);QVERIFY(hosts[region]->isAncestorOf(groups[region]));}
+    }
+    void expandedAllowsOtherMainDocumentsAndReturnsToCode() {
+        Harness h(true);QVERIFY(h.ready);auto* editor=h.editor();auto* registry=h.tabs->editorSplitController();
+        QVERIFY(h.controller->setMode(LinkedContextController::Mode::Expanded));
+        auto* other=new QWidget;other->setObjectName("nonCodeMainDocument");QVERIFY(registry->registerPage(other,{},"markdown"));
+        auto* main=registry->regionGroup("main");main->addTab(other,"Markdown");QVERIFY(registry->activatePage(other));
+        QCOMPARE(h.controller->mode(),LinkedContextController::Mode::Expanded);QVERIFY(other->isVisible());
+        QVERIFY(!h.rails()->widget(0)->isVisible());QVERIFY(!h.rails()->widget(2)->isVisible());
+        QVERIFY(registry->activatePage(editor));QTRY_VERIFY(h.rails()->widget(0)->isVisible());
+        QCOMPARE(h.editor(),editor);QVERIFY(!editor->associatedBlocksVisible());
+    }
     void legacyNoticeLifecycle() {
         Harness h;QVERIFY(h.ready);QVERIFY(h.store({h.anchor("a",2,{"one","two"}),h.anchor("b",4,{"other"},h.second)}));
         const auto first=h.board(h.file,savedState()),second=h.board(h.second,savedState());QVERIFY(!first.isEmpty()&&!second.isEmpty());
@@ -486,14 +579,16 @@ private slots:
         const auto fixtures=QFileInfo(QString::fromUtf8(__FILE__)).dir();
         const auto historical=readFile(fixtures.filePath("fixtures/linked_rails_layout/default-native.json"));
         QCOMPARE(QCryptographicHash::hash(historical,QCryptographicHash::Sha256).toHex(),QByteArray("07fd31225cc5d11be617bdbf3c4ec3b6e093e1035b8a7530e67d562fa7f4816d"));
-        const QByteArray bytes=readFile(fixtures.filePath("fixtures/linked_rails_layout/default-native-v0354.json"));
-        QCOMPARE(QCryptographicHash::hash(bytes,QCryptographicHash::Sha256).toHex(),QByteArray("e074ba8305e738c187d76aa2439017dbfb5964a32e84e3a92efe5f6ace60f1d0"));
+        const auto prior=readFile(fixtures.filePath("fixtures/linked_rails_layout/default-native-v0354.json"));
+        QCOMPARE(QCryptographicHash::hash(prior,QCryptographicHash::Sha256).toHex(),QByteArray("e074ba8305e738c187d76aa2439017dbfb5964a32e84e3a92efe5f6ace60f1d0"));
+        const QByteArray bytes=readFile(fixtures.filePath("fixtures/linked_rails_layout/default-native-modes.json"));
         const auto expected=QJsonDocument::fromJson(bytes).object();QVERIFY(!expected.isEmpty());
         Harness h;QVERIFY(h.ready);const auto actual=DefaultNativeObservation::capture(h);QVERIFY(!actual.isEmpty());
         const auto artifacts=qEnvironmentVariable("ZEROSLACK_TEST_ARTIFACT_DIR");
         if(!artifacts.isEmpty()) QVERIFY(writeFile(QDir(artifacts).filePath("default-native-actual.json"),QJsonDocument(actual).toJson()));
         const auto differences=differentFields(expected,actual);
         QVERIFY2(differences.isEmpty(),qPrintable(differences.join('\n')));
+        QVERIFY(actual["exit"].toObject()["latestEditorViewPreserved"].toBool());
         const auto phases=actual["phases"].toArray();QCOMPARE(phases.size(),7);
         for(qsizetype i=1;i<phases.size();++i)QVERIFY(!differentFields(phases[i-1].toObject()["state"],phases[i].toObject()["state"]).isEmpty());
         auto changed=actual;auto alteredPhases=phases;auto phase=alteredPhases[0].toObject();
@@ -503,7 +598,7 @@ private slots:
         QCOMPARE(differentFields(actual,changed),QStringList({"/phases/0/state/editor/position"}));
     }
     void frozenNativeSensitivity() {
-        const auto bytes=readFile(QFileInfo(QString::fromUtf8(__FILE__)).dir().filePath("fixtures/linked_rails_layout/default-native-v0354.json"));
+        const auto bytes=readFile(QFileInfo(QString::fromUtf8(__FILE__)).dir().filePath("fixtures/linked_rails_layout/default-native-modes.json"));
         const auto expected=QJsonDocument::fromJson(bytes).object();QVERIFY(!expected.isEmpty());
         for(const auto& field:QStringList{"references","paintedPaths","association"}){
             auto altered=expected;auto phases=altered["phases"].toArray();auto phase=phases[0].toObject();auto state=phase["state"].toObject();QString path;
@@ -528,6 +623,11 @@ private slots:
         }
         QVERIFY(first);QVERIFY(extra);
         QVERIFY(h.editor()->toggleFoldAtLineForTest(3));
+        QTest::qWait(150);
+        if(!presentationFor(h,"a")["folded"].toBool())
+            qInfo().noquote()<<"FOLD_DIAGNOSTIC"<<h.editor()->foldingViewState().collapsedRanges.size()
+                <<h.editor()->sourceLineVisible(5)<<h.editor()->semanticDocumentRevision()
+                <<QJsonDocument(h.snapshot()).toJson(QJsonDocument::Compact);
         QTRY_VERIFY(presentationFor(h,"a")["folded"].toBool());
         const auto aggregate=presentationFor(h,"a");
         QCOMPARE(aggregate["members"].toArray(),QJsonArray({"a","b","head"}));
@@ -969,7 +1069,8 @@ private slots:
         QCOMPARE(editor->textCursor().selectionStart(),h.text.indexOf("signal_082"));
         QCOMPARE(editor->textCursor().selectedText(),QStringLiteral("signal_082"));QVERIFY(editor->verticalScrollBar()->value()!=before["vertical"].toInt());
         far->findChild<QPushButton*>("linkedNativeOpen")->click();QTRY_COMPARE(h.opened,QStringList{"image"});
-        QVERIFY(h.controller->setActive(false));QCOMPARE(editor->document(),document);QCOMPARE(view(editor),before);
+        const auto navigated=view(editor);
+        QVERIFY(h.controller->setActive(false));QCOMPARE(editor->document(),document);QCOMPARE(view(editor),navigated);
     }
     void widthRatioAndLogicalY() {
         Harness h;QVERIFY(h.ready);

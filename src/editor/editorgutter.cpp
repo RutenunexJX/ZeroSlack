@@ -4,10 +4,12 @@
 #include "mycodeeditor.h"
 #include "documentblockmodel.h"
 #include "roundedicons.h"
+#include "uicontrols.h"
 
 #include <QFontDatabase>
 #include <QFontMetricsF>
 #include <QMouseEvent>
+#include <QMenu>
 #include <QPalette>
 #include <QPainter>
 #include <QScrollBar>
@@ -19,6 +21,12 @@
 namespace {
 constexpr int kLineNumberLeft = 18;
 constexpr int kLineNumberRightPadding = 4;
+int lineNumberLeft(MyCodeEditor* editor) {
+    return editor && !editor->blockModel()->items().isEmpty() ? 62 : kLineNumberLeft;
+}
+RoundedIcons::Kind blockIcon(const QString& type) {
+    return RoundedIcons::blockKind(type);
+}
 QFont lineNumberFont(int) {
     QFont font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
     font.setPointSizeF(10.0);
@@ -106,7 +114,7 @@ int EditorGutter::totalWidth(MyCodeEditor* editor) {
     const int count = editor ? editor->blockCount() : 1;
     const int digits = qMax(3, static_cast<int>(QString::number(qMax(1, count)).size()));
     const QFontMetricsF metrics(lineNumberFont(count));
-    return 18 + qCeil(metrics.horizontalAdvance(QString(digits, QLatin1Char('9')))) + 4 + 16;
+    return lineNumberLeft(editor) + qCeil(metrics.horizontalAdvance(QString(digits, QLatin1Char('9')))) + 4 + 16;
 }
 
 int EditorGutter::widthFor(MyCodeEditor* editor) const
@@ -186,10 +194,10 @@ void EditorGutter::paint(MyCodeEditor* editor, QPaintEvent* event) const
                 ? palette.color(QPalette::Text)
                 : palette.color(QPalette::PlaceholderText));
         painter.drawText(
-            kLineNumberLeft,
+            lineNumberLeft(editor),
             top,
             widthFor(editor)
-                - kLineNumberLeft
+                - lineNumberLeft(editor)
                 - kLineNumberRightPadding - 16,
             bottom - top,
             Qt::AlignRight | Qt::AlignVCenter,
@@ -203,22 +211,44 @@ void EditorGutter::paint(MyCodeEditor* editor, QPaintEvent* event) const
     }
     if (editor->state) {
         const auto& projection=editor->state->projection;
-        for (const auto& gap:projection.visibleAssociatedBlocks(editor)) {
+        const auto gaps=projection.visibleAssociatedBlocks(editor);
+        QSet<int> paintedRows;
+        for (const auto& gap:gaps) {
             const auto* associated=editor->blockModel()->find(gap.first); if (!associated) continue;
-            const auto kind=associated->type=="wave" ? RoundedIcons::Wave : associated->type=="image" ? RoundedIcons::Grid
-                : associated->type=="reference" ? RoundedIcons::CopyLink : associated->type=="code" ? RoundedIcons::Subroutine
-                : associated->type=="attachment" ? RoundedIcons::Folder : RoundedIcons::File;
-            const int y=qRound(gap.second.top())+9;
-            RoundedIcons::icon(kind).paint(&painter,QRect(3,y,16,16));
+            int count=1;
+            if(!editor->associatedBlocksVisible()) {
+                const int row=qRound(gap.second.top());if(paintedRows.contains(row))continue;paintedRows.insert(row);
+                count=0;for(const auto& other:gaps)if(qRound(other.second.top())==row)++count;
+            }
+            const int y=qRound(gap.second.top())+(editor->associatedBlocksVisible()?9:qMax(0,qRound(gap.second.height()-16)/2));
+            RoundedIcons::icon(blockIcon(associated->type)).paint(&painter,QRect(3,y,16,16));
             painter.setPen(palette.color(QPalette::PlaceholderText));
-            painter.drawText(QRect(21,y,qMax(1,widthFor(editor)-25),18),Qt::AlignLeft|Qt::AlignVCenter,
-                             QString::number(projection.associatedBlockOrdinal(gap.first)));
+            const auto ordinal=QString::number(projection.associatedBlockOrdinal(gap.first));
+            painter.drawText(QRect(21,y,39,18),Qt::AlignLeft|Qt::AlignVCenter,
+                             count>1 ? ordinal+"+"+QString::number(count-1) : ordinal);
         }
     }
 }
 
 void EditorGutter::handleMousePress(MyCodeEditor* editor, QMouseEvent* event) const
 {
+    if(editor->state && !editor->associatedBlocksVisible() && event->position().x()<lineNumberLeft(editor)
+        && (event->button()==Qt::LeftButton || event->button()==Qt::RightButton)) {
+        QStringList ids;
+        for(const auto& gap:editor->state->projection.visibleAssociatedBlocks(editor))
+            if(gap.second.top()<=event->position().y() && event->position().y()<=gap.second.bottom())ids.append(gap.first);
+        if(!ids.isEmpty()) {
+            auto* menu=UiControls::menu(widget);menu->setObjectName("collapsedBlockMenu");menu->setAttribute(Qt::WA_DeleteOnClose);
+            for(const auto& id:ids)if(const auto* block=editor->blockModel()->find(id)) {
+                const auto label=QString::number(editor->state->projection.associatedBlockOrdinal(id))+" · "+block->type;
+                auto* target=ids.size()==1 ? menu : menu->addMenu(RoundedIcons::icon(blockIcon(block->type)),label);
+                editor->populateAssociatedBlockMenu(target,id);
+                if(ids.size()==1)editor->selectAssociatedBlock(id);
+                else QObject::connect(target,&QMenu::aboutToShow,editor,[editor,id]{editor->selectAssociatedBlock(id);});
+            }
+            menu->popup(event->globalPosition().toPoint());event->accept();return;
+        }
+    }
     if (editor->state && event->button()==Qt::LeftButton) {
         for (const auto& gap:editor->state->projection.visibleAssociatedBlocks(editor))
             if (event->position().y()>=gap.second.top() && event->position().y()<=gap.second.bottom()) {

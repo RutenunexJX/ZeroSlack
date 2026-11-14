@@ -21,9 +21,9 @@ QIcon NavigationWidget::getFileIcon(const QString& filePath)
 
     QIcon icon;
     if (role == SymbolTaxonomy::SourceRole::DesignSource) {
-        icon = style()->standardIcon(QStyle::SP_FileIcon);
+        icon = RoundedIcons::icon(RoundedIcons::SourceFile);
     } else if (SymbolTaxonomy::isHeaderSourceRole(role)) {
-        icon = RoundedIcons::icon(RoundedIcons::File);
+        icon = RoundedIcons::icon(RoundedIcons::HeaderFile);
     } else {
         icon = style()->standardIcon(QStyle::SP_FileIcon);
     }
@@ -45,7 +45,7 @@ QIcon NavigationWidget::getSymbolIcon(SymbolOutlineIconKind iconKind)
         icon = RoundedIcons::icon(RoundedIcons::Module);
         break;
     case SymbolOutlineIconKind::Signal:
-        icon = RoundedIcons::icon(RoundedIcons::Wave);
+        icon = RoundedIcons::icon(RoundedIcons::Signal);
         break;
     case SymbolOutlineIconKind::Subroutine:
         icon = RoundedIcons::icon(RoundedIcons::Subroutine);

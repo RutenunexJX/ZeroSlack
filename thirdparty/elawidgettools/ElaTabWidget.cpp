@@ -182,8 +182,13 @@ bool ElaTabWidget::event(QEvent* event)
 
 bool ElaTabWidget::eventFilter(QObject* watched, QEvent* event)
 {
-    if (watched == tabBar() && (event->type() == QEvent::Move || event->type() == QEvent::Resize
-        || event->type() == QEvent::LayoutRequest)) scheduleHostedLayout();
+    if (watched == tabBar()) {
+        // QTabWidget can reposition its bar during a synchronous style/layout
+        // update. An external strip owns that geometry, including native hits
+        // before the next event-loop turn.
+        if (event->type() == QEvent::Move || event->type() == QEvent::Resize) syncHostedLayout();
+        else if (event->type() == QEvent::LayoutRequest) scheduleHostedLayout();
+    }
     return QTabWidget::eventFilter(watched, event);
 }
 

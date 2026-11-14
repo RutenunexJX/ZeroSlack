@@ -140,7 +140,7 @@ void NavigationManager::refreshDesignHierarchy(bool force)
 
     if (!refreshWidget)
         return;
-    navigationWidget->updateDesignHierarchy(caches.designHierarchy);
+    navigationWidget->updateDesignHierarchy(caches.designHierarchy, caches.projection);
     designHierarchyWidgetValid = true;
 
     emit dataRefreshed(DesignHierarchyView);
@@ -175,7 +175,7 @@ void NavigationManager::warmDesignHierarchyCache()
     const bool changed = updateDesignHierarchyData(false);
     if (changed && navigationWidget) {
         designHierarchyWidgetValid = false;
-        navigationWidget->updateDesignSummary(caches.designHierarchy);
+        navigationWidget->updateDesignHierarchy(caches.designHierarchy, caches.projection);
     }
 }
 
@@ -217,15 +217,18 @@ void NavigationManager::setSimulationHandlers(std::function<QPair<QString,QStrin
     simulationTarget=std::move(target);
     selectSimulationTop=std::move(select);
     if (navigationWidget) navigationWidget->setSimulationTargetProvider(simulationTarget);
+    refreshDesignHierarchy();
 }
 void NavigationManager::synchronizeDesignProjects()
 {
     if (connectedWorkspaceManager && connectedWorkspaceManager->isWorkspaceOpen()) {
         auto* model = connectedWorkspaceManager->getProjectModel();
-        if (!model->snapshot().explicitDesignSelection) model->setActiveDesignProject({}, {}, {});
+        const auto top=designProjects?designProjects->sourceTop():QPair<QString,QString>();
+        model->setActiveDesignProject({}, top.second, top.first);
     }
     if (designProjects && navigationWidget && EditorFileIdentity::same(designProjects->workspace(), context.currentWorkspacePath))
         navigationWidget->restoreDesignViewState(designProjects->viewState());
+    refreshDesignHierarchy();
 }
 QString NavigationManager::setDesignTop(const QString& moduleName, const QString& definitionFile)
 {
@@ -238,6 +241,9 @@ QString NavigationManager::setDesignTop(const QString& moduleName, const QString
     }
     if (matches.size() != 1) return matches.isEmpty() ? tr("No current module definition matches this source.")
         : tr("Multiple definitions match this module; choose its source file.");
+    if(!designProjects)return tr("Source top storage is unavailable.");
+    const auto issue=designProjects->setSourceTop(matches.first().location.fileName,moduleName);
+    if(!issue.isEmpty())return issue;
     navigationWidget->setActiveTab(NavigationWidget::DesignTab);
     navigationWidget->finishDesignProjectSelection({}, matches.first().location.fileName, moduleName);
     refreshDesignHierarchy();
@@ -247,13 +253,11 @@ void NavigationManager::chooseDesignProject()
 { if (navigationWidget) navigationWidget->beginDesignProjectSelection(); }
 void NavigationManager::clearDesignTop()
 {
-    caches.activeProjectId.clear();
-    if (connectedWorkspaceManager) connectedWorkspaceManager->getProjectModel()->setActiveDesignProject({}, {}, {});
+    if (designProjects) designProjects->setSourceTop({}, {});
 }
 QString NavigationManager::selectedDesignTopModule() const
 {
-    for (const auto& node : caches.designHierarchy.nodes) if (node.isTop && node.rootId == caches.activeProjectId) return node.moduleType;
-    return {};
+    return designProjects ? designProjects->sourceTop().second : QString();
 }
 
 void NavigationManager::setSearchFilter(const QString& filter)

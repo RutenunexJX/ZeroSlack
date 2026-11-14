@@ -508,6 +508,7 @@ int main(int argc, char* argv[])
     liveUi.mainWindowState = QByteArrayLiteral("state-a");
     liveUi.navigationFilesQuery = QStringLiteral("value_a");
     liveUi.navigationDesignQuery = QStringLiteral("u_a");
+    liveUi.editorViewMode=QStringLiteral("expanded");
     liveUi.panelLayout.valid = true;
     liveUi.panelLayout.activeBottomPanel =
         QStringLiteral("problems");
@@ -532,6 +533,11 @@ int main(int argc, char* argv[])
                      == QStringList{cleanPath(fileA)}
               && savedA.state.scanComplete,
           "save captures tabs UI and scan state");
+    check(savedA.state.ui.editorViewMode=="expanded","workspace remembers expanded view mode");
+    auto unknownMode=savedA.state;unknownMode.ui.editorViewMode="future-mode";
+    check(service.save(unknownMode).saved && service.load(workspaceA).state.ui.editorViewMode=="editing",
+          "unknown view mode falls back to editing without dropping session");
+    check(service.save(savedA.state).saved,"valid session restored after mode compatibility check");
 
     check(tabManager.closeTabsInWorkspace(workspaceA),
           "workspace A tabs close before restore");

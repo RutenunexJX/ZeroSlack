@@ -4,6 +4,7 @@
 #include "annotationlayer.h"
 #include "editoranchoredrangeindex.h"
 #include "editorappearance.h"
+#include "editordiagnosticoverview.h"
 #include "completiontypes.h"
 #include "declaresignalfactcollector.h"
 #include "declaresignalservice.h"
@@ -189,8 +190,7 @@ struct MyCodeEditorState
     QList<SemanticDiagnostic> diagnostics;
     QHash<int, QList<int>> diagnosticIndexesByLine;
     QHash<int, SemanticDiagnostic::Severity> diagnosticSeverityByLine;
-    QHash<int, SemanticDiagnostic::Severity>
-        diagnosticOverviewSeverityByBucket;
+    QPointer<EditorDiagnosticOverview> diagnosticOverview;
     std::uint64_t diagnosticComputationRevision = 0;
     EditorAnchoredRangeIndex<
         GhostAnnotation,
@@ -402,8 +402,6 @@ struct MyCodeEditorState
     void paintGutterDecorations(MyCodeEditor* editor,
                                 QPainter& painter,
                                 const QRect& rect) const;
-    void paintDiagnosticOverview(MyCodeEditor* editor,
-                                 QPaintEvent* event);
     void paintFoldPlaceholders(MyCodeEditor* editor, QPaintEvent* event) const;
     void paintGhostAnnotations(MyCodeEditor* editor, QPaintEvent* event);
     void paintMultiCursor(MyCodeEditor* editor, QPaintEvent* event) const;
@@ -564,8 +562,6 @@ struct MyCodeEditorState
     void refreshVisibleRegionPresentation(MyCodeEditor* editor, bool force = true);
     void updateVisibleTextLayoutCache(MyCodeEditor* editor);
     void clearVisibleTextLayoutCache();
-    void rebuildDiagnosticOverviewIndex(
-        const MyCodeEditor* editor);
     void refreshDiagnosticPresentation(MyCodeEditor* editor);
     void refreshSemanticDecorationPresentation(MyCodeEditor* editor);
     void refreshDerivedEditorState(MyCodeEditor* editor,

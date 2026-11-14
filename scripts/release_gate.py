@@ -607,8 +607,15 @@ def verify_tickx_payload(package, receipt):
                 'Missing or changed accepted Wave block runtime: '+relative)
     component=read_json(package/'components/tickx/build-info.json')
     info=read_json(package/'build-info.json').get('nativeComponents',{}).get('tickx',{})
-    require(info.get('version')==component['version'] and info.get('revision')==component['revision'],
+    revision=component.get('revision') or component.get('baseCommit')
+    require(revision and info.get('version')==component['version'] and info.get('revision')==revision,
             'Wave block component metadata mismatch')
+    if component.get('sourceDirty'):
+        require(info.get('sourceDirty') and component.get('sourcePatchSha256')
+                and info.get('sourcePatchSha256')==component['sourcePatchSha256'],
+                'Wave block development source identity mismatch')
+    require(info.get('capabilities',[])==component.get('capabilities',[]),
+            'Wave block component capabilities mismatch')
 
 
 def verify_assembled_payload(package,receipt):

@@ -5,6 +5,7 @@
 #include "actionregistry.h"
 #include "editordroppreviewoverlay.h"
 #include "uicontrols.h"
+#include "applicationthememanager.h"
 #ifdef ZEROSLACK_ENABLE_ELA
 #include "ElaTabWidget.h"
 #include "ElaTabBar.h"
@@ -82,6 +83,7 @@ EditorSplitController::EditorSplitController(
     , currentGroup(initial)
 {
     qApp->installEventFilter(this);
+    connect(&ApplicationThemeManager::instance(),&ApplicationThemeManager::themeChanged,this,[this]{refreshGroupSurfaces();});
     if (initial) {
         regionHosts.insert(QStringLiteral("main"), {nullptr, initial, initial, initial, {}});
         groupRegions.insert(initial, QStringLiteral("main"));
@@ -469,6 +471,27 @@ void EditorSplitController::setRegionRevealHandler(const QString& id,std::functi
 {
     if (regionHosts.contains(id)) regionHosts[id].reveal=std::move(reveal);
 }
+QWidget* EditorSplitController::regionTabStrip(const QString& id) const { return regionHosts.value(id).tabStrip; }
+QWidget* EditorSplitController::rehostRegion(const QString& id,QWidget* host) {
+    auto found=regionHosts.find(id);
+    if(found==regionHosts.end() || id=="main" || !host || !found->root)return nullptr;
+    auto* previous=found->host.data();
+    if(!host->layout()){auto* layout=new QVBoxLayout(host);layout->setContentsMargins(0,0,0,0);}
+    if(previous && previous->layout())previous->layout()->removeWidget(found->root);
+    found->host=host;host->layout()->addWidget(found->root);found->root->show();
+    bindDropTarget(host);return previous;
+}
+void EditorSplitController::bindRegionDropTarget(QWidget* target,const QString& id) {
+    if(!target || !regionHosts.contains(id))return;
+    target->setProperty("editorDropRegion",id);bindDropTarget(target);
+}
+QTabWidget* EditorSplitController::regionDropGroup(QWidget* target) const {
+    for(auto* widget=target;widget;widget=widget->parentWidget()){
+        const auto id=widget->property("editorDropRegion").toString();
+        if(!id.isEmpty())return regionActiveGroup(id);
+    }
+    return nullptr;
+}
 void EditorSplitController::setRegionTabStrip(const QString& id, QWidget* strip)
 {
     if (!regionHosts.contains(id)) return;
@@ -485,6 +508,7 @@ void EditorSplitController::revealGroup(QTabWidget* group)
 {
     if (restoringPageLayout) return;
     if (isFloatingGroup(group)) { group->window()->show(); return; }
+    if(regionRevealOverride && regionRevealOverride(regionForGroup(group)))return;
     const auto reveal=regionHosts.value(regionForGroup(group)).reveal;
     if (reveal) reveal();
 }
@@ -527,6 +551,7 @@ void EditorSplitController::setActiveGroup(QTabWidget* group)
     }
     currentGroup = group;
     regionHosts[regionForGroup(group)].current = group;
+    refreshGroupSurfaces();
     emit activeGroupChanged(group);
     emit pageActivated(group->currentWidget());
 }
@@ -957,6 +982,8 @@ bool EditorSplitController::eventFilter(
                 drag->position().toPoint());
             if (updateDropPreview(
                     viewId, target, targetPosition)) {
+                if (regionDropGroup(qobject_cast<QWidget*>(watched)))
+                    dropPreview->showPreview(qobject_cast<QWidget*>(watched), EditorSplitDirection::Center);
                 drag->setDropAction(Qt::MoveAction);
                 drag->accept();
             } else {
@@ -1011,6 +1038,32 @@ QTabWidget* EditorSplitController::createGroup(const QString& regionId)
     tabGroups.append(group);
     emit groupCreated(group);
     return group;
+}
+
+void EditorSplitController::refreshGroupSurfaces()
+{
+    const auto surface=[](QWidget* widget,const QString& role) {
+        if(!widget || widget->property("workspaceRegionSurface").toString()==role)return;
+        widget->setProperty("workspaceRegionSurface",role);widget->setAttribute(Qt::WA_StyledBackground);
+        widget->style()->unpolish(widget);widget->style()->polish(widget);widget->update();
+    };
+    for(auto it=regionHosts.cbegin();it!=regionHosts.cend();++it){
+        const auto role=it.key()=="main"?QStringLiteral("main"):QStringLiteral("auxiliary");
+        surface(it.value().host,role);surface(it.value().tabStrip,role);
+    }
+    for(auto it=groupRegions.cbegin();it!=groupRegions.cend();++it){
+        auto* group=it.key();if(!group)continue;
+        const auto region=isFloatingGroup(group)?QStringLiteral("floating"):it.value();
+        const auto role=region=="main"?QStringLiteral("main"):QStringLiteral("auxiliary");
+        surface(group,role);
+        for(auto* stack:group->findChildren<QStackedWidget*>(QString(),Qt::FindDirectChildrenOnly))surface(stack,role);
+        for(QWidget* widget:QList<QWidget*>{group,group->tabBar()}){
+            const bool changed=widget->property("workspaceRegionFocused").toBool()!=(group==activeGroup()) || !widget->property("workspaceRegionGroup").toBool();
+            widget->setProperty("workspaceRegionId",region);widget->setProperty("workspaceRegionGroup",true);
+            widget->setProperty("workspaceRegionFocused",group==activeGroup());
+            if(changed){widget->style()->unpolish(widget);widget->style()->polish(widget);}widget->update();
+        }
+    }
 }
 
 void EditorSplitController::configureGroup(QTabWidget* group)
@@ -1100,6 +1153,7 @@ void EditorSplitController::configureGroup(QTabWidget* group)
 #endif
     if (!group->tabBar()->property("zeroslackElaControl").toBool())
         group->tabBar()->setStyleSheet(QStringLiteral("QTabBar::tab { min-width: 108px; }"));
+    refreshGroupSurfaces();
     bindGroupDropTargets(group);
     connect(group,
             &QTabWidget::currentChanged,
@@ -1342,6 +1396,7 @@ QTabWidget* EditorSplitController::dropTargetForEvent(
     QObject* watched,
     const QPoint& watchedPosition) const
 {
+    if(auto* target=regionDropGroup(qobject_cast<QWidget*>(watched)))return target;
     if (QTabWidget* direct = groupForObject(watched))
         return direct;
 
@@ -1369,6 +1424,7 @@ QPoint EditorSplitController::targetPositionForEvent(
 {
     if (!target)
         return {};
+    if(regionDropGroup(qobject_cast<QWidget*>(watched)))return target->rect().center();
     QWidget* watchedWidget = qobject_cast<QWidget*>(watched);
     if (!watchedWidget)
         return {};

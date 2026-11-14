@@ -79,6 +79,11 @@ public:
     QStringList restorePageLayout(const QJsonObject& layout);
     void setRegionRevealHandler(const QString& regionId, std::function<void()> reveal);
     void setRegionTabStrip(const QString& regionId, QWidget* strip);
+    QWidget* regionTabStrip(const QString& regionId) const;
+    QWidget* rehostRegion(const QString& regionId, QWidget* host);
+    void setRegionRevealOverride(std::function<bool(const QString&)> handler) { regionRevealOverride=std::move(handler); }
+    void bindRegionDropTarget(QWidget* target, const QString& regionId);
+    QTabWidget* regionDropGroup(QWidget* target) const;
     QWidget* host() const;
     QTabWidget* initialGroup() const;
     QTabWidget* activeGroup() const;
@@ -139,6 +144,7 @@ protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
+    std::function<bool(const QString&)> regionRevealOverride;
     struct PagePresentation {
         QString text;
         QIcon icon;
@@ -193,6 +199,7 @@ private:
 
     QTabWidget* createGroup(const QString& regionId);
     void configureGroup(QTabWidget* group);
+    void refreshGroupSurfaces();
     void bindGroupDropTargets(QTabWidget* group);
     void bindDropTarget(QWidget* target);
     QTabWidget* groupForObject(QObject* object) const;

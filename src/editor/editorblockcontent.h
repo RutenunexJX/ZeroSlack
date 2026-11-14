@@ -17,7 +17,8 @@ public:
     EditorBlockContent(DocumentBlockModel* model, PinloomHostClient* client,
         const EditorAssociatedBlock& block, QWidget* parent);
     void present(const EditorAssociatedBlock& block, bool readOnly, bool compact = false);
-    void setEditing(bool value);
+    bool setEditing(bool value);
+    void rebind(DocumentBlockModel* model);
     bool isEditing() const { return editing; }
     bool nativeWaveEditing() const { return editing && wave; }
     static void refreshTools(QWidget* frame, QWidget* tools);
@@ -28,6 +29,7 @@ public:
     std::function<void()> openOriginal;
 private:
     QPointer<DocumentBlockModel> model;
+    QMetaObject::Connection retryConnection;
     QString id, resourceKey;
     QTextEdit* text = nullptr;
     QTextEdit* referenceText = nullptr;
@@ -37,5 +39,5 @@ private:
     EditorBlockPreview* preview = nullptr;
     WaveBlockContent* wave = nullptr;
     quint64 revision=0, styleRevision=0;
-    bool updating=false, editing=false;
+    bool updating=false, editing=false, locked=false;
 };

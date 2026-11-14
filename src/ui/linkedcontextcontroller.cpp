@@ -12,6 +12,19 @@
 #include "pinloompreviewimage.h"
 #include "uicontrols.h"
 #include "roundedicons.h"
+#include "documentblockmodel.h"
+#include "documentreferenceservice.h"
+#include "associatedblockpage.h"
+#include "editorblockcontent.h"
+#include "editorblockpreview.h"
+#include "shareddocument.h"
+#include "insightvisualstyle.h"
+#include <QButtonGroup>
+#include <QAction>
+#include <QSignalBlocker>
+#include <QFrame>
+#include <QToolButton>
+#include <QInputMethodEvent>
 #include <QApplication>
 #include <QDockWidget>
 #include <QDir>
@@ -23,6 +36,7 @@
 #include <QLabel>
 #include <QKeyEvent>
 #include <QMainWindow>
+#include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPointer>
@@ -78,12 +92,15 @@ struct LinkedContextController::Private {
     PinloomHostClient* pinloom;
     QList<QPointer<QWidget>> chrome;
     QList<QPair<QPointer<QWidget>,bool>> visibility;
+    Mode mode=Mode::Editing;
+    QList<QPointer<QToolButton>> modeButtons;
+    bool changingMode=false,tabDragging=false,imeComposing=false;
+    struct Drawer { QString region; QPointer<QWidget> host,originalHost,strip; QPointer<QToolButton> button; QSize size; };
+    QList<Drawer> drawers;
+    QString openDrawer;
+    QMap<QString,QPointer<AssociatedBlockPage>> localPages;
     QByteArray normalWindowState;
-    QPointer<QWidget> originalFocus;
     struct EditorView { QPointer<MyCodeEditor> editor; QPointer<QTextDocument> document; int position=0,anchor=0,vertical=0,horizontal=0; };
-    QList<EditorView> originalViews;
-    struct PresentedView { QPointer<MyCodeEditor> editor; QPointer<QTabWidget> group; QString region; int index; };
-    QList<PresentedView> presentedViews;
     QPointer<QWidget> page,statusRow;
     QPointer<LinkedNativeRails> nativeRails;
     QPointer<LinkedConnectorOverlay> connector;
@@ -130,6 +147,139 @@ struct LinkedContextController::Private {
     QSet<QString> demanded;
     QHash<QString,QJsonObject> memoryBoards;
 
+    MyCodeEditor* mainEditor() const {
+        auto* group=tabs->editorSplitController()->regionActiveGroup("main");
+        return group ? qobject_cast<MyCodeEditor*>(group->currentWidget()) : nullptr;
+    }
+    void refreshModeButtons() {
+        const bool available=mainEditor()!=nullptr;
+        const QStringList names{"Clean mode","Editing mode","Expanded mode"};
+        for(int i=0;i<modeButtons.size();++i)if(auto button=modeButtons[i]){
+            const QSignalBlocker blocker(button);button->setChecked(int(mode)==i);
+            button->setEnabled(available);button->setToolTip(names[i]+(available?QString():" · Open a code document"));
+        }
+    }
+    bool flushBlocks() {
+        if(tabDragging || tabs->blockDragInProgress() || imeComposing)return false;
+        QSet<DocumentBlockModel*> models;
+        for(auto* view:tabs->openEditors())models.insert(view->blockModel());
+        for(auto* block:tabs->associatedBlockPresentations())if(block->model())models.insert(block->model());
+        for(auto* model:models)if(!model->flushContents())return false;
+        return true;
+    }
+    void projectMode() {
+        for(auto* view:tabs->openEditors())view->setAssociatedBlocksVisible(mode==Mode::Editing);
+        refreshModeButtons();
+    }
+    void releaseLocal(const QString& id) {
+        auto block=localPages.take(id);if(!block)return;
+        auto* content=block->takeContent();auto* owner=block->ownerDocument();
+        const auto* current=block->model() ? block->model()->find(block->blockId()) : nullptr;
+        if(content && current && !current->removedReference() && owner){
+            if(current->detached){
+                for(auto* page:tabs->associatedBlockPages())if(page->ownerDocument()==owner && page->blockId()==block->blockId()){
+                    page->adoptContent(content);content=nullptr;break;
+                }
+            }else for(auto* view:owner->views())if(!tabs->isAuxiliaryView(view)){
+                view->adoptAssociatedBlockContent(block->blockId(),content);content=nullptr;break;
+            }
+        }
+        delete content;delete block;
+    }
+    void releaseLocals() { const auto ids=localPages.keys();for(const auto& id:ids)releaseLocal(id); }
+    bool showDrawer(const QString& region,bool toggle=false) {
+        if(!active)return false;
+        if(toggle && region==openDrawer)return closeDrawer();
+        if(region==openDrawer)return true;
+        if(!closeDrawer())return false;
+        for(auto& drawer:drawers)if(drawer.region==region && drawer.host){
+            openDrawer=region;drawer.host->show();drawer.host->raise();drawer.button->setChecked(true);arrangeDrawers();return true;
+        }
+        return false;
+    }
+    bool closeDrawer() {
+        if(openDrawer.isEmpty())return true;
+        if(!flushBlocks())return false;
+        for(auto& drawer:drawers)if(drawer.host){drawer.host->hide();drawer.button->setChecked(false);}
+        openDrawer.clear();return true;
+    }
+    void arrangeDrawers() {
+        if(!page)return;
+        const int edge=28,w=page->width(),h=page->height();
+        for(auto& drawer:drawers){
+            if(!drawer.host || !drawer.button)continue;
+            const int side=qMin(qMax(240,drawer.size.width()),qMax(120,w-2*edge));
+            const int bottom=qMin(qMax(180,drawer.size.height()),qMax(80,h-2*edge));
+            if(drawer.region=="bottom"){
+                drawer.button->setGeometry((w-edge)/2,h-edge,edge,edge);
+                drawer.host->setGeometry(edge,qMax(edge,h-edge-bottom),qMax(1,w-2*edge),bottom);
+            }else{
+                const bool left=drawer.region=="left";drawer.button->setGeometry(left?0:w-edge,(h-edge)/2,edge,edge);
+                drawer.host->setGeometry(left?edge:qMax(edge,w-edge-side),edge,side,qMax(1,h-2*edge));
+            }
+            drawer.button->raise();if(drawer.host->isVisible())drawer.host->raise();
+        }
+    }
+    void refreshDrawerStyles() {
+        const auto theme=InsightVisualStyle::theme();
+        for(const auto& drawer:drawers)if(drawer.host)drawer.host->setStyleSheet(
+            QString("QFrame#expandedDrawer_%1 { background:%2; border:1px solid %3; border-radius:5px; }")
+                .arg(drawer.region,theme.surface.raised.name(),theme.border.name()));
+    }
+    void createDrawers() {
+        auto* registry=tabs->editorSplitController();
+        for(const auto& region:QStringList{"left","bottom","right"}){
+            auto* original=registry->regionHost(region);if(!original)continue;
+            auto* host=new QFrame(page);host->setObjectName("expandedDrawer_"+region);host->setFrameShape(QFrame::StyledPanel);
+            host->setAttribute(Qt::WA_StyledBackground);host->setMinimumSize(0,0);
+            const auto theme=InsightVisualStyle::theme();
+            host->setStyleSheet(QString("QFrame#expandedDrawer_%1 { background:%2; border:1px solid %3; border-radius:5px; }")
+                .arg(region,theme.surface.raised.name(),theme.border.name()));
+            auto* button=UiControls::toolButton(page);button->setObjectName("expandedDrawerButton_"+region);
+            button->setIcon(RoundedIcons::icon(region=="left"?RoundedIcons::LeftDrawer:region=="bottom"?RoundedIcons::BottomDrawer:RoundedIcons::RightDrawer));
+            button->setCheckable(true);button->setAutoRaise(true);button->setIconSize({18,18});
+            const QString name=region=="left"?"Left drawer":region=="bottom"?"Bottom drawer":"Right drawer";
+            button->setToolTip(name);button->setAccessibleName(name);registry->bindRegionDropTarget(button,region);
+            drawers.append({region,host,original,registry->regionTabStrip(region),button,original->size()});
+            if(region=="bottom" || region=="right") {
+                auto* restore=UiControls::toolButton(host);restore->setObjectName("expandedRestorePanels_"+region);
+                restore->setIcon(RoundedIcons::icon(RoundedIcons::More));restore->setFixedSize(28,28);
+                restore->setToolTip("Open panels");restore->setAccessibleName("Open panels");restore->setPopupMode(QToolButton::InstantPopup);
+                auto* layout=new QVBoxLayout(host);layout->setContentsMargins(0,0,0,0);layout->setSpacing(0);
+                layout->addWidget(restore,0,Qt::AlignRight);
+                if(region=="bottom") {
+                    if(auto* original=window->findChild<QToolButton*>("bottomRestorePanels"))restore->setMenu(original->menu());
+                }else {
+                    auto* menu=UiControls::menu(restore);restore->setMenu(menu);
+                    QObject::connect(menu,&QMenu::aboutToShow,q,[this,menu]{
+                        menu->clear();auto* rail=window->findChild<QToolBar*>("contextRail");if(!rail)return;
+                        for(auto* source:rail->actions())if(!source->data().toString().isEmpty() && source->data().toString()!="toolbox") {
+                            auto* action=menu->addAction(source->icon(),source->text());action->setEnabled(source->isEnabled());
+                            const QPointer<QAction> original=source;
+                            QObject::connect(action,&QAction::triggered,menu,[original]{if(original)original->trigger();});
+                        }
+                    });
+                }
+            }
+            registry->setRegionTabStrip(region,nullptr);registry->rehostRegion(region,host);host->hide();button->show();
+            QObject::connect(button,&QToolButton::clicked,q,[this,region,button]{showDrawer(region,true);button->setChecked(openDrawer==region);});
+        }
+        registry->setRegionRevealOverride([this](const QString& region){
+            if(!active || region=="main")return false;
+            showDrawer(region);return true;
+        });
+        arrangeDrawers();
+    }
+    void restoreDrawers() {
+        auto* registry=tabs->editorSplitController();registry->setRegionRevealOverride({});
+        for(auto& drawer:drawers){
+            if(drawer.originalHost)registry->rehostRegion(drawer.region,drawer.originalHost);
+            registry->setRegionTabStrip(drawer.region,drawer.strip);
+            delete drawer.host;delete drawer.button;
+        }
+        drawers.clear();openDrawer.clear();
+    }
+
     Private(LinkedContextController* owner,QMainWindow* w,QStackedWidget* s,QWidget* e,TabManager* t,PinloomCodeLinkStore* l,PinloomHostClient* p)
         :q(owner),window(w),stack(s),editorPage(e),tabs(t),links(l),pinloom(p) {
         anchorTimer.setSingleShot(true); anchorTimer.setInterval(180);
@@ -174,16 +324,16 @@ struct LinkedContextController::Private {
         if(legacyNotice){updateLegacyVisibility();return;}
         if(shownLegacyBoards().contains(key))return;
         legacyBoard=key;legacyNotice=new QWidget(page);legacyNotice->setObjectName("linkedLegacyNotice");legacyNotice->hide();
-        legacyNotice->installEventFilter(q);
+
         auto* row=new QHBoxLayout(legacyNotice);row->setContentsMargins(8,2,8,2);row->setSpacing(6);
         legacyText=UiControls::label(legacyNotice);legacyText->setObjectName("linkedLegacyNoticeText");
         legacyText->setMinimumWidth(0);legacyText->setSizePolicy(QSizePolicy::Ignored,QSizePolicy::Preferred);
-        legacyText->setToolTip(legacyBoardMessage);legacyText->setAccessibleName(legacyBoardMessage);legacyText->installEventFilter(q);row->addWidget(legacyText,1);
+        legacyText->setToolTip(legacyBoardMessage);legacyText->setAccessibleName(legacyBoardMessage);row->addWidget(legacyText,1);
         auto* close=UiControls::pushButton(legacyNotice);close->setObjectName("linkedLegacyNoticeClose");
         close->setIcon(RoundedIcons::icon(RoundedIcons::Close));close->setFixedSize(28,28);close->setFocusPolicy(Qt::NoFocus);
         close->setToolTip(QStringLiteral("Dismiss legacy board notice"));close->setAccessibleName(close->toolTip());row->addWidget(close);
         QObject::connect(close,&QPushButton::clicked,q,[this]{legacyDismissed=true;legacyNotice->hide();});
-        static_cast<QVBoxLayout*>(page->layout())->insertWidget(2,legacyNotice);
+        static_cast<QVBoxLayout*>(page->layout())->insertWidget(1,legacyNotice);
         updateLegacyVisibility();elideLegacyText();
     }
     QString boardKey() const { return workspace+QLatin1Char('\n')+(file.isEmpty()&&editor?editor->property("sharedDocumentId").toString():file); }
@@ -257,6 +407,7 @@ struct LinkedContextController::Private {
         }else status(error);
     }
     bool flush(bool persist=true) {
+        if(!destroying && !flushBlocks())return false;
         saveTimer.stop();return !persist||save();
     }
     void dropResources() {
@@ -317,9 +468,15 @@ struct LinkedContextController::Private {
         const auto folds=nativeFoldRanges();nativeFoldSignature=folds;
         QList<LinkedNativeRails::Group> groups;
         for(const auto& anchor:anchors){
-            if(!anchor.available())continue;
-            auto group=nativeGroupGeometry(anchor,folds);
-            for(const auto& ref:references)if(ref.anchor==group.anchor)group.references.append({ref.id,sourceKey(ref.identity),ref.title});
+            if(!anchor.available() && !anchor.anchor.id.startsWith("block:"))continue;
+            auto group=anchor.available()?nativeGroupGeometry(anchor,folds):LinkedNativeRails::Group{};
+            if(!anchor.available()){group.anchor=anchor.anchor.id;group.positioned=false;group.contentY=INT_MAX;}
+            for(const auto& ref:references)if(ref.anchor==group.anchor){
+                const bool local=ref.id.startsWith("block:");
+                const auto block=local?editor->blockModel()->presentation(ref.id.mid(6)):EditorAssociatedBlock{};
+                const int height=local?(block.compactReference()?100:editor->blockModel()->presentationHeight(block.id,block.height)+64):200;
+                group.references.append({ref.id,local?ref.id:sourceKey(ref.identity),ref.title,local,height});
+            }
             if(!group.references.isEmpty())groups.append(group);
         }
         nativeRails->setGroups(groups,nativeResolvedRevision);
@@ -452,24 +609,22 @@ struct LinkedContextController::Private {
     void createNativePage() {
         page=new QWidget(stack);page->setObjectName("linkedContextPage");
         auto* layout=new QVBoxLayout(page);layout->setContentsMargins(0,0,0,0);layout->setSpacing(0);
-        auto* bar=new QWidget(page);bar->setObjectName("linkedContextControls");
-        auto* row=new QHBoxLayout(bar);row->setContentsMargins(8,5,8,5);
-        auto* exit=UiControls::pushButton(QStringLiteral("Exit linked context"),bar);exit->setObjectName("exitLinkedContext");
-        exit->setIcon(RoundedIcons::icon(RoundedIcons::Left));row->addWidget(exit);
-        QObject::connect(exit,&QPushButton::clicked,q,[this]{q->setActive(false);});row->addStretch();
-        auto* reload=UiControls::pushButton(QStringLiteral("Reload references"),bar);reload->setObjectName("linkedNativeReload");
-        row->addWidget(reload);QObject::connect(reload,&QPushButton::clicked,q,[this]{q->reloadBoard();});layout->addWidget(bar);
         statusRow=new QWidget(page);auto* statusLayout=new QHBoxLayout(statusRow);statusLayout->setContentsMargins(8,2,8,5);
         notice=new QLabel(statusRow);notice->setObjectName("linkedContextStatus");notice->setWordWrap(true);notice->setMinimumWidth(0);
         statusLayout->addWidget(notice,1);
         saveCopyButton=UiControls::pushButton(QStringLiteral("Save a copy…"),statusRow);saveCopyButton->setObjectName("linkedSaveCopy");statusLayout->addWidget(saveCopyButton);
         QObject::connect(saveCopyButton,&QPushButton::clicked,q,[this]{saveRecoveryCopy();});saveCopyButton->hide();
+        auto* reload=UiControls::pushButton(QStringLiteral("Reload references"),statusRow);
+        reload->setObjectName("linkedNativeReload");statusLayout->addWidget(reload);
+        QObject::connect(reload,&QPushButton::clicked,q,[this]{q->reloadBoard();});
+        auto* reloadAction=new QAction("Reload references",page);page->addAction(reloadAction);page->setContextMenuPolicy(Qt::ActionsContextMenu);
+        QObject::connect(reloadAction,&QAction::triggered,q,[this]{q->reloadBoard();});
         statusRow->hide();layout->addWidget(statusRow);
         stack->removeWidget(editorPage);
         auto* host=new QWidget(page);host->setObjectName("linkedNativeHost");
         auto* hostLayout=new QVBoxLayout(host);hostLayout->setContentsMargins(0,0,0,0);hostLayout->setSpacing(0);
         nativeRails=new LinkedNativeRails(editorPage,host);
-        hostLayout->addWidget(nativeRails);layout->addWidget(host,1);editorPage->show();nativeRails->installEventFilter(q);
+        hostLayout->addWidget(nativeRails);layout->addWidget(host,1);editorPage->show();
         connector=new LinkedConnectorOverlay(host);
         QObject::connect(connector,&LinkedConnectorOverlay::presentationRequested,q,[this]{refreshConnector();});
         QObject::connect(nativeRails,&LinkedNativeRails::layoutApplied,q,[this]{refreshConnector();});
@@ -481,9 +636,12 @@ struct LinkedContextController::Private {
         QObject::connect(nativeRails,&LinkedNativeRails::codeRatioChanged,q,[this](double ratio){codeRatio=ratio;nativeChanged(true);});
         QObject::connect(nativeRails,&LinkedNativeRails::groupExpansionChanged,q,[this]{nativeChanged(true);});
         QObject::connect(nativeRails,&LinkedNativeRails::expandFoldedRequested,q,[this](const QStringList& members,qint64 revision){expandNativeFolded(members,revision);});
+        QObject::connect(nativeRails,&LinkedNativeRails::releasingBlockWidget,q,[this](const QString& id){releaseLocal(id);});
         stack->addWidget(page);stack->setCurrentWidget(page);
+        createDrawers();
     }
     void arrange() {
+        arrangeDrawers();
         if(!nativeRails||!editor)return;
         updateNativePositions();geometryTimer.start();
         if(overlay){overlay->setGeometry(editor->viewport()->rect());overlay->raise();overlay->update();}
@@ -504,50 +662,34 @@ struct LinkedContextController::Private {
         return result;
     }
     void initialize() { initialized=active&&editor&&nativeRails; }
-    bool presentEditor(MyCodeEditor* next) {
-        auto* registry=tabs->editorSplitController();
-        auto* source=registry->groupForPage(next);
-        if (!source) return false;
-        if (registry->regionForGroup(source)==QStringLiteral("main")
-            && (source==editorPage || editorPage->isAncestorOf(source))) return true;
-        auto* target=registry->regionActiveGroup(QStringLiteral("main"));
-        if (!target || !registry->retainGroup(source)) return false;
-        const PresentedView origin{next,source,registry->regionForGroup(source),source->indexOf(next)};
-        if (!registry->movePage(next,target)) { registry->releaseGroup(source); return false; }
-        presentedViews.append(origin);
-        return true;
-    }
-    void restorePresentedEditors() {
-        auto* registry=tabs->editorSplitController();
-        QPointer<QWidget> selected=registry->activeGroup() ? registry->activeGroup()->currentWidget() : nullptr;
-        const auto open=tabs->openEditors();
-        for (const auto& origin:presentedViews) {
-            if (origin.editor && open.contains(origin.editor) && registry->groupForPage(origin.editor)) {
-                auto* target=origin.group ? origin.group.data() : registry->regionGroup(origin.region);
-                if (target) registry->movePage(origin.editor,target,origin.index);
-            }
-            if (origin.group) registry->releaseGroup(origin.group);
-        }
-        presentedViews.clear();
-        if (selected && registry->groupForPage(selected)) registry->activatePage(selected,false);
-    }
     void switchEditor(MyCodeEditor* next) {
         if(!active||switching)return;
-        if(!next){q->setActive(false);return;}
+        if(page && tabs->editorSplitController()->regionHasPages("main"))stack->setCurrentWidget(page);
+        next=mainEditor();
+        refreshModeButtons();
+        if(!next){
+            if(!flush())return;
+            ++generation;dropResources();releaseLocals();
+            for(const auto& connection:editorConnections)QObject::disconnect(connection);editorConnections.clear();
+            if(overlay)delete overlay;
+            if(editor){editor->viewport()->removeEventFilter(q);editor->removeEventFilter(q);}
+            editor.clear();anchors.clear();references.clear();initialized=false;file.clear();session.clear();
+            if(nativeRails){nativeRails->resetSession();nativeRails->setRailsVisible(false);}
+            if(connector)connector->setScene({});status({});return;
+        }
+        if(nativeRails)nativeRails->setRailsVisible(true);
         const QString nextFile=next->documentFileName();
         if(next==editor&&nextFile==file&&workspace==links->workspaceRoot())return;
         EditorView nativeView{next,next->document(),next->textCursor().position(),next->textCursor().anchor(),next->verticalScrollBar()->value(),next->horizontalScrollBar()->value()};
-        if(!editor)for(const auto& view:originalViews)if(view.editor==next&&view.document==next->document()){nativeView=view;break;}
         switching=true;
         if(!flush()){if(editor&&!file.isEmpty())tabs->activateOpenFile(file);switching=false;return;}
-        if(!presentEditor(next)){switching=false;status(QStringLiteral("Cannot present this code view in linked context."));q->setActive(false);return;}
         clearLegacyNotice();
         nativeRestoring=true;nativeDirty=false;nativeReferencesReady=false;nativeReferencesChanged=false;
         const bool renamed=next==editor&&nextFile!=file;
         const auto previousNativeSizes=nativeRails?nativeRails->sizes():QList<int>{};
         if(nativeRails&&editor)nativeSizes.insert(boardKey(),previousNativeSizes);
         const auto previousState=boardState;
-        ++generation;dropResources();
+        ++generation;dropResources();releaseLocals();
         if(connector)connector->setScene({});
         if(nativeRails)nativeRails->resetSession();
         for(const auto& c:editorConnections)QObject::disconnect(c);editorConnections.clear();
@@ -565,25 +707,40 @@ struct LinkedContextController::Private {
         restoreExpandedReferences();
         codeRatio=boardState.value("codeRatio").toDouble(.5);
         if(nativeRails){if(renamed)nativeSizes.insert(boardKey(),previousNativeSizes);nativeRails->setInitialSizes(nativeSizes.contains(boardKey())?nativeSizes.value(boardKey()):savedNativeSizes(),codeRatio);}
-        overlay=new AnchorOverlay(editor);overlay->show();editor->viewport()->installEventFilter(q);
-        editor->installEventFilter(q);
+        overlay=new AnchorOverlay(editor);overlay->show();
+
         editorConnections.append(QObject::connect(editor,&QPlainTextEdit::textChanged,q,[this]{anchorTimer.start();geometryTimer.start();}));
+        editorConnections.append(QObject::connect(editor->blockModel(),&DocumentBlockModel::changed,q,[this]{anchorTimer.start();}));
+        editorConnections.append(QObject::connect(editor->blockModel(),&DocumentBlockModel::presentationChanged,q,[this]{anchorTimer.start();}));
         if(connector)editorConnections.append(QObject::connect(editor,&QPlainTextEdit::textChanged,q,[this]{nativeRails->setActiveAnchors({});connector->setScene({});}));
         editorConnections.append(QObject::connect(editor,&QPlainTextEdit::cursorPositionChanged,q,[this]{selected.clear();if(overlay)overlay->selected.clear();geometryTimer.start();}));
         editorConnections.append(QObject::connect(editor,&QPlainTextEdit::selectionChanged,q,[this]{geometryTimer.start();}));
         editorConnections.append(QObject::connect(editor,&QPlainTextEdit::updateRequest,q,[this]{geometryTimer.start();}));
+        editorConnections.append(QObject::connect(editor,&MyCodeEditor::viewProjectionChanged,q,[this]{geometryTimer.start();}));
         resolveAnchors();loadedLegacyNotice(loaded);restoreNativeExpansion();arrange();initialize();switching=false;nativeRestoring=false;
         if(renamed&&!boardState.isEmpty()&&boardState!=board.value)nativeChanged(false);
         restoreNativeView(nativeView);
     }
     void resolveAnchors() {
         if(!active||!editor)return;
+        DocumentReferenceService::refresh(editor->blockModel(),file,editor->cachedDocumentText(),editor->syntaxDocument(),links);
         anchors=links->linksForDocument(file,editor->cachedDocumentText(),editor->syntaxDocument());
         QMap<QString,Reference> direct;
         for(const auto& anchor:anchors)for(const auto& link:anchor.anchor.links){
+            if(DocumentReferenceService::hasLegacy(editor->blockModel(),anchor.anchor.id,link.id))continue;
             auto identity=PinloomHostIdentity::fromVariantMap(link.identity);if(!identity.isValid())identity=PinloomHostIdentity::fromUri(link.uri);
             const QString id=anchor.anchor.id+QLatin1Char('/')+link.id;
             direct.insert(id,{id,anchor.anchor.id,{},link.title,identity});
+        }
+        for(const auto& stored:editor->blockModel()->items()){
+            const auto block=editor->blockModel()->presentation(stored.id);
+            if(block.detached || block.removedReference())continue;
+            const QString id="block:"+block.id;
+            ResolvedPinloomCodeLink anchor;anchor.anchor.id=id;
+            anchor.startPosition=qBound(0,block.start,editor->document()->characterCount()-1);
+            anchor.endPosition=qBound(anchor.startPosition,block.end,editor->document()->characterCount()-1);
+            anchor.resolution=block.missing?PinloomCodeLinkResolution::Missing:PinloomCodeLinkResolution::Exact;
+            anchors.append(anchor);direct.insert(id,{id,id,{},block.caption.isEmpty()?block.type:block.caption,{}});
         }
         bool added=true;
         while(added){added=false;for(const auto& r:references)if(!r.parent.isEmpty()&&!direct.contains(r.id)&&direct.contains(r.parent)){direct.insert(r.id,r);added=true;}}
@@ -597,9 +754,10 @@ struct LinkedContextController::Private {
         if(board.path.isEmpty())status(QStringLiteral("Layout kept for this session"));
         else if(!board.error.isEmpty())status(board.error);
         else if(!links->loadFailureReason().isEmpty())status(links->loadFailureReason());
-        else status(references.isEmpty()?QStringLiteral("Attach a Pinloom link to a code selection to add references."):QString());
+        else status(references.isEmpty()?QStringLiteral("Add a block or reference to this code document."):QString());
         geometryTimer.start();
         nativeResolvedRevision=qint64(editor->semanticDocumentRevision());refreshNativeGroups();
+        demand(demanded.values());
     }
     void select(const QString& id) {
         if(!references.contains(id)||!editor)return;
@@ -616,9 +774,10 @@ struct LinkedContextController::Private {
     void open(const QString& id) {
         if(!references.contains(id))return;
         const auto identity=references[id].identity;
-        if(!identity.isValid()){status(QStringLiteral("This reference has no valid Pinloom identity."));return;}
-        const QString token=session;
-        pinloom->open(identity,[self=QPointer<LinkedContextController>(q),token](bool ok,const QString& error){if(self&&self->d->session==token&&!ok)self->d->status(error);},true);
+        const QString uri=id.startsWith("block:") && editor ? editor->blockModel()->presentation(id.mid(6)).uri : sourceKey(identity);
+        const QString token=session;const QPointer<LinkedContextController> self(q);
+        EditorBlockPreview::openTarget(uri,pinloom,q,[self,token]{return self && self->d->active && self->d->session==token;},
+            [self,token](bool ok,const QString& error){if(self&&self->d->session==token&&!ok)self->d->status(error);});
     }
     void publish(const QString& source,const std::shared_ptr<Resource>& resource) {
         if(nativeRails)nativeRails->setPreview(source,{resource->document.entry.title,resource->document.content,
@@ -627,29 +786,24 @@ struct LinkedContextController::Private {
     void loadResource(const QString& source,const PinloomHostIdentity& identity) {
         auto resource=std::make_shared<Resource>();resource->consumer=new QObject(q);resources.insert(source,resource);publish(source,resource);
         const auto serial=generation;const QString token=session;const QPointer<QObject> consumer=resource->consumer;
-        pinloom->resolve(identity,[this,serial,token,consumer,source,resource](const PinloomHostDocument& doc,const QString& error){
-            if(!consumer||!active||serial!=generation||session!=token||resources.value(source)!=resource)return;
-            resource->document=doc;resource->error=error;resource->complete=true;
-            if(error.isEmpty()&&!doc.isValid())resource->error=QStringLiteral("The reference is unavailable.");
-            if(doc.entry.deleted)resource->error=QStringLiteral("This reference has been deleted in Pinloom.");
-            // Only explicit Pinloom URIs become deeper references; never infer identities from prose.
-            const QRegularExpression link(QStringLiteral("pinloom://[^\\s<>\\\"')\\]]+"));auto matches=link.globalMatch(doc.content);
-            QSet<QString> seen;while(matches.hasNext()&&resource->deeper.size()<100){const auto candidate=PinloomHostIdentity::fromUri(QUrl(matches.next().captured()));const auto key=sourceKey(candidate);if(candidate.isValid()&&key!=source&&!seen.contains(key)){seen.insert(key);resource->deeper.append(candidate);}}
-            if(resource->error.isEmpty()&&doc.preview.present&&doc.preview.isReady()){
-                auto* loader=new PinloomPreviewImageLoader(consumer);
-                loader->load(doc.preview,[this,serial,token,consumer,source,resource](const PinloomPreviewImageResult& result){
-                    if(!consumer||!active||serial!=generation||token!=session||resources.value(source)!=resource)return;
-                    resource->error=result.error;
-                    if(!result.image.isNull())resource->image=result.image.scaled(1024,768,Qt::KeepAspectRatio,Qt::SmoothTransformation);
-                    publish(source,resource);
-                });
-            }else if(doc.preview.present&&!doc.preview.isReady())resource->error=doc.preview.validationError.isEmpty()?doc.preview.error:doc.preview.validationError;
+        const auto current=[this,serial,token,consumer,source,resource]{return consumer && active && serial==generation && session==token && resources.value(source)==resource;};
+        EditorBlockPreview::requestTarget(sourceKey(identity),pinloom,consumer,current,[this,current,source,resource](const EditorBlockPreviewResult& result){
+            if(!current())return;
+            resource->document.entry.title=result.title;resource->document.entry.location=result.location;
+            resource->document.content=result.text;resource->error=result.linkOnly?QString():result.status;resource->complete=!result.loading;resource->image=result.image;
             publish(source,resource);
-        },consumer);
+        });
     }
     void demand(const QStringList& ids) {
         demanded=QSet<QString>(ids.begin(),ids.end());QStringList ordered=ids;ordered.sort();
         QMap<QString,PinloomHostIdentity> wanted;
+        for(const auto& id:ordered)if(id.startsWith("block:") && editor && nativeRails){
+            const auto block=editor->blockModel()->presentation(id.mid(6));
+            if(block.id.isEmpty() || block.detached || block.removedReference())continue;
+            auto page=localPages.value(id);
+            if(!page){page=tabs->createBlockPresentation(tabs->sharedDocumentForEditor(editor),block.id,nativeRails);if(page)localPages.insert(id,page);}
+            if(page)nativeRails->setBlockWidget(id,page,block.compactReference()?100:editor->blockModel()->presentationHeight(block.id,block.height)+64);
+        }
         for(const auto& id:ordered){if(!references.contains(id))continue;const auto identity=references[id].identity;if(identity.isValid()&&(wanted.size()<24||wanted.contains(sourceKey(identity))))wanted.insert(sourceKey(identity),identity);}
         QJsonArray released;
         for(auto it=resources.begin();it!=resources.end();){if(!wanted.contains(it.key())){released.append(it.key());if(it.value()->consumer){pinloom->cancelReadRequests(it.value()->consumer);delete it.value()->consumer;}it=resources.erase(it);}else ++it;}
@@ -661,52 +815,81 @@ struct LinkedContextController::Private {
 LinkedContextController::LinkedContextController(QMainWindow* window,QStackedWidget* stack,QWidget* editorPage,
         TabManager* tabs,PinloomCodeLinkStore* links,PinloomHostClient* pinloom,const QList<QWidget*>& chrome,QObject* parent)
     :QObject(parent),d(std::make_unique<Private>(this,window,stack,editorPage,tabs,links,pinloom)) {
-    window->installEventFilter(this);
+    qApp->installEventFilter(this);
+    connect(&ApplicationThemeManager::instance(),&ApplicationThemeManager::themeChanged,this,[this]{d->refreshDrawerStyles();});
     tabs->setEditorTransitionGuard([self=QPointer<LinkedContextController>(this)](MyCodeEditor* editor){
         return !self||!self->d->active||editor!=self->d->editor||self->d->flush();
     });
     for(auto* widget:chrome)if(widget)d->chrome.append(widget);
-    connect(tabs,&TabManager::activeTabChanged,this,[this](MyCodeEditor* editor){if(d->active)d->switchEditor(editor);});
+    connect(tabs,&TabManager::activeTabChanged,this,[this](MyCodeEditor*){if(d->changingMode)return;d->projectMode();if(d->active)d->switchEditor(d->mainEditor());});
+    connect(tabs,&TabManager::tabCreated,this,[this]{d->projectMode();});
+    connect(tabs->editorSplitController(),&EditorSplitController::pageActivated,this,[this]{if(d->changingMode)return;d->refreshModeButtons();if(d->active)d->switchEditor(d->mainEditor());});
+    connect(tabs->editorSplitController(),&EditorSplitController::tabDragStarted,this,[this]{d->tabDragging=true;});
+    connect(tabs->editorSplitController(),&EditorSplitController::tabDragFinished,this,[this]{d->tabDragging=false;});
     connect(tabs,&TabManager::documentIdentityChanged,this,[this]{if(d->active)d->switchEditor(d->tabs->getCurrentEditor());});
     connect(tabs,&TabManager::splitLayoutChanged,this,[this]{if(d->active)d->arrange();});
 }
-LinkedContextController::~LinkedContextController(){d->destroying=true;setActive(false);}
+LinkedContextController::~LinkedContextController(){d->destroying=true;activateExpanded(false);qApp->removeEventFilter(this);}
 bool LinkedContextController::isActive()const{return d->active;}
-bool LinkedContextController::setActive(bool active) {
+LinkedContextController::Mode LinkedContextController::mode()const{return d->mode;}
+QString LinkedContextController::modeName()const{return d->mode==Mode::Clean?"clean":d->mode==Mode::Expanded?"expanded":"editing";}
+bool LinkedContextController::setModeName(const QString& name){return setMode(name=="clean"?Mode::Clean:name=="expanded"?Mode::Expanded:Mode::Editing);}
+bool LinkedContextController::setActive(bool active){return setMode(active?Mode::Expanded:Mode::Editing);}
+bool LinkedContextController::setMode(Mode value){
+    if(d->changingMode)return false;
+    if(value==d->mode){d->projectMode();return true;}
+    if(!d->flush())return false;
+    d->changingMode=true;
+    struct Reading { QPointer<MyCodeEditor> editor; QTextCursor anchor; int top; };
+    QList<Reading> readings;
+    for(auto* view:d->tabs->openEditors()){QTextCursor anchor(view->firstVisibleBlock());readings.append({view,anchor,view->cursorRect(anchor).top()});}
+    const auto previous=d->mode;d->mode=value;
+    if(!activateExpanded(value==Mode::Expanded)){d->mode=previous;d->changingMode=false;d->refreshModeButtons();return false;}
+    d->projectMode();
+    if(d->window->layout())d->window->layout()->activate();
+    for(const auto& reading:readings)if(reading.editor && reading.editor->document()==reading.anchor.document()){
+        auto* scroll=reading.editor->verticalScrollBar();
+        const int delta=reading.editor->cursorRect(reading.anchor).top()-reading.top;
+        scroll->setValue(scroll->value()+(reading.editor->blockModel()->items().isEmpty()?qRound(double(delta)/qMax(1,reading.editor->fontMetrics().height())):delta));
+    }
+    if(d->active)d->arrange();
+    d->changingMode=false;emit modeChanged(value);return true;
+}
+QWidget* LinkedContextController::createModeButtons(QWidget* parent){
+    auto* host=new QWidget(parent);host->setObjectName("editorViewModes");auto* row=new QHBoxLayout(host);
+    row->setContentsMargins(0,0,0,0);row->setSpacing(2);auto* group=new QButtonGroup(host);group->setExclusive(true);
+    const QStringList names{"Clean mode","Editing mode","Expanded mode"};
+    const RoundedIcons::Kind icons[]{RoundedIcons::CleanMode,RoundedIcons::EditingMode,RoundedIcons::ExpandedMode};
+    for(int i=0;i<3;++i){auto* button=UiControls::toolButton(host);button->setObjectName("editorViewMode_"+QString::number(i));
+        button->setIcon(RoundedIcons::icon(icons[i]));button->setIconSize({18,18});button->setFixedSize(28,28);
+        button->setCheckable(true);button->setAutoRaise(true);button->setAccessibleName(names[i]);group->addButton(button,i);
+        d->modeButtons.append(button);row->addWidget(button);
+        connect(button,&QToolButton::clicked,this,[this,i]{setMode(Mode(i));d->refreshModeButtons();});
+    }
+    d->refreshModeButtons();return host;
+}
+bool LinkedContextController::activateExpanded(bool active){
     if(active==d->active)return true;
     if(active){
-        auto* editor=d->tabs->getCurrentEditor();if(!editor){emit message(QStringLiteral("Open a code file to use linked context."));return false;}
-        d->nativeSizes.clear();
-        emit aboutToEnter();d->normalWindowState=d->window->saveState();d->originalFocus=QApplication::focusWidget();
-        d->originalViews.clear();for(auto* view:d->tabs->openEditors())d->originalViews.append({view,view->document(),view->textCursor().position(),view->textCursor().anchor(),view->verticalScrollBar()->value(),view->horizontalScrollBar()->value()});
+        d->nativeSizes.clear();emit aboutToEnter();d->normalWindowState=d->window->saveState();
         d->visibility.clear();QSet<QWidget*> seen;
-        auto hide=[this,&seen](QWidget* widget){if(!widget||seen.contains(widget))return;seen.insert(widget);d->visibility.append({widget,widget->isVisible()});widget->installEventFilter(this);widget->hide();};
-        for(auto* dock:d->window->findChildren<QDockWidget*>())hide(dock);
-        for(auto* toolbar:d->window->findChildren<QToolBar*>())hide(toolbar);
+        auto hide=[this,&seen](QWidget* widget){if(!widget||seen.contains(widget)||widget->window()!=d->window)return;
+            seen.insert(widget);d->visibility.append({widget,!widget->isHidden()});widget->hide();};
+        for(auto* dock:d->window->findChildren<QDockWidget*>())if(!dock->isFloating())hide(dock);
         for(auto widget:d->chrome)hide(widget);
-        d->active=true;d->initialized=false;d->createNativePage();d->switchEditor(editor);if(!d->active)return false;editor->setFocus();
-        for(const auto& view:d->originalViews)if(view.editor==editor){d->restoreNativeView(view);break;}
+        d->active=true;d->initialized=false;d->createNativePage();d->switchEditor(d->mainEditor());
     }else{
         if(!d->destroying&&!d->flush())return false;
+        d->releaseLocals();d->restoreDrawers();
         d->active=false;++d->generation;d->dropResources();d->anchorTimer.stop();d->geometryTimer.stop();d->saveTimer.stop();
-        d->clearLegacyNotice();
-        if(d->connector)d->connector->setScene({});
+        d->clearLegacyNotice();if(d->connector)d->connector->setScene({});
         for(const auto& connection:d->editorConnections)disconnect(connection);d->editorConnections.clear();
         if(d->overlay)delete d->overlay;if(d->editor){d->editor->viewport()->removeEventFilter(this);d->editor->removeEventFilter(this);}d->editor.clear();
         d->editorPage->setParent(d->stack);d->stack->addWidget(d->editorPage);d->stack->setCurrentWidget(d->editorPage);d->editorPage->show();
         if(d->page){d->stack->removeWidget(d->page);delete d->page;}
-        d->restorePresentedEditors();
         d->window->restoreState(d->normalWindowState);
         for(const auto& entry:d->visibility)if(entry.first){entry.first->removeEventFilter(this);entry.first->setVisible(entry.second);}
-        // A closed view can survive until deleteLater after its document was detached.
-        const auto openViews=d->tabs->openEditors();
-        for(const auto& view:d->originalViews)if(view.editor&&openViews.contains(view.editor)&&view.document&&view.document==view.editor->document()){
-            QTextCursor cursor(view.document);const int last=view.document->characterCount()-1;
-            cursor.setPosition(qBound(0,view.anchor,last));cursor.setPosition(qBound(0,view.position,last),QTextCursor::KeepAnchor);
-            view.editor->setTextCursor(cursor);view.editor->verticalScrollBar()->setValue(view.vertical);view.editor->horizontalScrollBar()->setValue(view.horizontal);
-        }
-        if(d->originalFocus&&d->originalFocus->isVisible())d->originalFocus->setFocus();else if(auto* editor=d->tabs->getCurrentEditor())editor->setFocus();
-        d->originalViews.clear();d->visibility.clear();d->initialized=false;d->session.clear();
+        d->visibility.clear();d->initialized=false;d->session.clear();
     }
     emit activeChanged(active);return true;
 }
@@ -748,7 +931,18 @@ QJsonObject LinkedContextController::viewSnapshot()const{
     return result;
 }
 bool LinkedContextController::eventFilter(QObject* watched,QEvent* event){
+    auto* widget=qobject_cast<QWidget*>(watched);
+    if(widget && widget->window()==d->window && event->type()==QEvent::InputMethod)
+        d->imeComposing=!static_cast<QInputMethodEvent*>(event)->preeditString().isEmpty();
     if(d->active){
+        if(watched==d->page && event->type()==QEvent::Resize)d->arrangeDrawers();
+        if(event->type()==QEvent::MouseButtonPress && widget && !d->openDrawer.isEmpty()
+            && widget->window()==d->window && !QApplication::activePopupWidget() && !QApplication::activeModalWidget()){
+            bool inside=false;
+            for(const auto& drawer:d->drawers)if(drawer.host && drawer.button)
+                inside|=widget==drawer.host || drawer.host->isAncestorOf(widget) || widget==drawer.button || drawer.button->isAncestorOf(widget);
+            if(!inside && !d->closeDrawer())return true;
+        }
         if(watched==d->legacyNotice&&event->type()==QEvent::Show)d->legacyShow();
         if(watched==d->legacyText&&(event->type()==QEvent::Resize||event->type()==QEvent::FontChange))d->elideLegacyText();
         d->nativeInput(watched,event);

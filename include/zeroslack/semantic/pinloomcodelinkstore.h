@@ -147,6 +147,11 @@ public:
                  const QVariantMap& identity,
                  QString* failureReason = nullptr);
     bool hasLinksForDocument(const QString& filePath) const;
+    static QList<ResolvedPinloomCodeLink> resolveAnchors(
+        const QList<PinloomCodeLinkAnchorRecord>& anchors, const QString& workspaceRoot,
+        const QString& filePath, const QString& documentText,
+        const TSDocument* syntaxDocument = nullptr,
+        const QList<SemanticSymbolRecord>* semanticSymbols = nullptr);
     QList<ResolvedPinloomCodeLink> linksForDocument(
         const QString& filePath,
         const QString& documentText,

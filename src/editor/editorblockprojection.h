@@ -51,6 +51,7 @@ private:
     QHash<QString, NoteMeasure> noteHeights;
     quint64 styleRevision = 0;
     bool enabled = false, dirty = true;
+    bool blocksVisible = true;
     const QTextDocument* document = nullptr;
     quint64 modelRevision = 0, measured = 0;
     int sourceCount = 0, count = 0, width = 0;

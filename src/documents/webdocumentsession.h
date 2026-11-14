@@ -18,16 +18,13 @@ class WebDocumentPage;
 class ZEROSLACK_API WebDocumentSession final : public QObject {
     Q_OBJECT
 public:
-    enum class Kind { Markdown, Blocks };
+    enum class Kind { Markdown };
     struct Options { QString runtimeDirectory; QString profileDirectory; QString documentIdentity; };
     explicit WebDocumentSession(Kind kind, const Options& options = {});
     static bool supportsFile(const QString& path);
     static Kind kindForFile(const QString& path);
-    static bool validateBlockPackage(const QJsonObject& package, QString* error);
     bool openFile(const QString& path, QString* error = nullptr);
     bool setInitialContent(const QString& text, QString* error = nullptr);
-    bool importMarkdown(const QString& sourcePath, QString* error = nullptr);
-    bool exportMarkdown();
     QString fileName() const { return path; }
     QString documentId() const { return id; }
     QString title() const;
@@ -65,7 +62,7 @@ private:
     friend class WebDocumentPage;
     Kind kind;
     Options options;
-    QString id, session, path, physicalPath, initialContent, failure, importSource, noticeText;
+    QString id, session, path, physicalPath, initialContent, failure, noticeText;
     QByteArray baseline;
     DocumentFileFormat format;
     quint64 revision = 0, savedRevision = 0;
@@ -83,7 +80,7 @@ private:
     QWidget* dialogParent() const;
     void initializeEditor(WebDocumentPage* view);
     void receive(WebDocumentPage* view, const QJsonObject& message);
-    bool snapshot(bool freeze, QJsonObject* result, QString* error, const QString& mode = {});
+    bool snapshot(bool freeze, QJsonObject* result, QString* error);
     void releaseSnapshot();
     void showNotice(const QString& text);
     void watchFile();

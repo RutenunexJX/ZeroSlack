@@ -1,4 +1,5 @@
 #include "templatemanagerdialog.h"
+#include "roundedicons.h"
 #include "ordinarytemplateplan.h"
 #include "../integrations/xips/xipscontextprovider.h"
 #include "editorfileidentity.h"
@@ -61,10 +62,13 @@ TemplateManagerDialog::TemplateManagerDialog(UserTemplateService *s, const Simul
     auto *buttons = new QHBoxLayout;
     leftLayout->addLayout(buttons);
     auto *add = UiControls::pushButton("New", left);
+    add->setIcon(RoundedIcons::icon(RoundedIcons::Add));
     auto *erase = UiControls::pushButton("Delete", left);
+    erase->setIcon(RoundedIcons::icon(RoundedIcons::Delete));
     buttons->addWidget(add);
     buttons->addWidget(erase);
     auto* reloadButton=UiControls::pushButton("Reload",left);
+    reloadButton->setIcon(RoundedIcons::icon(RoundedIcons::Refresh));
     reloadButton->setObjectName("templateReload"); buttons->addWidget(reloadButton);
     connect(reloadButton,&QPushButton::clicked,this,[this] {
         const auto report=service->reload();
@@ -79,6 +83,10 @@ TemplateManagerDialog::TemplateManagerDialog(UserTemplateService *s, const Simul
     auto* exportResource = UiControls::pushButton("Export selected resource…", left);
     leftLayout->addWidget(importResource); leftLayout->addWidget(exportResource);
     auto *roles = UiControls::pushButton("Signal roles…", left);
+    import->setIcon(RoundedIcons::icon(RoundedIcons::Import));
+    importResource->setIcon(RoundedIcons::icon(RoundedIcons::Import));
+    exportResource->setIcon(RoundedIcons::icon(RoundedIcons::Export));
+    roles->setIcon(RoundedIcons::icon(RoundedIcons::SignalRoles));
     leftLayout->addWidget(roles);
     auto *right = new QWidget(split);
     auto *edit = new QVBoxLayout(right);
@@ -123,6 +131,8 @@ TemplateManagerDialog::TemplateManagerDialog(UserTemplateService *s, const Simul
     sourceLayout->addLayout(sourceButtons);
     auto *bind = UiControls::pushButton("Bind task/function…", sourcePage);
     auto *create = UiControls::pushButton("Create implementation…", sourcePage);
+    bind->setIcon(RoundedIcons::icon(RoundedIcons::TemplateBind));
+    create->setIcon(RoundedIcons::icon(RoundedIcons::BlockCode));
     sourceButtons->addWidget(bind);
     sourceButtons->addWidget(create);
     sourceLayout->addWidget(UiControls::label("Package inputs, in compilation order", sourcePage));
@@ -130,8 +140,10 @@ TemplateManagerDialog::TemplateManagerDialog(UserTemplateService *s, const Simul
     packages->setPlaceholderText("One source file per line");
     sourceLayout->addWidget(packages, 1);
     auto *addPackage = UiControls::pushButton("Add package files…", sourcePage);
+    addPackage->setIcon(RoundedIcons::icon(RoundedIcons::Package));
     sourceLayout->addWidget(addPackage);
     auto *update = UiControls::pushButton("Update in xIPs…", sourcePage);
+    update->setIcon(RoundedIcons::icon(RoundedIcons::AssetSync));
     update->setObjectName("updateInXips");
     connect(update, &QPushButton::clicked, this,
             [this]
@@ -145,6 +157,7 @@ TemplateManagerDialog::TemplateManagerDialog(UserTemplateService *s, const Simul
     assetNotice->setWordWrap(true);
     sourceLayout->addWidget(assetNotice);
     auto *browse = UiControls::pushButton("Browse assets…", sourcePage);
+    browse->setIcon(RoundedIcons::icon(RoundedIcons::IpLibrary));
     sourceLayout->addWidget(browse);
     connect(browse, &QPushButton::clicked, this,
             [this]
@@ -168,6 +181,8 @@ TemplateManagerDialog::TemplateManagerDialog(UserTemplateService *s, const Simul
     inputLayout->addLayout(inputButtons);
     auto *inputAdd = UiControls::pushButton("Add", inputPage);
     auto *inputRemove = UiControls::pushButton("Remove", inputPage);
+    inputAdd->setIcon(RoundedIcons::icon(RoundedIcons::Add));
+    inputRemove->setIcon(RoundedIcons::icon(RoundedIcons::Remove));
     auto *configure = UiControls::pushButton("Constraints…", inputPage);
     inputButtons->addWidget(inputAdd);
     inputButtons->addWidget(inputRemove);
@@ -195,6 +210,8 @@ TemplateManagerDialog::TemplateManagerDialog(UserTemplateService *s, const Simul
     eventLayout->addLayout(fields);
     auto *fieldAdd = UiControls::pushButton("Add value", eventPage);
     auto *fieldRemove = UiControls::pushButton("Remove value", eventPage);
+    fieldAdd->setIcon(RoundedIcons::icon(RoundedIcons::Add));
+    fieldRemove->setIcon(RoundedIcons::icon(RoundedIcons::Remove));
     fields->addWidget(fieldAdd);
     fields->addWidget(fieldRemove);
     tabs->addTab(eventPage, "Event preset");
@@ -345,12 +362,18 @@ void TemplateManagerDialog::reload()
     list->clear();
     records = OrdinaryTemplatePlanner::catalog(service, request.context.fileName);
     records.append(service->recordsForFile(request.context.fileName, true));
-    for (const auto &record : records)
+    for (const auto &record : records) {
         list->addItem(record.commandToken + (record.command.value("disabled").toBool() ? " [hidden]" : "") +
                       (record.storageSource == "builtin"                              ? "   Built-in"
                        : !record.command.value("file").toString().isEmpty()           ? "   This file"
                        : record.storageSource == service->workspaceTemplateLocation() ? "   Workspace"
                                                                                       : "   Global"));
+        const auto kind = record.command.value("kind").toString();
+        const auto glyph = kind == "block" ? RoundedIcons::blockKind(record.command.value("blockType").toString())
+            : kind == "task" || kind == "function" || kind == "call" ? RoundedIcons::Subroutine
+            : RoundedIcons::BlockCode;
+        list->item(list->count()-1)->setIcon(RoundedIcons::icon(glyph));
+    }
     revision = service->catalogRevision();
 }
 void TemplateManagerDialog::load(int row)

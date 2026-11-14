@@ -77,13 +77,16 @@ bool NavigationManager::updateDesignHierarchyData(bool force)
     if (designShuttingDown || !navigationService || !navigationWidget || !navigationWidget->isVisible()) return false;
     const auto token = navigationService->semanticSnapshotToken();
     const auto files = normalizedDesignScopeFiles(getSystemVerilogFiles());
+    const auto source = designProjects ? designProjects->sourceTop() : QPair<QString,QString>();
+    const auto simulation = simulationTarget ? simulationTarget() : QPair<QString,QString>();
     navigationWidget->setDesignCandidateContext({}, true,
         connectedWorkspaceManager && connectedWorkspaceManager->isWorkspaceScanActive());
     if (!force && caches.designHierarchyValid && caches.designSnapshotGeneration == token.revision
-        && caches.designFileScope == files) return false;
+        && caches.designFileScope == files && caches.sourceTop == source && caches.simulationTop == simulation) return false;
     const auto same = [&](const std::optional<DesignWorkRequest>& request) {
         return request && request->token.snapshot == token.snapshot && request->token.revision == token.revision
             && request->workspace == context.currentWorkspacePath && request->files == files
+            && request->sourceTop == source && request->simulationTop == simulation
             && !request->cancelled->load();
     };
     if (!force && (same(pendingDesignRequest) || same(activeDesignRequest))) return false;
@@ -91,6 +94,9 @@ bool NavigationManager::updateDesignHierarchyData(bool force)
     if (pendingDesignRequest) pendingDesignRequest->cancelled->store(true);
     DesignWorkRequest request;
     request.token = token; request.files = files; request.workspace = context.currentWorkspacePath;
+    request.sourceTop = source; request.simulationTop = simulation;
+    if(connectedWorkspaceManager)request.project=connectedWorkspaceManager->getProjectModel()->snapshot();
+    else {request.project.allFiles=files;request.project.systemVerilogFiles=files;request.project.sourceDiscoveryComplete=false;}
     request.telemetry = semanticAnalysisContext; request.generation = ++designRequestGeneration;
     request.cancelled = std::make_shared<std::atomic_bool>(false);
     request.previousFingerprint = caches.designStructureFingerprint;
@@ -117,6 +123,7 @@ void NavigationManager::launchPendingDesignWork()
             && token.revision == request.token.revision && normalizedDesignScopeFiles(getSystemVerilogFiles()) == request.files) {
             QElapsedTimer apply; apply.start();
             caches.designHierarchy = result.hierarchy; caches.designFileScope = request.files;
+            caches.projection = result.projection; caches.sourceTop=request.sourceTop; caches.simulationTop=request.simulationTop;
             caches.designSnapshotGeneration = request.token.revision;
             caches.designStructureFingerprint = result.fingerprint; caches.designHierarchyValid = true;
             caches.designRoots.clear();
@@ -125,7 +132,7 @@ void NavigationManager::launchPendingDesignWork()
             saveDesignHierarchyCache();
             const bool visible = navigationWidget->isVisible() && currentView == DesignHierarchyView;
             if (visible) {
-                navigationWidget->updateDesignHierarchy(result.hierarchy);
+                navigationWidget->updateDesignHierarchy(result.hierarchy, result.projection);
                 designHierarchyWidgetValid = true;
             } else designHierarchyWidgetValid = false;
             auto telemetry = request.telemetry;
@@ -155,6 +162,8 @@ void NavigationManager::launchPendingDesignWork()
         SemanticIndex index(request.token);
         result.hierarchy = HierarchyService(&index).automaticDesignHierarchy(designScopeSet(request.files),
             [cancelled = request.cancelled] { return cancelled->load(); });
+        if(!request.cancelled->load())result.projection=DesignTreeProjection::build(result.hierarchy, request.token,
+            request.project, request.sourceTop, request.simulationTop, [cancelled=request.cancelled]{return cancelled->load();});
         result.cancelled = request.cancelled->load();
         result.fingerprint = result.hierarchy.structureFingerprint;
         result.reusedStructure = result.fingerprint == request.previousFingerprint;

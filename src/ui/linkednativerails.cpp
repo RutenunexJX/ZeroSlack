@@ -362,9 +362,14 @@ struct LinkedNativeRails::Private {
         original->setObjectName("linkedNativeOpen"); actions->addWidget(original); layout->addLayout(actions);
         QObject::connect(locate, &QPushButton::clicked, q, [this, id = reference.id] { emit q->locateCodeRequested(id); });
         QObject::connect(original, &QPushButton::clicked, q, [this, id = reference.id] { emit q->openOriginalRequested(id); });
+        if(reference.local){
+            card.title->hide();card.location->hide();locate->hide();original->hide();
+            card.body->setFixedHeight(qBound(80,reference.height,900));layout->setContentsMargins(0,0,0,0);
+        }
         return card;
     }
     void display(Card& card, const Preview& preview) {
+        if(card.reference.local)return;
         const QString title = preview.title.isEmpty() ? card.reference.title : preview.title;
         if (card.displayed && card.displayedTitle == title
             && card.preview.text == preview.text && card.preview.location == preview.location
@@ -426,10 +431,11 @@ LinkedNativeRails::LinkedNativeRails(QWidget* editorPage, QWidget* parent)
         d->layoutGroups();
     });
 }
-LinkedNativeRails::~LinkedNativeRails() = default;
+LinkedNativeRails::~LinkedNativeRails() { resetSession(); }
 
 void LinkedNativeRails::resetSession() {
     d->rebuilding = true; d->visibilityTimer.stop();
+    for(auto it=d->cards.cbegin();it!=d->cards.cend();++it)if(it->reference.local)emit releasingBlockWidget(it.key());
     for (const auto& group : d->groups) delete group.frame;
     d->groups.clear(); d->cards.clear(); d->previews.clear(); d->placedOrder.clear(); d->visible.clear();
     d->logicalGroups.clear(); d->expansion.clear();
@@ -523,6 +529,7 @@ void LinkedNativeRails::setGroups(const QList<Group>& logicalGroups, qint64 cont
     }
     for (auto it = d->cards.begin(); it != d->cards.end();) {
         if (retainedCards.contains(it.key())) { ++it; continue; }
+        if(it->reference.local)emit releasingBlockWidget(it.key());
         delete it->frame; it = d->cards.erase(it);
     }
     for (const auto& group : old) delete group.frame;
@@ -549,6 +556,21 @@ void LinkedNativeRails::updateAnchorPositions(const QMap<QString, Position>& pos
     d->layoutGroups(changed);
 }
 int LinkedNativeRails::railViewportTop() const { return d->rails[0]->viewport()->mapTo(this, QPoint()).y(); }
+bool LinkedNativeRails::setBlockWidget(const QString& id,QWidget* widget,int height) {
+    auto found=d->cards.find(id);if(found==d->cards.end() || !found->reference.local || !widget)return false;
+    const int extent=qBound(80,height,900);
+    const bool changed=found->body->height()!=extent || found->body->currentWidget()!=widget;
+    if(found->body->indexOf(widget)<0)found->body->addWidget(widget);
+    found->body->setCurrentWidget(widget);found->body->setFixedHeight(extent);widget->show();
+    if(changed)d->layoutGroups();return true;
+}
+void LinkedNativeRails::setRailsVisible(bool visible) {
+    if (d->hosts[0]->isHidden() == !visible && d->hosts[1]->isHidden() == !visible)
+        return;
+    if (!visible) d->requestedSizes = sizes();
+    for(auto* host:d->hosts)host->setVisible(visible);
+    if(visible){d->initialSizesPending=true;d->applyInitialSizes();d->scheduleVisible();}
+}
 void LinkedNativeRails::setActiveAnchors(const QSet<QString>& ids) {
     if (d->activeAnchors == ids) return;
     d->activeAnchors = ids;d->applyHighlights();

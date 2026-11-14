@@ -10,7 +10,6 @@
 
 #include "actionregistry.h"
 #include "editorcontextmenumodel.h"
-#include "editorradialmenu.h"
 #include "editorhoverpopup.h"
 #include "editorlexicalboundary.h"
 #include "formattercursoranchor.h"
@@ -60,7 +59,6 @@
 
 namespace {
 constexpr int kManualIndentWidth = 4;
-constexpr int kDiagnosticOverviewBucketCount = 1024;
 constexpr const char* kDiagnosticsEmptyProperty =
     "zeroslackDiagnosticsSelectionsEmpty";
 constexpr const char* kSemanticDecorationsEmptyProperty =
@@ -1185,6 +1183,7 @@ void MyCodeEditorState::initializeCore(MyCodeEditor* editor)
 
 void MyCodeEditorState::shutdown(MyCodeEditor* editor)
 {
+    delete diagnosticOverview.data();diagnosticOverview.clear();
     tbAssist.reset();
     clearVisibleTextLayoutCache();
     folding.resetForDocumentChange(editor);
@@ -1511,7 +1510,7 @@ void MyCodeEditorState::rebindDocument(
     diagnostics.clear();
     diagnosticIndexesByLine.clear();
     diagnosticSeverityByLine.clear();
-    diagnosticOverviewSeverityByBucket.clear();
+    if(diagnosticOverview)diagnosticOverview->schedule();
     diagnosticComputationRevision = 0;
     ghostAnnotations.clear();
     semanticDecorations.clear();
@@ -3374,43 +3373,6 @@ void MyCodeEditorState::paintGutterDecorations(
     }
 }
 
-void MyCodeEditorState::paintDiagnosticOverview(
-    MyCodeEditor* editor,
-    QPaintEvent* event)
-{
-    if (!editor
-        || !event
-        || !annotationDisplayOptions.enabled
-        || diagnosticOverviewSeverityByBucket.isEmpty()
-        || editor->blockCount() <= 0) {
-        return;
-    }
-
-    QPainter painter(editor->viewport());
-    const int markerWidth = 5;
-    const int markerHeight = 4;
-    const int x = qMax(0, editor->viewport()->width() - markerWidth);
-    const int availableHeight =
-        qMax(1, editor->viewport()->height() - markerHeight);
-    for (auto markerIt =
-             diagnosticOverviewSeverityByBucket.cbegin();
-         markerIt
-             != diagnosticOverviewSeverityByBucket.cend();
-         ++markerIt) {
-        ++hotPathMetrics.diagnosticOverviewCandidatesPainted;
-        const int y = qRound(
-            static_cast<qreal>(markerIt.key())
-            / (kDiagnosticOverviewBucketCount - 1)
-            * availableHeight);
-        const QRect marker(x, y, markerWidth, markerHeight);
-        if (!event->rect().intersects(marker))
-            continue;
-        painter.fillRect(marker,
-                         diagnosticSeverityColor(
-                             markerIt.value()));
-    }
-}
-
 void MyCodeEditorState::paintFoldPlaceholders(
     MyCodeEditor* editor,
     QPaintEvent* event) const
@@ -3448,8 +3410,10 @@ void MyCodeEditorState::handleContextMenu(
         signalSelection.completeForContextMenu();
         const QTextCursor contextCursor =
             editor->cursorForPosition(event->pos());
-        std::unique_ptr<QMenu> menuOwner(UiControls::menu(editor));
+        QPointer<MyCodeEditor> editorGuard(editor);
+        std::unique_ptr<QMenu> menuOwner(UiControls::menu());
         QMenu& menu = *menuOwner;
+        QObject::connect(editor, &QObject::destroyed, &menu, &QMenu::close);
         EditorContextMenuRequest request;
         request.actionContext.workspacePath =
             hierarchyInstance.workspacePath;
@@ -3473,10 +3437,8 @@ void MyCodeEditorState::handleContextMenu(
         request.capabilities.append(capability);
         const EditorContextMenuModel model =
             buildEditorContextMenuModel(request);
-        QMenu* refactorMenu =
-            UiControls::addMenu(&menu, QStringLiteral("Refactor"));
-        refactorMenu->setObjectName(
-            QStringLiteral("editorContextMenu.refactor"));
+        QMenu* refactorMenu = &menu;
+        menu.setObjectName(QStringLiteral("editorContextMenu.signalSelection"));
         const EditorContextMenuItem item =
             !model.sections.isEmpty()
                 && !model.sections.first().items.isEmpty()
@@ -3532,9 +3494,10 @@ void MyCodeEditorState::handleContextMenu(
                     emit editor->editorStatusMessageRequested(message);
                 }
             });
-        EditorRadialMenu::exec(&menu, event->globalPos());
-        if (!actionTriggered)
+        menu.exec(event->globalPos());
+        if (editorGuard && !actionTriggered)
             cancelSignalSelectionMode(editor);
+        if (editorGuard) editorGuard->setFocus(Qt::PopupFocusReason);
         event->accept();
         return;
     }

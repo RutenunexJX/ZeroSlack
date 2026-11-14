@@ -2,6 +2,7 @@
 #include "../integrations/xips/xipsassetsync.h"
 #include "../integrations/xips/xipscontextprovider.h"
 #include "uicontrols.h"
+#include "roundedicons.h"
 #include <QtConcurrent/QtConcurrentRun>
 #include <QtWidgets>
 #include <zeroslack/documents/documentfileread.h>
@@ -57,6 +58,10 @@ XipsAssetSyncDialog::XipsAssetSyncDialog(const QString &root, const QStringList 
     commitButton = UiControls::pushButton("Save version", this);
     recoverButton = UiControls::pushButton("Recover operation…", this);
     cancelButton = UiControls::pushButton("Cancel", this);
+    previewButton->setIcon(RoundedIcons::icon(RoundedIcons::Preview));
+    commitButton->setIcon(RoundedIcons::icon(RoundedIcons::SaveVersion));
+    recoverButton->setIcon(RoundedIcons::icon(RoundedIcons::Recovery));
+    cancelButton->setIcon(RoundedIcons::icon(RoundedIcons::Cancel));
     previewButton->setObjectName("assetPreviewButton");
     commitButton->setObjectName("assetCommitButton");
     recoverButton->setObjectName("assetRecoverButton");

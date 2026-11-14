@@ -20,7 +20,6 @@
 #include "settingscenterservice.h"
 #include "temporaryeditorcontextprovider.h"
 #include "temporaryeditorcontextview.h"
-#include "temporaryeditorsearchprovider.h"
 #include "semanticdockcoordinator.h"
 #include "signaltracepanel.h"
 #include "projectmodel.h"
@@ -198,18 +197,6 @@ void MainWindow::setupContextWorkspace()
     auto temporaryProvider =
         std::make_unique<TemporaryEditorContextProvider>(
             tabManager.get());
-    if (temporaryEditorSearchProvider)
-        temporaryEditorSearchProvider->setCatalogChangedHandler([this] {
-            for (auto* view : findChildren<TemporaryEditorContextView*>())
-                view->refreshSearchResults();
-        });
-    temporaryProvider->setSearchProvider(
-        [this](const QString& rawQuery)
-            -> EditorSearchTask {
-            return temporaryEditorSearchProvider
-                ? temporaryEditorSearchProvider->queryTask(rawQuery)
-                : EditorSearchTask{};
-        });
     contextWorkspaceController->registerProvider(
         std::move(temporaryProvider));
 

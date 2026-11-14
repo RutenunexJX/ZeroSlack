@@ -2,6 +2,7 @@
 #include "documentblockmodel.h"
 #include "editorblockpreview.h"
 #include "blocknotestyle.h"
+#include "blockshellmetrics.h"
 #include "mycodeeditor.h"
 #include <QAbstractTextDocumentLayout>
 #include <QScrollBar>
@@ -14,12 +15,13 @@
 
 void EditorBlockProjection::ensure(MyCodeEditor* editor, const QList<QPair<int,int>>& folds) {
     auto* model = DocumentBlockModel::get(editor->document());
-    if (std::none_of(model->items().cbegin(), model->items().cend(), [](const auto& block) { return !block.detached; })) {
+    if (std::none_of(model->items().cbegin(), model->items().cend(), [](const auto& block) { return !block.detached && !block.removedReference(); })) {
         enabled = false; runs.clear(); gaps.clear(); ordinals.clear(); heights.clear(); noteHeights.clear(); return;
     }
     const bool wasEnabled = enabled;
     const int previousSource = wasEnabled ? sourceForRow(rowAtY(offset(editor))) : editor->QPlainTextEdit::firstVisibleBlock().blockNumber();
     const bool layoutChanged = document != editor->document() || fontKey != editor->font().toString()
+        || blocksVisible != editor->associatedBlocksVisible()
         || width != editor->viewport()->width() || styleRevision != BlockNoteStyle::instance().revision();
     if (layoutChanged || sourceCount != editor->document()->blockCount() || collapsed != folds) heights.clear();
     if (!dirty && !layoutChanged && sourceCount == editor->document()->blockCount()
@@ -27,6 +29,7 @@ void EditorBlockProjection::ensure(MyCodeEditor* editor, const QList<QPair<int,i
         configureScrollBar(editor); return;
     }
     document = editor->document(); sourceCount = document->blockCount(); width = editor->viewport()->width();
+    blocksVisible=editor->associatedBlocksVisible();
     fontKey = editor->font().toString(); estimate = qMax(1, editor->fontMetrics().height());
     modelRevision = model->revision(); collapsed = folds;
     styleRevision = BlockNoteStyle::instance().revision();
@@ -50,29 +53,32 @@ void EditorBlockProjection::ensure(MyCodeEditor* editor, const QList<QPair<int,i
     if (from < sourceCount) { runs.append({from, sourceCount - from, count}); count += sourceCount - from; }
     gaps.clear();
     QSet<QString> measuredNotes;
-    for (const auto& block : model->items()) {
-        if (block.detached) continue;
+    for (const auto& stored : model->items()) {
+        const auto block=model->presentation(stored.id);
+        if (block.detached || block.removedReference()) continue;
         const int position = qBound(0, block.end > block.start ? block.end - 1 : block.end, document->characterCount() - 1);
         int line = block.missing ? sourceCount - 1 : document->findBlock(position).blockNumber();
         const bool hiddenAnchor = rowForSource(line) < 0;
         if (hiddenAnchor) for (const auto& range : merged) if (range.first <= line && line < range.second) { line = qMax(0, range.first - 1); break; }
         const int row = rowForSource(line);
         if (row < 0) continue;
-        qreal blockHeight = block.collapsed || hiddenAnchor ? 36 : block.height + 36;
+        qreal blockHeight = block.collapsed || hiddenAnchor || block.compactReference() ? 36 : block.height + 36;
+        if(!block.collapsed && !hiddenAnchor && block.autoHeight && block.type=="wave")
+            blockHeight=model->presentationHeight(block.id,240)+44;
         const bool editableText=block.type=="text" || block.type=="code";
         const auto autoText=editableText ? block.text : block.autoHeight ? EditorBlockPreview::linkOnlyText(block) : QString();
-        if (!block.collapsed && !hiddenAnchor && block.autoHeight && (editableText || !autoText.isEmpty())) {
+        if (!block.collapsed && !hiddenAnchor && !block.compactReference() && block.autoHeight && (editableText || !autoText.isEmpty())) {
             measuredNotes.insert(block.id);
             auto& measured = noteHeights[block.id];
             if (measured.revision != block.revision || measured.style != styleRevision || measured.width != width
                 || !qFuzzyCompare(measured.dpr, editor->devicePixelRatioF())) {
                 measured = {block.revision, styleRevision, width, editor->devicePixelRatioF(),
-                    qMax<qreal>(52, BlockNoteStyle::measure(autoText, width - 40,
-                        BlockNoteStyle::instance().appearance(block.appearance)) + 24)};
+                    qMax<qreal>(52, BlockNoteStyle::measure(autoText, width - BlockShellMetrics::horizontalOverhead,
+                        BlockNoteStyle::instance().appearance(block.appearance)) + BlockShellMetrics::verticalOverhead)};
             }
             blockHeight = measured.height;
         }
-        gaps.append({block.id, line, row, block.order, 0, blockHeight, hiddenAnchor});
+        gaps.append({block.id, line, row, block.order, 0, blocksVisible ? blockHeight : 0, hiddenAnchor});
     }
     for (auto it = noteHeights.begin(); it != noteHeights.end();)
         if (!measuredNotes.contains(it.key())) it = noteHeights.erase(it); else ++it;
@@ -143,7 +149,8 @@ QRectF EditorBlockProjection::gapRect(MyCodeEditor* editor, const QString& id) c
 QList<QPair<QString,QRectF>> EditorBlockProjection::visibleGaps(MyCodeEditor* editor, int prefetch) const {
     QList<QPair<QString,QRectF>> result;
     for (const auto& gap : gaps) {
-        const QRectF rect(4, rowTop(gap.row) + rowHeight(gap.row) + gap.offset - offset(editor), qMax(0, editor->viewport()->width() - 8), gap.height);
+        const QRectF rect(4, rowTop(gap.row) + (blocksVisible ? rowHeight(gap.row)+gap.offset : 0) - offset(editor),
+            qMax(0, editor->viewport()->width() - 8), blocksVisible ? gap.height : rowHeight(gap.row));
         if (rect.bottom() >= -prefetch && rect.top() <= editor->viewport()->height() + prefetch) result.append({gap.id, rect});
     }
     return result;

@@ -9,6 +9,7 @@
 #include "editorsplitcontroller.h"
 #include "temporaryeditorcontextprovider.h"
 #include "temporaryeditorcontextview.h"
+#include "temporaryeditorsession.h"
 #include "liveinsightscontextprovider.h"
 #include "workspacemanager.h"
 #include "testuistyle.h"
@@ -16,10 +17,9 @@
 #include <QAbstractButton>
 #include <QAction>
 #include <QApplication>
+#include <QCryptographicHash>
 #include <QFile>
 #include <QDialog>
-#include <QLineEdit>
-#include <QListView>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QTemporaryDir>
@@ -67,13 +67,13 @@ private slots:
         QVERIFY(initializeUiStyleForTest());
     }
 
-    void searchActivationChecksSource_data()
+    void candidateActivationChecksSource_data()
     {
         QTest::addColumn<QString>("change");
         for (const char* value : {"current", "dirty", "same_dirty", "indexed_dirty", "disk", "format_only", "deleted"})
             QTest::newRow(value) << QString::fromLatin1(value);
     }
-    void searchActivationChecksSource()
+    void candidateActivationChecksSource()
     {
         QFETCH(QString, change);
         QTemporaryDir fixture; QVERIFY(fixture.isValid());
@@ -104,11 +104,20 @@ private slots:
         QVERIFY(controller->openResource(resource, {ContextSurface::Docked, ContextPersistence::Kept}));
         auto* view = qobject_cast<TemporaryEditorContextView*>(controller->viewForResource(resource.stableKey()));
         QVERIFY(view && view->editor());
-        auto* field = view->searchField();
-        auto* list = view->findChild<QListView*>("temporaryEditorSearchResults");
-        QVERIFY(field && list);
-        field->setText("chosen_signal");
-        QTRY_COMPARE_WITH_TIMEOUT(list->model()->rowCount(), 1, 5000);
+        auto* session = view->findChild<TemporaryEditorSession*>();
+        QVERIFY(session);
+        QCOMPARE(session->editor(), view->editor());
+        // The search toolbar is retired; its retained session boundary still
+        // rejects candidates whose indexed source no longer matches the document.
+        EditorSearchCandidate candidate;
+        candidate.type = EditorSearchCandidateType::Symbol;
+        candidate.title = "chosen_signal";
+        candidate.location.filePath = target;
+        candidate.location.line = change == "indexed_dirty" ? 3 : 2;
+        candidate.location.column = 9;
+        candidate.sourceTextSha256 = QCryptographicHash::hash(
+            SemanticIndex::getInstance()->getCachedFileContent(target).toUtf8(), QCryptographicHash::Sha256);
+        QVERIFY(candidate.isValid());
         const int history = view->historyCount();
         QTimer dismissMissingFile;
         connect(&dismissMissingFile, &QTimer::timeout, &window, [] {
@@ -129,10 +138,10 @@ private slots:
             QVERIFY(QFile::remove(target));
             dismissMissingFile.start(10);
         }
-        list->setCurrentIndex(list->model()->index(0, 0));
-        QTest::keyClick(field, Qt::Key_Return, Qt::NoModifier, 0);
+        const bool acceptsSource = change == "current" || change == "indexed_dirty" || change == "format_only";
+        QCOMPARE(session->openSearchCandidate(candidate), acceptsSource);
         dismissMissingFile.stop();
-        if (change == "current" || change == "indexed_dirty" || change == "format_only") {
+        if (acceptsSource) {
             QCOMPARE(rejected.size(), 0);
             QVERIFY(EditorFileIdentity::same(view->currentLocation().filePath, target));
             QCOMPARE(view->editor()->textCursor().blockNumber(), change == "indexed_dirty" ? 2 : 1);
@@ -142,10 +151,9 @@ private slots:
             QCOMPARE(view->historyCount(), history);
             if (change == "dirty" || change == "same_dirty") targetEditor->undo();
             else QVERIFY(writeText(target, source));
-            field->clear(); field->setText("chosen_signal");
-            QTRY_COMPARE_WITH_TIMEOUT(list->model()->rowCount(), 1, 5000);
-            list->setCurrentIndex(list->model()->index(0, 0));
-            QTest::keyClick(field, Qt::Key_Return, Qt::NoModifier, 0);
+            candidate.sourceTextSha256 = QCryptographicHash::hash(source.toUtf8(), QCryptographicHash::Sha256);
+            QVERIFY(session->openSearchCandidate(candidate));
+            QCOMPARE(rejected.size(), 1);
             QVERIFY(EditorFileIdentity::same(view->currentLocation().filePath, target));
             QCOMPARE(view->editor()->textCursor().blockNumber(), 1);
         }

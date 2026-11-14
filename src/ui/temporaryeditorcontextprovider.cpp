@@ -173,7 +173,6 @@ QWidget* TemporaryEditorContextProvider::createView(
         return nullptr;
     auto* view = new TemporaryEditorContextView(
         tabManagerValue, parent);
-    view->setSearchProvider(searchProvider);
     return view;
 }
 
@@ -188,7 +187,6 @@ bool TemporaryEditorContextProvider::activateView(
         return false;
     editorView->setProperty(
         "contextWorkspaceId", resource.workspaceId);
-    editorView->setSearchProvider(searchProvider);
     const bool opened=editorView->openLocation(location);
     editorView->setProperty("contextDisplayTitle",documentTitle(tabManagerValue,location));
     return opened;
@@ -322,10 +320,4 @@ TemporaryEditorContextProvider::resourceFromPersistence(
     restored.state.insert(
         QStringLiteral("location"), locationData);
     return restored;
-}
-
-void TemporaryEditorContextProvider::setSearchProvider(
-    SearchProvider provider)
-{
-    searchProvider = std::move(provider);
 }

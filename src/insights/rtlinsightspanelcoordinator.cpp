@@ -1,4 +1,5 @@
 #include "uicontrols.h"
+#include "roundedicons.h"
 #include "rtlinsightspanelcoordinator.h"
 #include "compactlayout.h"
 
@@ -63,6 +64,7 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     viewState->pinButton->setObjectName(
         QStringLiteral("rtlInsightsPinButton"));
     viewState->pinButton->setText(QStringLiteral("Pin"));
+    viewState->pinButton->setIcon(RoundedIcons::icon(RoundedIcons::Pin));
     viewState->pinButton->setCheckable(true);
     viewState->pinButton->setToolTip(
         QStringLiteral(
@@ -94,6 +96,18 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     viewState->graphFitButton->setObjectName(QStringLiteral("rtlGraphFitButton"));
     viewState->graphZoomInButton = UiControls::pushButton(QStringLiteral("+"), panel);
     viewState->graphZoomInButton->setObjectName(QStringLiteral("rtlGraphZoomInButton"));
+    viewState->signalUsageHotspotButton->setIcon(RoundedIcons::icon(RoundedIcons::SignalHeatmap));
+    viewState->fsmGraphButton->setIcon(RoundedIcons::icon(RoundedIcons::StateGraph));
+    viewState->moduleBlockDiagramButton->setIcon(RoundedIcons::icon(RoundedIcons::Design));
+    viewState->graphFitButton->setIcon(RoundedIcons::icon(RoundedIcons::GraphFit));
+    viewState->graphZoomInButton->setIcon(RoundedIcons::icon(RoundedIcons::ZoomIn));
+    viewState->graphZoomOutButton->setIcon(RoundedIcons::icon(RoundedIcons::ZoomOut));
+    viewState->graphZoomInButton->setText(QString());
+    viewState->graphZoomOutButton->setText(QString());
+    viewState->graphZoomInButton->setToolTip(QStringLiteral("Zoom in"));
+    viewState->graphZoomOutButton->setToolTip(QStringLiteral("Zoom out"));
+    viewState->graphZoomInButton->setAccessibleName(QStringLiteral("Zoom in"));
+    viewState->graphZoomOutButton->setAccessibleName(QStringLiteral("Zoom out"));
     viewState->graphSearchEdit = UiControls::lineEdit(panel);
     viewState->graphSearchEdit->setObjectName(QStringLiteral("rtlGraphSearchEdit"));
     viewState->graphSearchEdit->setPlaceholderText(QStringLiteral("Search graph"));
@@ -130,9 +144,10 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
                                 QStringLiteral("Tree")});
     viewState->graphMoreButton = UiControls::toolButton(panel);
     viewState->graphMoreButton->setObjectName(QStringLiteral("rtlGraphMoreButton"));
-    viewState->graphMoreButton->setText(QStringLiteral("..."));
+    viewState->graphMoreButton->setIcon(RoundedIcons::icon(RoundedIcons::More));
     viewState->graphMoreButton->setPopupMode(QToolButton::InstantPopup);
     viewState->graphMoreButton->setToolTip(QStringLiteral("More graph actions"));
+    viewState->graphMoreButton->setAccessibleName(QStringLiteral("More graph actions"));
     auto* graphMoreMenu = UiControls::menu(viewState->graphMoreButton);
     viewState->graphJumpAction = createGraphAction(
         viewState->graphMoreButton,

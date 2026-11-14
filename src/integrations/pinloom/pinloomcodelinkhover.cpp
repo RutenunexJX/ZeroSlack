@@ -3,6 +3,9 @@
 #include "editorhoverpopup.h"
 #include "mycodeeditor.h"
 #include "uicontrols.h"
+#include "editorblockpreview.h"
+#include "documentreferenceservice.h"
+#include <QMenu>
 
 #include <QApplication>
 #include <QComboBox>
@@ -15,17 +18,6 @@
 #include <QVBoxLayout>
 
 namespace {
-bool sameIdentity(const PinloomHostIdentity& expected, const PinloomHostIdentity& actual)
-{
-    const auto matches = [](const QString& expected, const QString& actual) {
-        return expected.isEmpty() || expected == actual;
-    };
-    return actual.isValid()
-        && matches(expected.entryId, actual.entryId)
-        && matches(expected.resourceId, actual.resourceId)
-        && matches(expected.anchorId, actual.anchorId)
-        && matches(expected.clipId, actual.clipId);
-}
 QLabel* plainLabel(QWidget* parent, const QString& name)
 {
     auto* label = UiControls::label(parent);
@@ -173,6 +165,7 @@ void PinloomCodeLinkHover::showCard()
     const auto binding = store->anchorByIdForDocument(sourceAnchorId, editor->documentFileName(),
                                                       editor->cachedDocumentText(), editor->syntaxDocument());
     targets = binding.anchor.links;
+    targets.removeIf([&](const auto& link){return DocumentReferenceService::hasLegacy(editor->blockModel(),binding.anchor.id,link.id);});
     if (targets.isEmpty()) { dismiss(); return; }
     popup = editor->beginPinloomLinkPreview();
     if (!popup) { dismiss(); return; }
@@ -228,7 +221,9 @@ void PinloomCodeLinkHover::showCard()
         const auto request = generation;
         const QPointer<PinloomCodeLinkHover> self(this);
         const QPointer<MyCodeEditor> owner(editor);
-        client->open(identity, [self, owner, request](bool opened, const QString& detail) {
+        EditorBlockPreview::openInspectedTarget(originalTarget,client,this,
+            [self,request]{return self && self->body && request==self->generation;},
+            [self, owner, request](bool opened, const QString& detail) {
             const QString message = detail.isEmpty()
                 ? (opened ? QStringLiteral("Original location opened.") : QStringLiteral("Original location could not be opened.")) : detail;
             if (self && request == self->generation && self->body) {
@@ -237,7 +232,7 @@ void PinloomCodeLinkHover::showCard()
                 self->statusLabel->setText(message);
             }
             if (owner) emit owner->editorStatusMessageRequested(message);
-        }, true);
+        });
     });
     actions->addWidget(openButton);
     auto* secondaryActions = new QHBoxLayout;
@@ -257,6 +252,31 @@ void PinloomCodeLinkHover::showCard()
         });
     });
     secondaryActions->addWidget(links);
+    auto* display=UiControls::pushButton(QStringLiteral("Reference"),body);
+    display->setObjectName("pinloomReferenceActions");
+    auto* menu=UiControls::menu(display);display->setMenu(menu);
+    for(const auto& choice:QList<QPair<QString,QString>>{{"Compact link","compact"},{"Embedded preview","embedded"},{"Remove local reference","removed"}}) {
+        auto* action=menu->addAction(choice.first);action->setEnabled(!editor->documentReadOnly());
+        connect(action,&QAction::triggered,this,[this,choice] {
+            if(!editor || editor->documentReadOnly() || !store || targetIndex<0 || targetIndex>=targets.size())return;
+            const QPointer<MyCodeEditor> owner=editor;
+            const auto anchor=store->anchorByIdForDocument(sourceAnchorId,owner->documentFileName(),owner->cachedDocumentText(),owner->syntaxDocument());
+            const auto linkId=targets[targetIndex].id;
+            const auto sourceRevision=owner->semanticDocumentRevision();
+            const auto storageRevision=store->storageRevision(); const QPointer<QTextDocument> sourceDocument=owner->document();
+            QTimer::singleShot(0,this,[this,owner,anchor,linkId,choice,sourceRevision,storageRevision,sourceDocument] {
+                dismiss();if(!owner || owner->documentReadOnly())return;
+                if(!sourceDocument || owner->document()!=sourceDocument || owner->semanticDocumentRevision()!=sourceRevision
+                    || !store || store->storageRevision()!=storageRevision) {
+                    emit owner->editorStatusMessageRequested("The source binding changed. Open the reference menu again.");return;
+                }
+                QString error;const auto id=DocumentReferenceService::convertLegacy(owner->blockModel(),anchor,linkId,choice.second,&error);
+                if(id.isEmpty())emit owner->editorStatusMessageRequested(error);
+                owner->setFocus(Qt::OtherFocusReason);
+            });
+        });
+    }
+    secondaryActions->addWidget(display);
     actions->addLayout(secondaryActions);
     layout->addLayout(actions);
     popup->showEmbeddedContent(body, QStringLiteral("Pinloom"), anchorRect, QApplication::font());
@@ -280,6 +300,7 @@ void PinloomCodeLinkHover::resolveTarget(int index)
     if (client) client->cancelReadRequests(this);
     targetIndex = index;
     opening = false;
+    originalTarget = {};
     const auto& record = targets.at(index);
     identity = PinloomHostIdentity::fromVariantMap(record.identity);
     if (!identity.isValid()) identity = PinloomHostIdentity::fromUri(record.uri);
@@ -291,39 +312,18 @@ void PinloomCodeLinkHover::resolveTarget(int index)
     openButton->setEnabled(false);
     if (!client || !identity.isValid()) { showFailure(QStringLiteral("Pinloom target is unavailable. Use Open links.")); return; }
     const QPointer<PinloomCodeLinkHover> self(this);
-    const auto expected = identity;
-    client->resolve(identity, [self, request, expected](const PinloomHostDocument& document, const QString& error) {
-        if (!self || request != self->generation || !self->body) return;
-        if (!error.isEmpty() || !document.isValid() || document.entry.deleted) {
-            self->showFailure(error.isEmpty() ? QStringLiteral("This Pinloom entry is unavailable.") : error);
-            return;
-        }
-        if (!sameIdentity(expected, document.entry.identity)) {
-            self->showFailure(QStringLiteral("Pinloom returned a different target. Retry to refresh it."));
-            return;
-        }
-        self->titleLabel->setText(document.entry.title);
-        const int page = document.preview.page > 0 ? document.preview.page : document.details.value(QStringLiteral("page")).toInt();
-        QString details = pinloomDocumentFileName(document);
-        if (page > 0) details += QStringLiteral("  ·  Page %1").arg(page);
-        self->detailsLabel->setText(details);
-        const bool rectangle = document.details.value(QStringLiteral("locatorType")).toString() == QStringLiteral("sumatrapdf.rect")
-            || (document.preview.present && document.preview.cropped && !document.entry.identity.anchorId.isEmpty());
-        self->openButton->setEnabled(rectangle);
-        if (!rectangle) {
-            self->showFailure(QStringLiteral("This binding has no PDF region preview. Use Open links."));
-            return;
-        }
-        if (!document.preview.cropped && document.preview.isReady()) {
-            self->showFailure(QStringLiteral("Pinloom did not return the selected PDF region. Retry or open the original."));
-            return;
-        }
-        self->loader->load(document.preview, [self, request, alt = document.preview.altText](const PinloomPreviewImageResult& result) {
-            if (!self || request != self->generation || !self->body) return;
-            if (!result.error.isEmpty() || result.image.isNull()) { self->showFailure(result.error); return; }
-            self->image->setSourcePixmap(QPixmap::fromImage(result.image), alt);
-            self->image->show();
-            self->statusLabel->clear();
-        });
-    }, this);
+    const auto current=[self,request] {return self && self->body && request==self->generation;};
+    const auto uri=record.uri.toString();
+    EditorBlockPreview::requestTarget(uri,client,this,current,[self,current](const EditorBlockPreviewResult& result) {
+        if(!current())return;
+        self->originalTarget=result.original;
+        self->openButton->setEnabled(result.original.available());
+        self->openButton->setToolTip(result.original.reason);
+        if(!result.title.isEmpty())self->titleLabel->setText(result.title);
+        self->detailsLabel->setText(result.location.isEmpty() ? result.text.left(2048) : result.location);
+        self->statusLabel->setText(result.status);
+        if(result.image.isNull())self->image->clearSourcePixmap();
+        else self->image->setSourcePixmap(QPixmap::fromImage(result.image),self->titleLabel->text());
+        self->image->setVisible(!result.image.isNull());
+    });
 }

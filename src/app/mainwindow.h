@@ -55,7 +55,6 @@ class DocumentReviewCoordinator;
 class GlobalControlCoordinator;
 class SemanticDockCoordinator;
 class SemanticRuntimeCoordinator;
-class TemporaryEditorSearchProvider;
 class ScopedReplaceWorkflow;
 class WorkspaceEditDocumentManager;
 enum class LiveInsightKind : quint8;
@@ -161,9 +160,6 @@ private:
     std::unique_ptr<WorkspaceSessionUiState> linkedNormalState;
     void setupLinkedContext();
     std::unique_ptr<EditorCoordinator> editorCoordinator;
-    std::unique_ptr<TemporaryEditorSearchProvider>
-        temporaryEditorSearchProvider;
-    std::uint64_t temporaryEditorCatalogSnapshotRevision = 0;
     std::unique_ptr<EditorActionContextService> editorActionContextService;
     std::unique_ptr<FileCommandCoordinator> fileCommandCoordinator;
     std::unique_ptr<WorkspaceSessionCoordinator>
@@ -274,7 +270,6 @@ private:
         const EditorSemanticContext& editorContext);
     void showRecentWorkspacesDialog();
     void showWorkspaceConfigurationDialog();
-    void navigateDiagnostic(bool previous);
     void setDiagnosticsAnalysisState(const QString& state);
     void refreshDiagnosticsAnalysisState();
     void setupSettingsCenter();
@@ -301,8 +296,6 @@ private:
     void setupManagerConnections();
     void setupSemanticRuntime();
     void setupEditorCentralArea();
-    void refreshTemporaryEditorFileCatalog();
-    void refreshTemporaryEditorSemanticCatalog();
     void setupWorkspaceActivity();
     void refreshWorkspaceScope();
     void refreshActiveEditorDiagnosticHighlights(

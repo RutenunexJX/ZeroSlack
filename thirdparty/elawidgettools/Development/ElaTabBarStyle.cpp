@@ -115,6 +115,24 @@ void ElaTabBarStyle::drawControl(ControlElement element, const QStyleOption* opt
             painter->save();
             painter->setRenderHints(QPainter::Antialiasing | QPainter::TextAntialiasing);
             painter->setPen(Qt::NoPen);
+            if (widget && widget->property("editorFileTabs").toBool()) {
+                const QRectF pill=QRectF(tabRect).adjusted(2,2,-2,-2);
+                const bool selected=topt->state.testFlag(State_Selected);
+                const bool hover=topt->state.testFlag(State_MouseOver);
+                if(selected || hover) {
+                    painter->setBrush(widget->property(selected?"editorTabSelectedBackground":"editorTabHoverBackground").value<QColor>());
+                    painter->drawRoundedRect(pill,6,6);
+                }
+                if(selected) {
+                    painter->setBrush(ElaThemeColor(_themeMode,PrimaryNormal));
+                    painter->drawRoundedRect(QRectF(tabRect.left()+5,tabRect.top()+8,2,tabRect.height()-16),1,1);
+                    if(widget->hasFocus() && widget->testAttribute(Qt::WA_KeyboardFocusChange)) {
+                        painter->setPen(QPen(widget->property("editorTabFocusColor").value<QColor>(),1));
+                        painter->setBrush(Qt::NoBrush);painter->drawRoundedRect(pill.adjusted(1,1,-1,-1),5,5);
+                    }
+                }
+                painter->restore();return;
+            }
             if (topt->state.testFlag(QStyle::State_Selected))
             {
                 //选中背景绘制

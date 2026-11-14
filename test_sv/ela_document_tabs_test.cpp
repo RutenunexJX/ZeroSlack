@@ -30,6 +30,7 @@
 #include <QToolButton>
 #include <QTimer>
 #include <QVBoxLayout>
+#include <QVariantAnimation>
 
 namespace {
 bool writeFile(const QString& path) {
@@ -58,6 +59,29 @@ void sendMouse(QWidget* target, QEvent::Type type, const QPoint& point,
 class ElaDocumentTabsTest final : public QObject {
     Q_OBJECT
 private slots:
+    void leftTabMotionRetargetsWithoutChangingPageIdentity() {
+        auto& theme=ApplicationThemeManager::instance();const bool old=theme.animationsEnabled();
+        const auto restore=qScopeGuard([&]{theme.setAnimationsEnabled(old);});theme.setAnimationsEnabled(true);
+        QWidget host;QVBoxLayout layout(&host);auto* tabs=UiControls::navigationTabWidget(&host);layout.addWidget(tabs);
+        auto* bar=tabs->tabBar();bar->setProperty("currentLabelTabs",true);bar->setExpanding(false);
+        for(const auto& title:QStringList{"Workspace","Simulation","Documents"})tabs->addTab(new QWidget,title);
+        host.resize(540,360);host.setWindowFlag(Qt::WindowStaysOnTopHint);host.show();host.raise();host.activateWindow();
+        QVERIFY(QTest::qWaitForWindowExposed(&host));QCoreApplication::processEvents();
+        auto* transition=bar->findChild<QVariantAnimation*>("navigationTabTransition");QVERIFY(transition);
+        const auto original=bar->tabRect(0);const auto compact=bar->tabRect(1);
+        tabs->setCurrentIndex(1);QCOMPARE(tabs->currentWidget(),tabs->widget(1));
+        QCOMPARE(transition->state(),QAbstractAnimation::Running);
+        QTest::qWait(40);QVERIFY(bar->tabRect(0).width()<original.width());QVERIFY(bar->tabRect(1).width()>compact.width());
+        tabs->setCurrentIndex(2);QCOMPARE(tabs->currentWidget(),tabs->widget(2));QCOMPARE(transition->state(),QAbstractAnimation::Running);
+        QTRY_COMPARE(transition->state(),QAbstractAnimation::Stopped);
+        QVERIFY(bar->tabRect(2).width()>bar->tabRect(0).width());QCOMPARE(bar->tabRect(0).width(),compact.width());
+        tabs->setCurrentIndex(0);theme.setAnimationsEnabled(false);QCOMPARE(transition->state(),QAbstractAnimation::Stopped);
+        tabs->setCurrentIndex(1);QCOMPARE(transition->state(),QAbstractAnimation::Stopped);QVERIFY(bar->tabRect(1).width()>bar->tabRect(0).width());
+        theme.setAnimationsEnabled(true);tabs->setCurrentIndex(2);host.resize(210,360);QCoreApplication::processEvents();
+        QTRY_COMPARE(transition->state(),QAbstractAnimation::Stopped);QCOMPARE(tabs->currentWidget(),tabs->widget(2));
+        auto* removed=tabs->widget(0);tabs->removeTab(0);delete removed;QCOMPARE(tabs->currentIndex(),1);
+        QTRY_COMPARE(transition->state(),QAbstractAnimation::Stopped);QCOMPARE(tabs->tabText(1),QString("Documents"));
+    }
     void iconTabsProjectStateByViewIdentity() {
         QTemporaryDir files;
         const auto path = files.filePath("state.sv"); QVERIFY(writeFile(path));
@@ -171,6 +195,9 @@ private slots:
         QVERIFY(tooltip.contains(QDir::toNativeSeparators(path)));
         left->setCurrentWidget(keep);
         QApplication::processEvents();
+        auto* transition = bar->findChild<QVariantAnimation*>("navigationTabTransition");
+        QVERIFY(transition);
+        QTRY_COMPARE(transition->state(), QAbstractAnimation::Stopped);
         const int collapsed = bar->tabRect(index).width();
         auto* close = bar->tabButton(index, QTabBar::RightSide);
         if (!close) close = bar->tabButton(index, QTabBar::LeftSide);
@@ -187,6 +214,7 @@ private slots:
         const QPoint press = bar->tabRect(index).center();
         QTest::mouseClick(bar, Qt::LeftButton, {}, press);
         QCOMPARE(left->currentWidget(), editor);
+        QTRY_COMPARE(transition->state(), QAbstractAnimation::Stopped);
         QVERIFY(bar->tabRect(index).width() > collapsed);
         QTest::mouseDClick(bar, Qt::LeftButton, {}, press);
         QCOMPARE(left->currentWidget(), editor);
@@ -434,6 +462,85 @@ private slots:
         QCOMPARE(destination->currentWidget(), page);
         QCOMPARE(moved.count(), 2);
         QCOMPARE(split.groupCount(), 2);
+    }
+
+    void externalBottomStripAcceptsReleasedDrag_data() {
+        QTest::addColumn<bool>("onTab");
+        QTest::addColumn<bool>("nativeRelease");
+        QTest::newRow("released-tab") << true << true;
+        QTest::newRow("released-strip-space") << false << true;
+        QTest::newRow("events-tab") << true << false;
+        QTest::newRow("events-strip-space") << false << false;
+    }
+    void externalBottomStripAcceptsReleasedDrag() {
+        if (QGuiApplication::platformName() != QStringLiteral("windows"))
+            QSKIP("Requires the native Windows drag startup path");
+        QFETCH(bool, onTab);
+        QFETCH(bool, nativeRelease);
+        QWidget window;
+        auto* layout = new QVBoxLayout(&window);
+        auto* mainHost = new QWidget(&window);
+        auto* bottomHost = new QWidget(&window);
+        auto* strip = new QWidget(&window);
+        auto* stripLayout = new QHBoxLayout(strip);
+        stripLayout->setContentsMargins(0, 0, 0, 0);
+        layout->addWidget(mainHost, 1);
+        layout->addWidget(bottomHost, 1);
+        layout->addWidget(strip);
+        auto* initial = UiControls::editorTabWidget(mainHost);
+        EditorSplitController split(initial);
+        split.setHost(mainHost);
+        auto* bottom = split.registerRegion("bottom", bottomHost);
+        split.setRegionTabStrip("bottom", strip);
+        auto* page = new QWidget;
+        page->setProperty("retainedState", "unsaved view state");
+        initial->addTab(page, "source");
+        initial->addTab(new QWidget, "keep");
+        bottom->addTab(new QWidget, "tool");
+        split.registerPage(page, "document:source", "editor");
+        window.resize(960, 700);
+        window.show(); window.raise(); window.activateWindow();
+        QVERIFY(QTest::qWaitForWindowActive(&window));
+        QCoreApplication::processEvents();
+        auto* destinationBar = bottom->tabBar();
+        QCOMPARE(destinationBar->parentWidget(), strip);
+        const QPoint target = onTab ? destinationBar->tabRect(0).center()
+            : QPoint(destinationBar->width() - 8, destinationBar->height() / 2);
+        const QPoint globalTarget = destinationBar->mapToGlobal(target);
+        QVERIFY(!bottom->rect().contains(bottom->mapFromGlobal(globalTarget)));
+        const QPoint previousCursor = QCursor::pos();
+        const auto restoreCursor = qScopeGuard([previousCursor] { QCursor::setPos(previousCursor); });
+        bool entered = true, moved = true, dropped = true;
+        connect(qobject_cast<ElaTabWidget*>(initial), &ElaTabWidget::hostedTabDragStarted,
+            &window, [&](QDrag* drag) {
+                if (nativeRelease) {
+                    QCursor::setPos(globalTarget);
+                    return;
+                }
+                QDragEnterEvent enter(target, Qt::MoveAction, drag->mimeData(), Qt::LeftButton, Qt::NoModifier);
+                QApplication::sendEvent(destinationBar, &enter);
+                entered = enter.isAccepted();
+                QDragMoveEvent move(target, Qt::MoveAction, drag->mimeData(), Qt::LeftButton, Qt::NoModifier);
+                QApplication::sendEvent(destinationBar, &move);
+                moved = move.isAccepted();
+                QDropEvent drop(target, Qt::MoveAction, drag->mimeData(), Qt::LeftButton, Qt::NoModifier);
+                QApplication::sendEvent(destinationBar, &drop);
+                dropped = drop.isAccepted();
+            });
+        auto* bar = initial->tabBar();
+        const QPoint press = bar->tabRect(0).center();
+        QTest::mousePress(bar, Qt::LeftButton, Qt::NoModifier, press);
+        sendMouse(bar, QEvent::MouseMove, press + QPoint(0, 80), Qt::NoButton, Qt::LeftButton);
+        QTest::mouseRelease(bar, Qt::LeftButton, Qt::NoModifier, press);
+        QVERIFY(entered);
+        QVERIFY(moved);
+        QVERIFY(dropped);
+        QCOMPARE(split.groupForPage(page), bottom);
+        QCOMPARE(bottom->currentWidget(), page);
+        QCOMPARE(bottom->indexOf(page), onTab ? 0 : 1);
+        QCOMPARE(split.groups("bottom").size(), 1);
+        QCOMPARE(split.pageId(page), QString("document:source"));
+        QCOMPARE(page->property("retainedState").toString(), QString("unsaved view state"));
     }
 
     void emptyDragSourceLivesUntilCompletion() {

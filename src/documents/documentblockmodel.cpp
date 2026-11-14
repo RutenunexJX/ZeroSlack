@@ -19,6 +19,7 @@ void anchor(EditorAssociatedBlock& block, const QTextCursor& cursor) {
 }
 QList<EditorAssociatedBlock> placed(QList<EditorAssociatedBlock> blocks, EditorAssociatedBlock moving,
     const QTextCursor& destination, const QString& beforeId) {
+    if (moving.type == "reference") moving.reference = DocumentBlockModel::positionReference(moving.reference.value("display", "embedded").toString());
     anchor(moving,destination); moving.detached=false; ++moving.revision;
     const auto lineFor=[document=destination.document()](const auto& block) {
         return block.missing ? document->blockCount()-1 : document->findBlock(qMax(block.start,block.end-1)).blockNumber();
@@ -50,6 +51,34 @@ const EditorAssociatedBlock* DocumentBlockModel::find(const QString& id) const {
     const auto it = std::find_if(blocks.cbegin(), blocks.cend(), [&](const auto& b) { return b.id == id; });
     return it == blocks.cend() ? nullptr : &*it;
 }
+QVariantMap DocumentBlockModel::positionReference(const QString& display) {
+    return {{"version",1},{"sourceKind","position"},{"display",display}};
+}
+bool DocumentBlockModel::validReference(const QVariantMap& value) {
+    if (value.isEmpty()) return true;
+    const auto kind=value.value("sourceKind").toString();
+    if (value.value("version").toInt()!=1 || !QStringList{"position","semantic","legacy"}.contains(kind)
+        || !QStringList{"compact","embedded","removed"}.contains(value.value("display").toString())) return false;
+    if (value.value("display")=="removed" && kind!="legacy") return false;
+    if (kind=="legacy") return !value.value("anchorId").toString().isEmpty()
+        && !value.value("linkId").toString().isEmpty() && value.value("targetHash").toString().size()==64;
+    if (kind=="semantic") return !value.value("source").toMap().isEmpty();
+    return true;
+}
+EditorAssociatedBlock DocumentBlockModel::presentation(const QString& id) const {
+    const auto* stored=find(id); if (!stored) return {};
+    auto value=*stored;
+    const auto found=referencePresentations.constFind(id);
+    if (found!=referencePresentations.cend()) {
+        value.uri=found->uri; value.caption=found->caption; value.referenceStatus=found->status;
+        value.start=found->start; value.end=found->end; value.missing=found->missing;
+    }
+    return value;
+}
+void DocumentBlockModel::setReferencePresentations(const QHash<QString,ReferencePresentation>& values) {
+    if (referencePresentations==values) return;
+    referencePresentations=values; emit presentationChanged();
+}
 void DocumentBlockModel::publish(bool previouslyDirty, bool advance) {
     if (advance) ++generation; emit changed(); emit historyChanged();
     if (previouslyDirty != dirty()) emit dirtyChanged(dirty());
@@ -78,7 +107,8 @@ QString DocumentBlockModel::insert(const QString& type, const QTextCursor& sourc
     return insert(block, source);
 }
 QString DocumentBlockModel::insert(EditorAssociatedBlock block, const QTextCursor& source, std::function<bool(const QString&)> prepare) {
-    if (source.document() != document || !QStringList{"text", "image", "reference", "attachment", "code", "wave"}.contains(block.type)) return {};
+    if (source.document() != document || !QStringList{"text", "image", "reference", "attachment", "code", "wave"}.contains(block.type)
+        || !validReference(block.reference) || (block.type!="reference" && !block.reference.isEmpty())) return {};
     if (block.appearance.isEmpty()) block.appearance=BlockNoteStyle::defaults(block.type);
     block.id = newId();
     anchor(block, source);
@@ -88,6 +118,7 @@ QString DocumentBlockModel::insert(EditorAssociatedBlock block, const QTextCurso
     auto next = blocks; next.append(block); mutate(next); return block.id;
 }
 bool DocumentBlockModel::update(EditorAssociatedBlock value) {
+    if (!validReference(value.reference) || (value.type!="reference" && !value.reference.isEmpty())) return false;
     auto next = blocks;
     for (auto& block : next) if (block.id == value.id) {
         value.revision = block.revision + 1; block = value; mutate(next); return true;
@@ -108,7 +139,11 @@ bool DocumentBlockModel::remove(const QString& id) {
     auto next = blocks;
     const auto it = std::find_if(next.begin(), next.end(), [&](const auto& b) { return b.id == id; });
     if (it == next.end()) return false;
-    next.erase(it); mutate(next); return true;
+    if (it->reference.value("sourceKind")=="legacy") {
+        if (it->removedReference()) return false;
+        it->reference["display"]="removed"; it->detached=false; ++it->revision;
+    } else next.erase(it);
+    mutate(next); return true;
 }
 bool DocumentBlockModel::reorder(const QString& id, int direction) {
     auto next = blocks;
@@ -124,13 +159,17 @@ bool DocumentBlockModel::reorder(const QString& id, int direction) {
 }
 bool DocumentBlockModel::reattach(const QString& id, const QTextCursor& source) {
     const auto* current = find(id); if (!current || source.document() != document) return false;
-    auto value = *current; anchor(value, source); return update(value);
+    return move(id,source);
 }
 bool DocumentBlockModel::move(const QString& id, const QTextCursor& source, const QString& beforeId) {
     if (!find(id) || source.document() != document || beforeId == id) return false;
     auto next = blocks;
     auto it = std::find_if(next.begin(), next.end(), [&](const auto& b) { return b.id == id; });
-    auto moving = *it; next.erase(it);
+    auto moving = presentation(id);
+    if (moving.type=="reference" && (moving.uri.isEmpty() || moving.removedReference())) return false;
+    if (it->reference.value("sourceKind")=="legacy") {
+        it->id=newId(); it->reference["display"]="removed"; it->detached=false; ++it->revision;
+    } else next.erase(it);
     endTextSession(); mutate(placed(next,moving,source,beforeId)); return true;
 }
 QString DocumentBlockModel::transferTo(DocumentBlockModel* target, const QString& id, const QTextCursor& destination,
@@ -138,17 +177,24 @@ QString DocumentBlockModel::transferTo(DocumentBlockModel* target, const QString
     const auto* existing=find(id);
     if (!target || !existing || destination.document()!=target->document || (!copy && target!=this && target->find(id))) return {};
     if (target==this && !copy) return move(id,destination,beforeId) ? id : QString();
-    auto moving=*existing; if (copy) moving.id=newId();
+    auto moving=presentation(id);
+    if (moving.type=="reference" && (moving.uri.isEmpty() || moving.removedReference())) return {};
+    if (copy) moving.id=newId();
     const auto nextTarget=placed(target->blocks,moving,destination,beforeId);
     endTextSession(); target->endTextSession();
     if (copy) { target->mutate(nextTarget); return moving.id; }
     auto nextSource=blocks;
     nextSource.erase(std::remove_if(nextSource.begin(),nextSource.end(),[&](const auto& b) { return b.id==id; }),nextSource.end());
+    if (existing->reference.value("sourceKind")=="legacy") {
+        auto tombstone=*existing; tombstone.id=newId(); tombstone.reference["display"]="removed";
+        tombstone.detached=false; ++tombstone.revision; nextSource.append(tombstone);
+    }
     auto pair=QSharedPointer<PairedCommand>::create(); pair->source=this; pair->target=target; pair->guard=std::move(replayGuard);
     const bool sourceDirty=dirty(), targetDirty=target->dirty();
     appendCommand(nextSource,pair); target->appendCommand(nextTarget,pair);
     ++generation; ++target->generation;
     const QPointer<DocumentBlockModel> peer=target;
+    emit presentationMoved(target,moving.id);
     publish(sourceDirty,false); if (peer) peer->publish(targetDirty,false);
     return moving.id;
 }
@@ -165,6 +211,7 @@ bool DocumentBlockModel::replayPair(const QSharedPointer<PairedCommand>& pair, b
     else if (pair->guard && !pair->guard(&issue) && issue.isEmpty()) issue="The block transfer cannot be replayed while a document is unavailable.";
     if (!issue.isEmpty()) { setError(issue); return true; }
     const bool sourceDirty=source->dirty(), targetDirty=target->dirty();
+    const auto previousSource=source->blocks,previousTarget=target->blocks;
     for (auto* value:{source.data(),target.data()}) {
         value->endTextSession();
         const auto& command=value->commands[redo ? value->applied : value->applied-1];
@@ -173,6 +220,8 @@ bool DocumentBlockModel::replayPair(const QSharedPointer<PairedCommand>& pair, b
         value->applied+=redo ? 1 : -1; value->textBarrier=true;
         value->captureAnchors(); ++value->generation;
     }
+    for(const auto& block:previousSource)if(!source->find(block.id) && target->find(block.id))emit source->presentationMoved(target,block.id);
+    for(const auto& block:previousTarget)if(!target->find(block.id) && source->find(block.id))emit target->presentationMoved(source,block.id);
     source->publish(sourceDirty,false); if (target) target->publish(targetDirty,false);
     return true;
 }
@@ -192,6 +241,10 @@ bool DocumentBlockModel::undoAssociation(bool redo) {
 bool DocumentBlockModel::canUndo() const { return applied > 0 || document->isUndoAvailable(); }
 void DocumentBlockModel::beginTextSession(const QString& id) { if (editing != id) { editing = id; editingCommand = -1; } }
 void DocumentBlockModel::endTextSession() { editing.clear(); editingCommand = -1; }
+void DocumentBlockModel::setPresentationHeight(const QString& id,int height) {
+    if(!find(id) || presentationHeights.value(id,-1)==height)return;
+    presentationHeights.insert(id,height);emit presentationChanged();
+}
 bool DocumentBlockModel::flushContents(QString* error) {
     QString issue; emit contentsFlushRequested(&issue);
     if (error) *error=issue; if (!issue.isEmpty()) setError(issue); return issue.isEmpty();
@@ -283,7 +336,8 @@ QJsonObject DocumentBlockModel::serialize() const {
     for (const auto& b : blocks) array.append(QJsonObject{{"id", b.id}, {"type", b.type}, {"text", b.text}, {"uri", b.uri}, {"asset", b.asset}, {"caption", b.caption},
         {"start", b.start}, {"end", b.end}, {"returnPosition", b.returnPosition}, {"returnAnchor", b.returnAnchor}, {"order", b.order},
         {"width", b.width}, {"height", b.height}, {"missing", b.missing}, {"collapsed", b.collapsed},
-        {"heightMode", b.autoHeight ? "Auto" : "Fixed"}, {"detached", b.detached}, {"appearance", QJsonObject::fromVariantMap(b.appearance)}});
+        {"heightMode", b.autoHeight ? "Auto" : "Fixed"}, {"detached", b.detached}, {"appearance", QJsonObject::fromVariantMap(b.appearance)},
+        {"reference",QJsonObject::fromVariantMap(b.reference)}});
     return {{"version", 1}, {"documentId", identity}, {"blocks", array}};
 }
 bool DocumentBlockModel::restore(const QJsonObject& value, QString* error) {
@@ -311,6 +365,9 @@ bool DocumentBlockModel::restore(const QJsonObject& value, QString* error) {
         b.autoHeight = o.value("heightMode") == "Auto";
         b.detached = o.value("detached").toBool();
         b.appearance = o.value("appearance").toObject().toVariantMap();
+        if (o.contains("reference") && !o.value("reference").isObject()) return fail("Invalid reference metadata.");
+        b.reference=o.value("reference").toObject().toVariantMap();
+        if (!validReference(b.reference) || (b.type!="reference" && !b.reference.isEmpty())) return fail("Unsupported reference binding or display.");
         if (b.appearance.contains("preset") && !BlockNoteStyle::validPreset(b.appearance)) return fail("Invalid block preset or unsupported preset version.");
         for (auto it = b.appearance.cbegin(); !b.appearance.contains("preset") && it != b.appearance.cend(); ++it) {
             if (it.value().metaType().id() != QMetaType::QString) return fail("Invalid block appearance value.");

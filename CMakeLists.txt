@@ -291,7 +291,6 @@ set(ZEROSLACK_CORE_SOURCES
     src/navigation/definitionservice.cpp
     src/commands/declaresignalfactcollector.cpp
     src/commands/declaresignalservice.cpp
-    src/navigation/diagnosticnavigationservice.cpp
     src/analysis/diagnosticservice.cpp
     src/analysis/diagnosticsrefreshcontroller.cpp
     src/documents/documentmodel.cpp
@@ -355,6 +354,7 @@ set(ZEROSLACK_CORE_SOURCES
     src/editor/editorslashcontroller.cpp
     src/completion/ordinarytemplateplan.cpp
     src/documents/documentblockmodel.cpp
+    src/documents/documentreferenceservice.cpp
     src/documents/documentblocktransfer.cpp
     src/editor/waveblockcontent.cpp
     src/editor/waveblockcontent.h
@@ -363,6 +363,7 @@ set(ZEROSLACK_CORE_SOURCES
     src/documents/documentblocktransfer.h
     src/documents/documentblockstore.cpp
     src/editor/editorblockprojection.cpp
+    src/editor/editordiagnosticoverview.cpp
     src/editor/editorblockhost.cpp
     src/editor/editorblockcontent.cpp
     src/editor/editorblockcontent.h
@@ -375,7 +376,6 @@ set(ZEROSLACK_CORE_SOURCES
     src/editor/editorblockpreview.cpp
     src/editor/editoractioncontextservice.cpp
     src/editor/editorcontextmenumodel.cpp
-    src/editor/editorradialmenu.cpp
     src/editor/editorsemanticcontextservice.cpp
     src/editor/editorsemanticruntime.cpp
     src/editor/editorsourcenavigationquery.cpp
@@ -436,8 +436,6 @@ set(ZEROSLACK_CORE_SOURCES
     src/ui/temporaryeditorsession.cpp
     src/ui/temporaryeditorcontextview.cpp
     src/ui/temporaryeditorcontextprovider.cpp
-    src/ui/temporaryeditorsearchpopup.cpp
-    src/ui/temporaryeditorsearchprovider.cpp
     src/documents/unsaveddocumentmanager.cpp
     src/editor/mycodeeditor.cpp
     src/app/editingtimeservice.cpp
@@ -463,6 +461,7 @@ set(ZEROSLACK_CORE_SOURCES
     src/ui/navigationwidgettrees.cpp
     src/ui/navigationwidgetdesign.cpp
     src/ui/designhierarchymodel.h
+    src/ui/designtreeprojection.cpp
     src/ui/designhierarchymodel.cpp
     src/ui/navigationwidget.cpp
     src/ui/notificationcenter.cpp
@@ -575,7 +574,6 @@ set(ZEROSLACK_CORE_SOURCES
     src/navigation/definitionnavigationservice.h
     src/navigation/definitionpreviewservice.h
     src/navigation/definitionservice.h
-    src/navigation/diagnosticnavigationservice.h
     src/analysis/diagnosticservice.h
     src/analysis/diagnosticsrefreshcontroller.h
     src/documents/documentmodel.h
@@ -608,7 +606,6 @@ set(ZEROSLACK_CORE_SOURCES
     src/editor/editorstructuralinputcontroller.h
     src/editor/editoractioncontextservice.h
     src/editor/editorcontextmenumodel.h
-    src/editor/editorradialmenu.h
     src/editor/editorsemanticcontextservice.h
     src/editor/editorsemanticruntime.h
     src/editor/editorsourcenavigationquery.h
@@ -663,8 +660,6 @@ set(ZEROSLACK_CORE_SOURCES
     src/ui/temporaryeditorsession.h
     src/ui/temporaryeditorcontextview.h
     src/ui/temporaryeditorcontextprovider.h
-    src/ui/temporaryeditorsearchpopup.h
-    src/ui/temporaryeditorsearchprovider.h
     src/editor/mycodeeditor.h
     src/editor/myhighlighter.h
     src/semantic/modulehierarchymodel.h
@@ -773,7 +768,7 @@ target_sources(zeroslack_core PRIVATE
     src/documents/associatedblockpage.h
     src/documents/tabmanagerweb.cpp)
 set(ZEROSLACK_WEBVIEW2_SDK_DIR "" CACHE PATH "Pinned WebView2 SDK 1.0.4314.35 directory")
-set(ZEROSLACK_DOCUMENT_EDITORS_DIR "" CACHE PATH "Built offline Muya and BlockSuite resources")
+set(ZEROSLACK_DOCUMENT_EDITORS_DIR "" CACHE PATH "Built offline Muya and PDF resources")
 if(WIN32)
     if(NOT EXISTS "${ZEROSLACK_WEBVIEW2_SDK_DIR}/build/native/include/WebView2.h")
         message(FATAL_ERROR "Set ZEROSLACK_WEBVIEW2_SDK_DIR to the prepared WebView2 SDK 1.0.4314.35 directory.")
@@ -1325,8 +1320,8 @@ if(BUILD_TESTING)
     target_link_libraries(kernel_view_continuity_test
         PRIVATE zeroslack_core Qt6::Test)
 
-    add_executable(editor_radial_menu_test test_sv/editor_radial_menu_test.cpp)
-    target_link_libraries(editor_radial_menu_test PRIVATE zeroslack_core Qt6::Test)
+    add_executable(editor_context_popup_test test_sv/editor_context_popup_test.cpp)
+    target_link_libraries(editor_context_popup_test PRIVATE zeroslack_core Qt6::Test)
 
     add_executable(live_insights_ui_snapshot_test
         test_sv/live_insights_ui_snapshot_test.cpp)
@@ -1631,11 +1626,6 @@ if(BUILD_TESTING)
     if(ZEROSLACK_SELF_CONTAINED_FIXTURES)
         target_compile_definitions(gui_smoke_test PRIVATE ZEROSLACK_SELF_CONTAINED_FIXTURES=1)
     endif()
-
-    add_executable(temporary_editor_context_search_test
-        test_sv/temporary_editor_context_search_test.cpp)
-    target_link_libraries(temporary_editor_context_search_test
-        PRIVATE zeroslack_core Qt6::Test)
 
     add_executable(delayed_consumer_generation_test
         test_sv/delayed_consumer_generation_test.cpp)
@@ -2137,13 +2127,13 @@ if(BUILD_TESTING)
         set_tests_properties(kernel_view_continuity_${kernel_scale}_test
             PROPERTIES TIMEOUT 120)
     endforeach()
-    add_test(NAME editor_radial_menu_test
+    add_test(NAME editor_context_popup_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
             "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:editor_radial_menu_test>)
-    set_tests_properties(editor_radial_menu_test PROPERTIES TIMEOUT 60)
+            $<TARGET_FILE:editor_context_popup_test>)
+    set_tests_properties(editor_context_popup_test PROPERTIES TIMEOUT 60)
     add_test(NAME live_insights_ui_snapshot_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
@@ -2367,7 +2357,7 @@ if(BUILD_TESTING)
                 instance_pair_connection_workflow multi_signal_propagation_panel
                 signal_usage_hotspot_panel graph_export_panel_integration
                 kernel_view_continuity rtl_insight_workbench pinloom_context_provider
-                unified_peek_container settings_center_panel temporary_editor_context_search)
+                unified_peek_container settings_center_panel)
             set(ELA_WORKFLOW_ARGUMENTS)
             if(ELA_WORKFLOW STREQUAL "rtl_insight_workbench")
                 set(ELA_WORKFLOW_ARGUMENTS -o -,txt)

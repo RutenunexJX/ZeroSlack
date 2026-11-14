@@ -6,6 +6,7 @@
 DesignHierarchyModel::DesignHierarchyModel(QObject* parent) : QAbstractItemModel(parent)
 {
     m_report = std::make_shared<DesignHierarchyReport>();
+    m_projection = DesignTreeProjection::hierarchy(*m_report);
     m_apply.setInterval(0);
     connect(&m_apply, &QTimer::timeout, this, &DesignHierarchyModel::applyChunk);
 }
@@ -27,8 +28,8 @@ const QList<int>& DesignHierarchyModel::children(const Row* row) const
 {
     static const QList<int> empty;
     if (m_search) return row == &m_root ? m_matches : empty;
-    const auto found = m_report->childrenById.constFind(row->id);
-    return found == m_report->childrenById.cend() ? empty : found.value();
+    const auto found = m_projection->childrenById.constFind(row->id);
+    return found == m_projection->childrenById.cend() ? empty : found.value();
 }
 bool DesignHierarchyModel::hasChildren(const QModelIndex& parent) const
 { return !children(rowFor(parent)).isEmpty(); }
@@ -43,7 +44,7 @@ void DesignHierarchyModel::fetchMore(const QModelIndex& parent)
     beginInsertRows(parent, first, last);
     for (int i = first; i <= last; ++i) {
         auto child = std::make_unique<Row>();
-        child->id = m_report->nodes[values[i]].id; child->parent = row; child->row = i;
+        child->id = m_projection->nodes[values[i]].id; child->parent = row; child->row = i;
         m_rows.insert(child->id, child.get()); row->children.push_back(std::move(child));
     }
     endInsertRows();
@@ -51,32 +52,51 @@ void DesignHierarchyModel::fetchMore(const QModelIndex& parent)
 DesignHierarchyNode DesignHierarchyModel::node(const QModelIndex& index) const
 {
     if (!index.isValid()) return {};
-    const int position = m_report->nodeById.value(rowFor(index)->id, -1);
-    return position >= 0 ? m_report->nodes[position] : DesignHierarchyNode();
+    const int position = m_projection->nodeById.value(rowFor(index)->id, -1);
+    if(position<0)return {};
+    const auto& row=m_projection->nodes[position];
+    if(!row.semantic.id.isEmpty())return row.semantic;
+    DesignHierarchyNode file;file.definitionFile=row.file;file.definitionLine=1;return file;
 }
 QVariant DesignHierarchyModel::data(const QModelIndex& index, int role) const
 {
     if (!index.isValid()) return {};
-    const auto value = node(index);
-    if (value.id.isEmpty()) return {};
-    QString name = value.instanceName.isEmpty() ? QStringLiteral("<unnamed>") : value.instanceName;
-    const auto type = value.isTop && name == value.moduleType ? QString() : value.moduleType;
-    if (m_search) name = value.instancePath;
-    const bool simulation = m_simulation.second == value.moduleType && !m_simulation.second.isEmpty()
-        && EditorFileIdentity::same(m_simulation.first, value.definitionFile);
+    const int position=m_projection->nodeById.value(rowFor(index)->id,-1);
+    if(position<0)return {};
+    const auto& value=m_projection->nodes[position];
+    const auto& node=value.semantic;
+    QString name=value.name;
+    if(m_search && !node.instancePath.isEmpty())name=node.instancePath;
+    const bool simulation=value.simulation || (!m_simulation.second.isEmpty() && m_simulation.second==node.moduleType
+        && EditorFileIdentity::same(m_simulation.first,node.definitionFile));
     switch (role) {
-    case Qt::DisplayRole: case Qt::AccessibleTextRole: return name + (type.isEmpty() ? QString() : " [" + type + ']');
+    case Qt::DisplayRole: case Qt::AccessibleTextRole: return name + (value.type.isEmpty()?QString():" ["+value.type+']');
     case Qt::UserRole: return value.id;
     case NavigationRowStyle::NameRole: return name;
-    case NavigationRowStyle::TypeRole: return type;
-    case NavigationRowStyle::UnresolvedRole: return value.unresolved || value.status.contains("incomplete", Qt::CaseInsensitive);
+    case NavigationRowStyle::TypeRole: return value.type;
+    case NavigationRowStyle::UnresolvedRole: return value.unresolved;
+    case NavigationRowStyle::SourceRole: return value.source;
+    case NavigationRowStyle::CategoryRole: return value.category;
     case NavigationRowStyle::SimulationRole: return simulation;
-    case Qt::DecorationRole: return RoundedIcons::icon(value.isTop ? RoundedIcons::Module : RoundedIcons::Hierarchy);
+    case Qt::DecorationRole: {
+        if (value.category) return RoundedIcons::icon(RoundedIcons::Folder);
+        if (node.id.isEmpty()) {
+            const auto kind = value.parentId == "section/Headers" ? RoundedIcons::HeaderFile
+                : value.parentId == "section/Simulation" ? RoundedIcons::SimulationFile
+                : value.parentId == "section/Unreferenced" ? RoundedIcons::UnreferencedFile
+                : value.parentId == "section/Sources" ? RoundedIcons::SourceFile : RoundedIcons::File;
+            return RoundedIcons::icon(kind);
+        }
+        return RoundedIcons::icon(value.source ? RoundedIcons::SourceTop
+            : value.simulation ? RoundedIcons::SimulationTop
+            : node.isTop ? RoundedIcons::Module : RoundedIcons::Instance);
+    }
     case Qt::ToolTipRole: case Qt::AccessibleDescriptionRole:
-        return value.instancePath + '\n' + value.definitionFile + ':' + QString::number(value.definitionLine)
-            + (value.unresolved ? '\n' + value.unresolvedReason : QString())
-            + (value.status.isEmpty() ? QString() : '\n' + value.status)
-            + (simulation ? QStringLiteral("\nSimulation top") : QString());
+        return node.instancePath + '\n' + value.file + (node.definitionLine>0?':'+QString::number(node.definitionLine):QString())
+            + (node.unresolved?'\n'+node.unresolvedReason:QString())
+            + (value.status.isEmpty()?QString():'\n'+value.status)
+            + (simulation?QStringLiteral("\nSimulation top"):QString())
+            + (value.source?QStringLiteral("\nSource top"):QString());
     default: return {};
     }
 }
@@ -85,18 +105,17 @@ void DesignHierarchyModel::forget(Row* row)
     for (const auto& child : row->children) forget(child.get());
     m_rows.remove(row->id);
 }
-void DesignHierarchyModel::setReport(const DesignHierarchyReport& report)
+void DesignHierarchyModel::setReport(const DesignHierarchyReport& report, std::shared_ptr<const DesignTreeProjection> projection)
 {
-    const bool same = !report.structureFingerprint.isEmpty()
-        && report.structureFingerprint == m_report->structureFingerprint;
-    auto next = std::make_shared<DesignHierarchyReport>(report);
-    // Compatibility for direct service/test consumers that supply only nodes.
-    if (next->nodeById.isEmpty() && !next->nodes.isEmpty()) {
-        for (int i = 0; i < next->nodes.size(); ++i) {
-            const auto& node = next->nodes[i]; next->nodeById.insert(node.id, i);
-            next->childrenById[node.parentId].append(i); next->nodesByPath[node.instancePath].append(i);
-        }
+    auto next = projection ? std::move(projection) : DesignTreeProjection::hierarchy(report);
+    const bool same = !next->structureFingerprint.isEmpty()
+        && next->structureFingerprint == m_projection->structureFingerprint;
+    auto semantic = std::make_shared<DesignHierarchyReport>(report);
+    if(semantic->nodeById.isEmpty())for(int i=0;i<semantic->nodes.size();++i) {
+        const auto& node=semantic->nodes[i];semantic->nodeById.insert(node.id,i);
+        semantic->childrenById[node.parentId].append(i);semantic->nodesByPath[node.instancePath].append(i);
     }
+    m_report = std::move(semantic);
     m_exposed.clear();
     const auto exposure = [&](Row* row) {
         const auto& before = children(row);
@@ -110,7 +129,7 @@ void DesignHierarchyModel::setReport(const DesignHierarchyReport& report)
     };
     exposure(&m_root);
     for (auto* row : m_rows) if (!row->children.empty()) exposure(row);
-    m_report = std::move(next);
+    m_projection = std::move(next);
     m_pending.clear(); m_pending.append(QString());
     if (!same) {
         for (auto it = m_rows.cbegin(); it != m_rows.cend(); ++it)
@@ -135,7 +154,7 @@ bool DesignHierarchyModel::syncBranch(Row* row)
     const auto parent = indexFor(row);
     QElapsedTimer budget; budget.start();
     for (int i = 0; i < count; ++i) {
-        const auto id = m_report->nodes[desired[i]].id;
+        const auto id = m_projection->nodes[desired[i]].id;
         if (i < int(row->children.size()) && row->children[i]->id == id) continue;
         int existing = -1;
         if (auto* known = m_rows.value(id); known && known->parent == row) existing = known->row;
@@ -173,24 +192,26 @@ void DesignHierarchyModel::applyChunk()
     }
     if (m_pending.isEmpty()) { m_apply.stop(); emit reportApplied(); }
 }
-void DesignHierarchyModel::setSearchResults(std::shared_ptr<const DesignHierarchyReport> report, const QList<QString>& ids)
+void DesignHierarchyModel::setSearchResults(std::shared_ptr<const DesignHierarchyReport> report, const QList<QString>& ids, std::shared_ptr<const DesignTreeProjection> projection)
 {
     beginResetModel();
     m_apply.stop(); m_pending.clear(); m_rows.clear(); m_root.children.clear();
     m_report = std::move(report); m_search = true; m_matches.clear();
+    m_projection = projection ? std::move(projection) : DesignTreeProjection::hierarchy(*m_report);
     for (const auto& id : ids) {
-        const int found = m_report->nodeById.value(id, -1);
+        const int found = m_projection->nodeById.value(id, -1);
         if (found >= 0) m_matches.append(found);
     }
     endResetModel();
     fetchMore({});
 }
-QModelIndex DesignHierarchyModel::indexForId(const QString& id, bool reveal)
+QModelIndex DesignHierarchyModel::indexForId(const QString& input, bool reveal)
 {
+    const QString id=m_projection->nodeById.contains(input)?input:m_projection->firstPresentationBySemanticId.value(input,input);
     if (auto* row = m_rows.value(id)) return indexFor(row);
-    const int position = m_report->nodeById.value(id, -1);
+    const int position = m_projection->nodeById.value(id, -1);
     if (!reveal || position < 0) return {};
-    const auto& value = m_report->nodes[position];
+    const auto& value = m_projection->nodes[position];
     const auto parent = value.parentId.isEmpty() ? QModelIndex() : indexForId(value.parentId);
     if (!value.parentId.isEmpty() && !parent.isValid()) return {};
     while (!m_rows.contains(id) && canFetchMore(parent)) fetchMore(parent);

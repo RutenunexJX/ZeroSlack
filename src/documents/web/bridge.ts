@@ -8,7 +8,6 @@ export interface EditorAdapter {
   detachView?(view:string):void;
   viewState?():Record<string,unknown>;
   restoreViewState?(state:Record<string,any>):void;
-  exportMarkdown?():Promise<{content:string;attachments:unknown[];warnings:string[]}>;
   theme?(dark:boolean):void;
   appearance?(value:{family:string;size:number;lineHeight:number}):void;
 }
@@ -16,14 +15,14 @@ export interface ClipboardPayload {text:string;html:string;image?:string}
 function applyUiTheme(value:Record<string,unknown>|undefined){
   if(!value)return;
   const properties:Record<string,string[]>={
-    panel:['--ui-panel','--editor-bg-color','--affine-background-primary-color'],
-    subtle:['--ui-subtle','--float-bg-color','--affine-background-secondary-color'],
-    text:['--ui-text','--editor-color','--editor-color-80','--affine-text-primary-color'],
-    secondary:['--ui-secondary','--editor-color-50','--icon-color','--affine-text-secondary-color'],
-    muted:['--ui-muted','--editor-color-30','--affine-text-disable-color','--affine-placeholder-color'],
-    border:['--ui-border','--float-border-color','--table-border-color','--affine-border-color'],
-    hover:['--ui-hover','--float-hover-color','--affine-hover-color'],
-    accent:['--ui-accent','--link-color','--affine-primary-color'],
+    panel:['--ui-panel','--editor-bg-color'],
+    subtle:['--ui-subtle','--float-bg-color'],
+    text:['--ui-text','--editor-color','--editor-color-80'],
+    secondary:['--ui-secondary','--editor-color-50','--icon-color'],
+    muted:['--ui-muted','--editor-color-30'],
+    border:['--ui-border','--float-border-color','--table-border-color'],
+    hover:['--ui-hover','--float-hover-color'],
+    accent:['--ui-accent','--link-color'],
   };
   for(const [key,names] of Object.entries(properties)){
     const color=value[key];if(typeof color!=='string'||!/^#[0-9a-f]{6}$/i.test(color))continue;
@@ -162,8 +161,7 @@ export class DocumentBridge {
       try{
         await this.settled();
         if(message.freeze){this.frozen=true;this.adapter.flush()}
-        const before=this.revision;const value=message.mode==='exportMarkdown'&&this.adapter.exportMarkdown
-          ? await this.adapter.exportMarkdown():await this.adapter.snapshot();
+        const before=this.revision;const value=await this.adapter.snapshot();
         if(session!==this.session)return;
         if(before!==this.revision)throw new Error('The document changed while preparing its snapshot. Retry saving.');
         this.send({type:'snapshot',request:message.request,revision:before,...(typeof value==='string'?{content:value}:value)});

@@ -242,7 +242,10 @@ foreach ($name in $tickxFiles) {
 }
 $tickxInfo = Get-Content -LiteralPath (Join-Path $tickxRoot 'build-info.json') -Raw | ConvertFrom-Json
 $nativeComponents['tickx'] = [ordered]@{
-    directory='components/tickx'; files=$tickxFiles; version=$tickxInfo.version; revision=$tickxInfo.revision
+    directory='components/tickx'; files=$tickxFiles; version=$tickxInfo.version
+    revision=$(if ($tickxInfo.revision) { $tickxInfo.revision } else { $tickxInfo.baseCommit })
+    sourceDirty=[bool]$tickxInfo.sourceDirty; sourcePatchSha256=$tickxInfo.sourcePatchSha256
+    capabilities=@($tickxInfo.capabilities)
 }
 $deployTargets += @(Join-Path $tickxTarget 'wavewidgets.dll')
 $deployTargets += @(Join-Path $tickxTarget 'WaveWorkbenchEla.dll')
@@ -380,13 +383,24 @@ foreach ($name in @('WebView2Loader.dll')) {
     }
 }
 foreach ($entry in $editorManifest.files.PSObject.Properties) {
+    if ($entry.Name -match '(?i)(^|/)(blocks|modified-blocksuite)(/|$)|blocksuite') { throw 'Rebuild document resources without the retired BlockSuite editor.' }
     $resource = Join-NativeRuntimePath $editorSource $entry.Name
     if ((Get-FileHash -LiteralPath $resource -Algorithm SHA256).Hash.ToLowerInvariant() -ne $entry.Value) {
         throw "Document editor checksum mismatch: $($entry.Name)"
     }
 }
-foreach ($required in @('markdown/index.html','blocks/index.html','NOTICE.txt','licenses/MarkText-Muya-MIT.txt','licenses/BlockSuite-MPL-2.0.txt','licenses/WebView2-SDK-LICENSE.txt','sources/build-document-editors.py')) {
+foreach ($required in @('markdown/index.html','pdf/index.html','NOTICE.txt','licenses/MarkText-Muya-MIT.txt','licenses/WebView2-SDK-LICENSE.txt','sources/build-document-editors.py')) {
     if (-not $editorManifest.files.PSObject.Properties[$required]) { throw "Incomplete document editor bundle: $required" }
+}
+foreach ($resource in Get-ChildItem -LiteralPath $editorSource -Recurse -Force) {
+    $relative = $resource.FullName.Substring($editorSource.Length + 1).Replace('\','/')
+    if ($relative -match '(?i)(^|/)(blocks|modified-blocksuite)(/|$)|blocksuite') {
+        throw "Retired document editor resource remains in the bundle: $relative"
+    }
+    if (-not $resource.PSIsContainer -and $relative -ne 'manifest.json' -and
+        -not $editorManifest.files.PSObject.Properties[$relative]) {
+        throw "Unmanifested document editor resource: $relative"
+    }
 }
 Copy-Item -LiteralPath $editorSource -Destination (Join-Path $outputRoot 'resources/document-editors') -Recurse
 Copy-Item -LiteralPath (Join-Path $sourceRoot 'thirdparty/document-editors/README.txt') -Destination (Join-Path $outputRoot 'DOCUMENT-EDITORS.txt')
@@ -408,7 +422,7 @@ if ($Formal -and -not $dirty) {
     sourceStatusIncludesSubmodules=$false;
     preparationEvidenceSha256=(Get-FileHash -LiteralPath $PreparationEvidence -Algorithm SHA256).Hash.ToLowerInvariant();
     documentEditors=[ordered]@{ format='zeroslack.document-editors'; version=1; directory='resources/document-editors';
-        marktext=$editorManifest.inputs.marktext.commit; blocksuite=$editorManifest.inputs.blocksuite.commit;
+        marktext=$editorManifest.inputs.marktext.commit;
         webview2Sdk=$editorManifest.inputs.webview2.version; runtimeBundled=$false;
         packagedManifestSha256=(Get-FileHash -LiteralPath $editorManifestPath -Algorithm SHA256).Hash.ToLowerInvariant() };
     integratedFeatures=[ordered]@{ simdock=$integratedSimDock };

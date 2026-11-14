@@ -1,5 +1,6 @@
 #pragma once
 #include "hierarchyservice.h"
+#include "designtreeprojection.h"
 #include "zeroslackexport.h"
 #include <QAbstractItemModel>
 #include <QTimer>
@@ -18,12 +19,13 @@ public:
     bool canFetchMore(const QModelIndex& parent) const override;
     void fetchMore(const QModelIndex& parent) override;
     QVariant data(const QModelIndex& index, int role) const override;
-    void setReport(const DesignHierarchyReport& report);
-    void setSearchResults(std::shared_ptr<const DesignHierarchyReport> report, const QList<QString>& ids);
+    void setReport(const DesignHierarchyReport& report, std::shared_ptr<const DesignTreeProjection> projection = {});
+    void setSearchResults(std::shared_ptr<const DesignHierarchyReport> report, const QList<QString>& ids, std::shared_ptr<const DesignTreeProjection> projection = {});
     void setSimulationTarget(const QPair<QString, QString>& target);
     DesignHierarchyNode node(const QModelIndex& index) const;
     QModelIndex indexForId(const QString& id, bool reveal = true);
     std::shared_ptr<const DesignHierarchyReport> report() const { return m_report; }
+    std::shared_ptr<const DesignTreeProjection> projection() const { return m_projection; }
     int materializedCount() const { return int(m_rows.size()); }
     bool applying() const { return m_apply.isActive(); }
 signals:
@@ -42,6 +44,7 @@ private:
     void applyChunk();
     bool syncBranch(Row* row);
     std::shared_ptr<const DesignHierarchyReport> m_report;
+    std::shared_ptr<const DesignTreeProjection> m_projection;
     Row m_root;
     QHash<QString, Row*> m_rows;
     QTimer m_apply;

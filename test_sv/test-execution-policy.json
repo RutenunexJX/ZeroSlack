@@ -963,7 +963,7 @@
       "target": "editor_paste_transaction_test"
     },
     {
-      "name": "editor_radial_menu_test",
+      "name": "editor_context_popup_test",
       "role": "compiled",
       "managedSince": "2026-10-30",
       "reviewBy": "2026-12-07",
@@ -977,7 +977,7 @@
       },
       "timeout": 60,
       "timeoutBasis": "Existing explicit registered budget preserved.",
-      "target": "editor_radial_menu_test"
+      "target": "editor_context_popup_test"
     },
     {
       "name": "editor_source_navigation_test",
@@ -1845,23 +1845,6 @@
       "timeout": 120,
       "timeoutBasis": "Existing explicit registered budget preserved.",
       "target": "signal_usage_hotspot_panel_test"
-    },
-    {
-      "name": "ela_temporary_editor_context_search_test",
-      "role": "compiled",
-      "managedSince": "2026-10-30",
-      "reviewBy": "2026-12-07",
-      "reviewOwner": "AppSuite部署统筹",
-      "source": "E:/ZeroSlack/ZeroSlack/build/coordination/20261029-stage-d-release-gates/TASK.md:20-25",
-      "when": {},
-      "execution": "run",
-      "reason": {
-        "category": "self_contained",
-        "detail": "Registered test retained in the default safe set; runtime failures are not exclusions."
-      },
-      "timeout": 120,
-      "timeoutBasis": "Existing explicit registered budget preserved.",
-      "target": "temporary_editor_context_search_test"
     },
     {
       "name": "ela_ui_dialog_contract_1.25_test",

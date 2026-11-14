@@ -163,6 +163,8 @@ void EditorDropPreviewOverlay::showPreview(
         clearPreview();
         return;
     }
+    if (!parentWidget()->isAncestorOf(targetWidget))
+        setParent(targetWidget->window());
 
     if (previewTarget != targetWidget) {
         QObject::disconnect(targetDestroyedConnection);

@@ -1,4 +1,5 @@
 #include "webdocumentsession.h"
+#include "retireddocument.h"
 #include "insightvisualstyle.h"
 #include "filecreation.h"
 #include "webdocumentpage.h"
@@ -64,63 +65,32 @@ WebDocumentSession::WebDocumentSession(Kind type, const Options& value)
 }
 bool WebDocumentSession::supportsFile(const QString& path) {
     const QString suffix = QFileInfo(path).suffix().toLower();
-    return suffix == QStringLiteral("md") || suffix == QStringLiteral("markdown") || suffix == QStringLiteral("zblock");
+    return suffix == QStringLiteral("md") || suffix == QStringLiteral("markdown");
 }
 WebDocumentSession::Kind WebDocumentSession::kindForFile(const QString& path) {
-    return QFileInfo(path).suffix().compare(QStringLiteral("zblock"), Qt::CaseInsensitive) == 0 ? Kind::Blocks : Kind::Markdown;
+    Q_UNUSED(path);
+    return Kind::Markdown;
 }
 QString WebDocumentSession::title() const {
-    const QString name = path.isEmpty() ? (kind == Kind::Markdown ? QStringLiteral("Untitled.md") : QStringLiteral("Untitled.zblock")) : QFileInfo(path).fileName();
+    const QString name = path.isEmpty() ? QStringLiteral("Untitled.md") : QFileInfo(path).fileName();
     return name + (dirty() ? QStringLiteral(" *") : QString()) + (externalConflict ? QStringLiteral(" [disk changed]") : QString());
-}
-bool WebDocumentSession::validateBlockPackage(const QJsonObject& value, QString* error) {
-    const auto fail = [&](const QString& text) { if (error) *error = text; return false; };
-    if (value.value("format") != QStringLiteral("zeroslack.blocks") || value.value("version") != 1
-        || value.value("engine") != QStringLiteral("blocksuite-0.22.4"))
-        return fail(QStringLiteral("This block document uses an unknown format or engine version. The original file has not been changed."));
-    for (const char* key : {"workspaceId", "documentId", "root", "state"})
-        if (!value.value(key).isString() || value.value(key).toString().isEmpty()) return fail(QStringLiteral("The block document is incomplete: %1.").arg(QString::fromLatin1(key)));
-    for (const char* key : {"root", "state"}) {
-        const auto bytes = QByteArray::fromBase64Encoding(value.value(key).toString().toLatin1(), QByteArray::AbortOnBase64DecodingErrors);
-        if (!bytes || bytes.decoded.isEmpty()) return fail(QStringLiteral("The block document has invalid native state."));
-    }
-    if (!value.value("attachments").isArray()) return fail(QStringLiteral("The block attachment manifest is missing."));
-    QSet<QString> ids;
-    for (const auto item : value.value("attachments").toArray()) {
-        const auto asset = item.toObject(); const QString id = asset.value("id").toString();
-        const auto bytes = QByteArray::fromBase64Encoding(asset.value("data").toString().toLatin1(), QByteArray::AbortOnBase64DecodingErrors);
-        if (id.isEmpty() || ids.contains(id) || !bytes || !asset.value("mime").isString()
-            || asset.value("size").toInteger(-1) != bytes.decoded.size()
-            || asset.value("sha256").toString().toLatin1() != digest(bytes.decoded).toHex())
-            return fail(QStringLiteral("A block attachment is missing, duplicated or damaged: %1.").arg(id));
-        ids.insert(id);
-    }
-    return true;
 }
 bool WebDocumentSession::setInitialContent(const QString& text, QString* error) {
     if (initialized || operation) { if (error) *error = QStringLiteral("The document is already initialized."); return false; }
-    if (kind == Kind::Blocks && !text.isEmpty()) {
-        QJsonParseError parse; const auto value = QJsonDocument::fromJson(text.toUtf8(), &parse);
-        if (parse.error != QJsonParseError::NoError || !value.isObject()) { if (error) *error = QStringLiteral("The block document is not valid JSON."); return false; }
-        if (!validateBlockPackage(value.object(), error)) return false;
-    }
     initialContent = text; untitledDirty = !text.isEmpty();
     for (auto* view : views()) if (view->hello) initializeEditor(view);
     return true;
 }
 bool WebDocumentSession::openFile(const QString& name, QString* error) {
     if (initialized || operation) return false;
+    if (!supportsFile(name)) { if (error) *error = RetiredDocument::isBlockDocument(name) ? RetiredDocument::message() : QStringLiteral("Only Markdown documents are supported."); return false; }
     const QString identity = EditorFileIdentity::physicalPath(name);
-    if (kind == Kind::Markdown) {
+    {
         if (QFileInfo(name).size() > maxDocumentBytes) { if (error) *error = QStringLiteral("This document exceeds the 64 MiB limit."); return false; }
         const auto source = readDocumentFile(name);
         if (!source.available) { if (error) *error = source.failureReason; return false; }
         if (!setInitialContent(source.text, error)) return false;
         format = source.format; baseline = source.rawSha256;
-    } else {
-        QByteArray bytes;
-        if (!readBytes(name, &bytes, error) || !setInitialContent(QString::fromUtf8(bytes), error)) return false;
-        baseline = digest(bytes); format.encoding = QStringConverter::Utf8; format.byteOrderMark = false; format.lineEnding = QStringLiteral("\n");
     }
     if (EditorFileIdentity::physicalPath(name) != identity) { if (error) *error = QStringLiteral("The file target changed while it was being opened."); return false; }
     path = EditorFileIdentity::normalized(name); physicalPath = identity;
@@ -130,8 +100,8 @@ void WebDocumentSession::initializeEditor(WebDocumentPage* view) {
     if (!view || !pages.contains(view) || !view->hello) return;
     view->initialized = false; view->startupTimer->start();
     view->web->postMessage({{"type", "initialize"}, {"session", session}, {"document", id},
-        {"view", view->viewId}, {"kind", kind == Kind::Markdown ? "markdown" : "blocks"},
-        {"content", initialContent}, {"appearance", view->appearance}, {"importMarkdown", !importSource.isEmpty()},
+        {"view", view->viewId}, {"kind", "markdown"},
+        {"content", initialContent}, {"appearance", view->appearance},
         {"dark", view->palette().color(QPalette::Window).lightness() < 128}, {"uiTheme", InsightVisualStyle::webThemeTokens()}});
 }
 void WebDocumentSession::receive(WebDocumentPage* view, const QJsonObject& message) {
@@ -192,13 +162,7 @@ void WebDocumentSession::receive(WebDocumentPage* view, const QJsonObject& messa
             return;
         }
         view->web->postMessage(response);
-    } else if (type == QStringLiteral("read-import-image") && !importSource.isEmpty()) {
-        const auto source = asset(QUrl(QStringLiteral("https://assets.zeroslack.invalid/") + message.value("path").toString()));
-        QJsonObject response{{"type", "response"}, {"session", session}, {"document", id}, {"request", message.value("request")}};
-        if (source.status != 200) response.insert("error", QStringLiteral("The source image is unavailable: %1").arg(message.value("path").toString()));
-        else { response.insert("data", QString::fromLatin1(source.bytes.toBase64())); response.insert("mime", QString::fromUtf8(source.contentType)); }
-        view->web->postMessage(response);
-    } else if (type == QStringLiteral("store-image") && kind == Kind::Markdown) {
+    } else if (type == QStringLiteral("store-image")) {
         const auto bytes = QByteArray::fromBase64Encoding(message.value("data").toString().toLatin1(), QByteArray::AbortOnBase64DecodingErrors);
         const QString mime = message.value("mime").toString();
         static const QHash<QString, QString> extensions{{"image/png", "png"}, {"image/jpeg", "jpg"}, {"image/gif", "gif"}, {"image/webp", "webp"}, {"image/bmp", "bmp"}};
@@ -212,7 +176,7 @@ void WebDocumentSession::receive(WebDocumentPage* view, const QJsonObject& messa
         view->web->postMessage(response);
     }
 }
-bool WebDocumentSession::snapshot(bool freeze, QJsonObject* result, QString* error, const QString& mode) {
+bool WebDocumentSession::snapshot(bool freeze, QJsonObject* result, QString* error) {
     QPointer<WebDocumentPage> view = presentationView();
     if (!view || !view->ready()) { if (error) *error = failure.isEmpty() ? QStringLiteral("The document editor is still loading.") : failure; return false; }
     const QString expectedSession = session;
@@ -251,7 +215,7 @@ bool WebDocumentSession::snapshot(bool freeze, QJsonObject* result, QString* err
     });
     connect(this, &QObject::destroyed, &loop, &QEventLoop::quit);
     connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit); timeout.start(30000);
-    const bool sent = view->web->postMessage({{"type", "snapshot"}, {"session", session}, {"document", id}, {"request", request}, {"freeze", freeze}, {"mode", mode}});
+    const bool sent = view->web->postMessage({{"type", "snapshot"}, {"session", session}, {"document", id}, {"request", request}, {"freeze", freeze}});
     if (sent && !received) loop.exec();
     disconnect(connection);
     if (!guard) return false;
@@ -312,11 +276,11 @@ bool WebDocumentSession::save(bool saveAs, const QString& explicitPath) {
     if (target.isEmpty() && !saveAs) target = path;
     if (target.isEmpty()) {
         target = QFileDialog::getSaveFileName(dialogParent(), QStringLiteral("Save Document As"), path.isEmpty() ? title().remove(" *") : path,
-            kind == Kind::Markdown ? QStringLiteral("Markdown (*.md *.markdown)") : QStringLiteral("ZeroSlack Block Document (*.zblock)"));
+            QStringLiteral("Markdown (*.md *.markdown)"));
         if (target.isEmpty()) { releaseSnapshot(); return false; }
-        if (QFileInfo(target).suffix().isEmpty()) target += kind == Kind::Markdown ? QStringLiteral(".md") : QStringLiteral(".zblock");
+        if (QFileInfo(target).suffix().isEmpty()) target += QStringLiteral(".md");
     }
-    if (!supportsFile(target) || kindForFile(target) != kind) { error = QStringLiteral("Use the document's own file extension. Conversion is a separate operation."); return failed(); }
+    if (!supportsFile(target) || kindForFile(target) != kind) { error = QStringLiteral("Use a Markdown file extension (.md or .markdown)."); return failed(); }
     if (targetValidator && !targetValidator(target, &error)) return failed();
     const QString targetIdentity = EditorFileIdentity::physicalPath(target);
     const bool sameName = !path.isEmpty() && EditorFileIdentity::normalized(target).compare(path, Qt::CaseInsensitive) == 0;
@@ -328,12 +292,8 @@ bool WebDocumentSession::save(bool saveAs, const QString& explicitPath) {
     if (same && (EditorFileIdentity::physicalPath(path) != physicalPath || !exists)) { error = QStringLiteral("The original file was moved, removed or redirected. Use Save As to keep your changes."); return failed(); }
     const QString text = value.value("content").toString();
     if (text.toUtf8().size() > maxDocumentBytes) { error = QStringLiteral("This document exceeds the 64 MiB limit."); return failed(); }
-    if (kind == Kind::Blocks) {
-        QJsonParseError parse; const auto package = QJsonDocument::fromJson(text.toUtf8(), &parse);
-        if (parse.error != QJsonParseError::NoError || !validateBlockPackage(package.object(), &error)) return failed();
-    }
     const auto validate = [&](QString* why) { return sameFileGeneration(target, targetIdentity, expected, exists, why); };
-    if (kind == Kind::Markdown && !saveImages(targetIdentity, value.value("images").toArray(), &error)) return failed();
+    if (!saveImages(targetIdentity, value.value("images").toArray(), &error)) return failed();
     QByteArray writtenDigest;
     if (!TabFileIo().writeTextFile(dialogParent(), targetIdentity, text, &error, &writtenDigest, nullptr, validate, format)) return failed();
     if (EditorFileIdentity::physicalPath(target) != targetIdentity) { error = QStringLiteral("The file alias changed after saving. The written file was retained; review the target before continuing."); return failed(); }
@@ -351,7 +311,6 @@ bool WebDocumentSession::createFile(const QString& target, QString* error) {
     if (!snapshot(true, &value, &why)) return failed();
     if (protectedContent) { why = QStringLiteral("The document cannot safely round-trip through this editor."); return failed(); }
     const auto bytes = value.value("content").toString().toUtf8();
-    if (kind == Kind::Blocks && !validateBlockPackage(QJsonDocument::fromJson(bytes).object(), &why)) return failed();
     const auto result = FileCreation::create(target, bytes);
     if (!result.created()) { why = result.message; return failed(); }
     path = EditorFileIdentity::normalized(target); physicalPath = EditorFileIdentity::physicalPath(target); baseline = digest(bytes);
@@ -380,19 +339,23 @@ bool WebDocumentSession::captureRecovery(QString* text, quint64* capturedRevisio
     QScopedValueRollback<bool> busy(operation, true); QJsonObject value; QString error;
     if (!snapshot(false, &value, &error)) return false;
     QJsonArray images;
-    if (kind == Kind::Markdown) for (const auto item : value.value("images").toArray()) {
+    for (const auto item : value.value("images").toArray()) {
         const QString relative = item.toString(); if (!QUrl(relative).isRelative() || relative.startsWith('/')) continue;
         const auto source = asset(QUrl(QStringLiteral("https://assets.zeroslack.invalid/") + relative));
         if (source.status == 200) images.append(QJsonObject{{"path", QUrl::fromPercentEncoding(QUrl(relative).path(QUrl::FullyEncoded).toUtf8())}, {"mime", QString::fromUtf8(source.contentType)}, {"data", QString::fromLatin1(source.bytes.toBase64())}});
     }
-    const QJsonObject recovery{{"format", "zeroslack.web-recovery"}, {"version", 1}, {"kind", kind == Kind::Markdown ? "markdown" : "blocks"},
+    const QJsonObject recovery{{"format", "zeroslack.web-recovery"}, {"version", 1}, {"kind", "markdown"},
         {"content", value.value("content")}, {"images", images}, {"encoding", int(format.encoding)}, {"bom", format.byteOrderMark}, {"lineEnding", format.lineEnding}};
     *text = QString::fromUtf8(QJsonDocument(recovery).toJson(QJsonDocument::Compact)); *capturedRevision = revision; return true;
 }
 bool WebDocumentSession::restoreRecovery(const QString& recovery, QString* error) {
     QJsonParseError parse; const auto document = QJsonDocument::fromJson(recovery.toUtf8(), &parse); const auto value = document.object();
+    if (value.value("format") == "zeroslack.web-recovery" && value.value("kind") == "blocks") {
+        if (error) *error = RetiredDocument::message();
+        return false;
+    }
     if (parse.error != QJsonParseError::NoError || value.value("format") != QStringLiteral("zeroslack.web-recovery") || value.value("version") != 1
-        || value.value("kind") != (kind == Kind::Markdown ? QStringLiteral("markdown") : QStringLiteral("blocks"))) {
+        || value.value("kind") != QStringLiteral("markdown")) {
         if (error) *error = QStringLiteral("The web document recovery record has an unknown format."); return false;
     }
     const int encoding = value.value("encoding").toInt(-1);
@@ -433,25 +396,17 @@ void WebDocumentSession::reloadFile() {
     if (dirty() && !askDiscard(dialogParent(), QStringLiteral("Reload Document"), QStringLiteral("Reload the current disk file and discard local changes?"))) { releaseSnapshot(); return; }
     const QString identity = EditorFileIdentity::physicalPath(path);
     QString content; QByteArray sourceDigest; DocumentFileFormat sourceFormat;
-    if (kind == Kind::Markdown) {
+    {
         const auto source = readDocumentFile(path);
         if (!source.available || source.rawBytes.size() > maxDocumentBytes) {
             releaseSnapshot(); showNotice(source.available ? QStringLiteral("This document exceeds the 64 MiB limit.") : source.failureReason); return;
         }
         content = source.text; sourceFormat = source.format; sourceDigest = source.rawSha256;
-    } else {
-        QByteArray bytes;
-        if (!readBytes(path, &bytes, &error)) { releaseSnapshot(); showNotice(error); return; }
-        QJsonParseError parse; const auto value = QJsonDocument::fromJson(bytes, &parse);
-        if (parse.error != QJsonParseError::NoError || !value.isObject() || !validateBlockPackage(value.object(), &error)) {
-            releaseSnapshot(); showNotice(error.isEmpty() ? QStringLiteral("The block document is not valid JSON.") : error); return;
-        }
-        content = QString::fromUtf8(bytes); sourceDigest = digest(bytes); sourceFormat.lineEnding = QStringLiteral("\n");
     }
     if (!sameFileGeneration(path, identity, sourceDigest, true, &error)) { releaseSnapshot(); showNotice(error); return; }
     initialized = false; session = token(); revision = savedRevision = 0;
     initialContent = content; format = sourceFormat; baseline = sourceDigest; physicalPath = identity;
-    stagedImages.clear(); importSource.clear(); failure.clear(); protectedContent = false;
+    stagedImages.clear(); failure.clear(); protectedContent = false;
     untitledDirty = externalConflict = false;
     for (auto* view : views()) view->initialized = false;
     showNotice(QStringLiteral("Loading document editor…")); watchFile();
@@ -478,8 +433,8 @@ WebEditorResource WebDocumentSession::asset(const QUrl& url) const {
     const QString relative = QUrl::fromPercentEncoding(url.path(QUrl::FullyEncoded).toUtf8()).mid(1);
     if (relative.isEmpty() || relative.contains(':') || relative.contains('\\')) return {};
     if (stagedImages.contains(relative)) return stagedImages.value(relative);
-    const QString source = importSource.isEmpty() ? path : importSource;
-    if ((kind != Kind::Markdown && importSource.isEmpty()) || source.isEmpty()) return {};
+    const QString source = path;
+    if (source.isEmpty()) return {};
     const QString root = QFileInfo(source).absoluteDir().canonicalPath();
     const QString resolved = QFileInfo(QDir(root).filePath(relative)).canonicalFilePath();
     if (resolved.isEmpty() || !resolved.startsWith(root + '/', Qt::CaseInsensitive)) return {};
@@ -526,46 +481,6 @@ bool WebDocumentSession::saveImages(const QString& target, const QJsonArray& ima
     }
     return true;
 }
-bool WebDocumentSession::importMarkdown(const QString& sourcePath, QString* error) {
-    if (kind != Kind::Blocks || initialized || operation || !path.isEmpty()) return false;
-    const auto source = readDocumentFile(sourcePath);
-    if (!source.available) { if (error) *error = source.failureReason; return false; }
-    if (source.rawBytes.size() > maxDocumentBytes) { if (error) *error = QStringLiteral("This document exceeds the 64 MiB limit."); return false; }
-    importSource = EditorFileIdentity::physicalPath(sourcePath); initialContent = source.text; untitledDirty = true;
-    for (auto* view : views()) if (view->hello) initializeEditor(view); return true;
-}
-bool WebDocumentSession::exportMarkdown() {
-    if (kind != Kind::Blocks || operation) return false;
-    QScopedValueRollback<bool> busy(operation, true); QJsonObject value; QString error;
-    const auto failed = [&] { releaseSnapshot(); showNotice(error); return false; };
-    if (!snapshot(true, &value, &error, QStringLiteral("exportMarkdown"))) return failed();
-    QStringList warnings; for (const auto warning : value.value("warnings").toArray()) warnings.append(warning.toString());
-    UiDialogs::information(dialogParent(), QStringLiteral("Export as Markdown"), warnings.join(QLatin1Char('\n')));
-    QString target = QFileDialog::getSaveFileName(dialogParent(), QStringLiteral("Export as Markdown"), QString(), QStringLiteral("Markdown (*.md)"));
-    if (target.isEmpty()) { releaseSnapshot(); return false; }
-    if (QFileInfo(target).suffix().isEmpty()) target += QStringLiteral(".md");
-    if (kindForFile(target) != Kind::Markdown || !supportsFile(target) || (!path.isEmpty() && EditorFileIdentity::same(path, target))) {
-        error = QStringLiteral("Choose a separate Markdown file for export."); return failed();
-    }
-    if (targetValidator && !targetValidator(target, &error)) return failed();
-    const QString identity = EditorFileIdentity::physicalPath(target); const bool exists = QFileInfo::exists(target); QByteArray expected;
-    if (exists) { QByteArray bytes; if (!readBytes(target, &bytes, &error)) return failed(); expected = digest(bytes); }
-    QJsonArray images;
-    for (const auto item : value.value("attachments").toArray()) {
-        const auto attachment = item.toObject(); const QString relative = attachment.value("path").toString();
-        const auto bytes = QByteArray::fromBase64Encoding(attachment.value("data").toString().toLatin1(), QByteArray::AbortOnBase64DecodingErrors);
-        if (!relative.startsWith("assets/") || !bytes || bytes.decoded.size() > 24 * 1024 * 1024 || !attachment.value("mime").toString().startsWith("image/")) {
-            error = QStringLiteral("An exported attachment is invalid."); return failed();
-        }
-        stagedImages.insert(relative, {bytes.decoded, attachment.value("mime").toString().toUtf8(), 200}); images.append(relative);
-    }
-    if (!saveImages(identity, images, &error)) return failed();
-    DocumentFileFormat outputFormat; outputFormat.lineEnding = QStringLiteral("\n");
-    const auto validate = [&](QString* reason) { return sameFileGeneration(target, identity, expected, exists, reason); };
-    if (!TabFileIo().writeTextFile(dialogParent(), identity, value.value("content").toString(), &error, nullptr, nullptr, validate, outputFormat)) return failed();
-    releaseSnapshot(); showNotice(QStringLiteral("Markdown exported to %1").arg(target)); return true;
-}
-
 QList<WebDocumentPage*> WebDocumentSession::views() const {
     QList<WebDocumentPage*> result; for (const auto& page : pages) if (page) result.append(page); return result;
 }

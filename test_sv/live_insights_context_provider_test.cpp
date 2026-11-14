@@ -1,5 +1,6 @@
 #include "applicationthememanager.h"
 #include "contextdockhost.h"
+#include "contextrail.h"
 #include "contextresource.h"
 #include "contextworkspacecontroller.h"
 #include "liveinsightscontextprovider.h"
@@ -36,6 +37,19 @@ class LiveInsightsContextProviderTest final : public QObject
     Q_OBJECT
 
 private slots:
+    void bottomToolsRetainProvidersWithoutRailEntries() {
+        QMainWindow window;auto* central=new QWidget(&window);window.setCentralWidget(central);
+        ContextWorkspaceController controller(&window,central,&window);LiveInsightSession session;
+        for(const auto kind:{LiveInsightKind::Kernel,LiveInsightKind::Hotspot,LiveInsightKind::Module,LiveInsightKind::State})
+            QVERIFY(controller.registerProvider(std::make_unique<LiveInsightsContextProvider>(kind,&session)));
+        for(const auto kind:{LiveInsightKind::Kernel,LiveInsightKind::Hotspot}) {
+            const auto id=LiveInsightsContextProvider::providerIdForKind(kind);
+            QVERIFY(controller.providerIds().contains(id));QVERIFY(!controller.rail()->entryIds().contains(id));
+            QVERIFY(!controller.isProviderPinned(id));QVERIFY(!controller.setProviderPinned(id,true));
+        }
+        QVERIFY(controller.rail()->entryIds().contains(LiveInsightsContextProvider::providerIdForKind(LiveInsightKind::Module)));
+        QVERIFY(controller.rail()->entryIds().contains(LiveInsightsContextProvider::providerIdForKind(LiveInsightKind::State)));
+    }
     void initTestCase();
     void providerResourcesAreStableAndSwitchable();
     void legacyHotspotSessionMigratesToDedicatedProvider();

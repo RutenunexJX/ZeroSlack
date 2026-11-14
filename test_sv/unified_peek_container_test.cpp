@@ -200,7 +200,8 @@ int main(int argc, char* argv[])
     const int collapsedHeight = peek.height();
     expect("symbol summary keeps secondary fields collapsed",
            details && !details->isVisible() && toggle && !toggle->isChecked()
-           && peek.findChildren<QLabel*>(QStringLiteral("peekFieldValue")).size() == 2
+           && peek.findChildren<QLabel*>(QStringLiteral("peekFieldValue")).size() == 1
+           && peek.findChild<QLabel*>(QStringLiteral("peekTypeSummary"))
            && collapsedHeight < 280);
     expect("symbol title keeps code family with a separate UI label font",
            peek.findChild<QLabel*>(QStringLiteral("peekTitle"))->font().family() == editorFont.family()
@@ -234,7 +235,9 @@ int main(int argc, char* argv[])
     effective.definitionLine = 33;
     showCard();
     expect("signal summary never invents a live value", peek.contentModel().rows.size() > 0
-           && peek.findChildren<QLabel*>(QStringLiteral("peekFieldValue")).size() == 2
+           && peek.findChildren<QLabel*>(QStringLiteral("peekFieldValue")).isEmpty()
+           && peek.findChild<QLabel*>(QStringLiteral("peekTypeSummary"))->text().contains(QStringLiteral("logic[7:0]"))
+           && peek.findChild<QLabel*>(QStringLiteral("peekTypeSummary"))->text().contains(QStringLiteral("unsigned"))
            && !peek.findChild<QWidget*>(QStringLiteral("peekDetails"))->isVisible());
     snapshot(QStringLiteral("input-light"));
     ApplicationThemeManager::instance().setMode(ThemeMode::CatppuccinMocha);

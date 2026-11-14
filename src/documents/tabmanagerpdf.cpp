@@ -41,7 +41,7 @@ PdfDocumentPage* TabManager::openPdfDocument(const QString& fileName, QTabWidget
         }
     });
     splitController->registerPage(page, {}, QStringLiteral("pdf"));
-    group->addTab(page, RoundedIcons::icon(RoundedIcons::File), page->title()); group->setCurrentWidget(page); splitController->setActiveGroup(group);
+    group->addTab(page, RoundedIcons::icon(RoundedIcons::PdfFile), page->title()); group->setCurrentWidget(page); splitController->setActiveGroup(group);
     UiControls::TabPresentation state;
     state.documentId = QStringLiteral("pdf:") + EditorFileIdentity::lookupKey(page->fileName());
     state.viewId = page->viewIdentity(); state.title = page->title();

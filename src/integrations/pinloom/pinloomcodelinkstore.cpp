@@ -1087,11 +1087,18 @@ QList<ResolvedPinloomCodeLink> PinloomCodeLinkStore::linksForDocument(
     const TSDocument* syntaxDocument,
     const QList<SemanticSymbolRecord>* semanticSymbols) const
 {
+    return resolveAnchors(anchorRecords,root,filePath,documentText,syntaxDocument,semanticSymbols);
+}
+QList<ResolvedPinloomCodeLink> PinloomCodeLinkStore::resolveAnchors(
+    const QList<PinloomCodeLinkAnchorRecord>& anchorRecords, const QString& root,
+    const QString& filePath, const QString& documentText, const TSDocument* syntaxDocument,
+    const QList<SemanticSymbolRecord>* semanticSymbols)
+{
     QList<ResolvedPinloomCodeLink> result;
     QList<SemanticSymbolRecord> symbols;
     const bool needsSymbols = std::any_of(
         anchorRecords.cbegin(), anchorRecords.cend(),
-        [this, &filePath](const PinloomCodeLinkAnchorRecord& anchor) {
+        [&root, &filePath](const PinloomCodeLinkAnchorRecord& anchor) {
             return anchor.source.anchorKind
                        == PinloomCodeAnchorKind::Symbol
                 && sourceMatchesFile(anchor.source, root, filePath);
@@ -1107,7 +1114,7 @@ QList<ResolvedPinloomCodeLink> PinloomCodeLinkStore::linksForDocument(
     }
     const bool needsSyntax = std::any_of(
         anchorRecords.cbegin(), anchorRecords.cend(),
-        [this, &filePath](const PinloomCodeLinkAnchorRecord& anchor) {
+        [&root, &filePath](const PinloomCodeLinkAnchorRecord& anchor) {
             return (anchor.source.anchorKind
                         == PinloomCodeAnchorKind::AlwaysBlock
                     || anchor.source.anchorKind

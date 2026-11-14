@@ -423,7 +423,8 @@ void NavigationManager::navigateToDesignNodeFile(const QString& filePath, int li
         const int root = caches.designHierarchy.nodeById.value(node.rootId, -1);
         const auto file = root < 0 ? node.definitionFile : caches.designHierarchy.nodes[root].definitionFile;
         caches.activeProjectId = node.rootId;
-        connectedWorkspaceManager->getProjectModel()->setActiveDesignProject(node.rootId, node.rootModule, file);
+        // Browsing changes the navigation context, never the persisted source top.
+        Q_UNUSED(file)
     }
     HierarchyInstanceContext instanceContext;
     instanceContext.workspacePath = context.currentWorkspacePath;

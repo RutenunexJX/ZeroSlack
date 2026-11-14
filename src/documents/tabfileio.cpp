@@ -1,5 +1,6 @@
 #include "uidialogs.h"
 #include "tabfileio.h"
+#include "retireddocument.h"
 #include "../common/defaultsourceextensions.h"
 #include "workspacesessionstateservice.h"
 
@@ -85,6 +86,10 @@ bool TabFileIo::writeTextFile(
     if (logicalTextSha256)
         logicalTextSha256->clear();
 
+    if (RetiredDocument::isBlockDocument(fileName)) {
+        if (failureReason) *failureReason = RetiredDocument::message();
+        return false;
+    }
     const QByteArray logicalDigest = QCryptographicHash::hash(text.toUtf8(), QCryptographicHash::Sha256);
     const QByteArray logicalBytes = encodeDocumentText(text, format);
     const QByteArray rawDigest = QCryptographicHash::hash(

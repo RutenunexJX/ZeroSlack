@@ -2,6 +2,7 @@
 
 #include "pinloomhostclient.h"
 #include "pinloomcodelinkstore.h"
+#include "editorblockpreview.h"
 #include <QPointer>
 #include <QRect>
 #include <QTimer>
@@ -51,6 +52,7 @@ private:
     QRect anchorRect;
     QList<PinloomCodeLinkRecord> targets;
     PinloomHostIdentity identity;
+    EditorBlockOriginalTarget originalTarget;
     int targetIndex = -1;
     quint64 generation = 0;
     bool opening = false;

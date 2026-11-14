@@ -3,6 +3,7 @@
 #include "workspacemanager.h"
 #include "tabmanager.h"
 #include "roundedicons.h"
+#include "actionregistry.h"
 #include "applicationthememanager.h"
 #include "usertemplateservice.h"
 #include "crashrecoveryservice.h"
@@ -10,6 +11,7 @@
 #include <QtTest>
 #include <QScreen>
 #include <QTreeWidgetItemIterator>
+#include <QCryptographicHash>
 
 namespace {
 bool write(const QString& path,const QByteArray& content) {
@@ -28,6 +30,80 @@ QString output() {return qEnvironmentVariable("ZEROSLACK_ICONS_REPORT");}
 class RoundedIconsContentBoxTest:public QObject {
     Q_OBJECT
 private slots:
+    void semanticCatalog() {
+        using namespace RoundedIcons;
+        const QPalette original = QApplication::palette();
+        const QList<QPair<Kind,Kind>> distinct{
+            {Add,ZoomIn},{Close,Delete},{Module,Instance},{SourceTop,SimulationTop},
+            {Activity,RunLog},{RunLog,SimulationEvents},{Appearance,WaveStyle},
+            {File,Files},{BlockText,BlockCode},{BlockReference,CopyLink}};
+        for (const bool dark : {false,true}) {
+            QPalette palette = original;
+            palette.setColor(QPalette::Text,dark?QColor("#e2e5e9"):QColor("#24282d"));
+            palette.setColor(QPalette::Disabled,QPalette::Text,dark?QColor("#78818b"):QColor("#8d9299"));
+            QApplication::setPalette(palette);
+            for (qreal dpr : {1.,1.5,2.}) {
+                QList<QByteArray> hashes;
+                QImage sheet(16*96,14*58,QImage::Format_ARGB32_Premultiplied);
+                sheet.fill(dark?QColor("#20242a"):Qt::white);
+                QPainter atlas(&sheet);atlas.setPen(palette.color(QPalette::Text));
+                for (int i=0;i<CatalogSize;++i) {
+                    const auto kind=static_cast<Kind>(i);
+                    QVERIFY2(!glyph(kind).isEmpty(),semanticId(kind));
+                    QVERIFY2(!icon(kind).isNull(),semanticId(kind));
+                    QImage normal;
+                    for (auto mode : {QIcon::Normal,QIcon::Disabled}) {
+                        QImage image(qRound(18*dpr),qRound(18*dpr),QImage::Format_ARGB32_Premultiplied);
+                        image.setDevicePixelRatio(dpr);image.fill(Qt::transparent);
+                        QPainter painter(&image);icon(kind).paint(&painter,QRect(0,0,18,18),Qt::AlignCenter,mode,QIcon::Off);painter.end();
+                        QVERIFY2(bounds(image,1)["width"].toInt()>0,semanticId(kind));
+                        const auto color=palette.color(mode==QIcon::Disabled?QPalette::Disabled:QPalette::Active,QPalette::Text);
+                        bool found=false;
+                        for(int y=0;y<image.height();++y)for(int x=0;x<image.width();++x) {
+                            const auto ink=image.pixel(x,y);const auto alpha=qAlpha(ink);if(alpha<128)continue;
+                            QVERIFY(qAbs(qRed(ink)-qRound(color.red()*alpha/255.))<=1
+                                && qAbs(qGreen(ink)-qRound(color.green()*alpha/255.))<=1
+                                && qAbs(qBlue(ink)-qRound(color.blue()*alpha/255.))<=1);found=true;
+                        }
+                        QVERIFY2(found,semanticId(kind));
+                        if(mode==QIcon::Normal)normal=image;
+                    }
+                    QImage selected(normal.size(),QImage::Format_ARGB32_Premultiplied);
+                    selected.setDevicePixelRatio(dpr);selected.fill(Qt::transparent);
+                    QPainter selectionPainter(&selected);
+                    icon(kind).paint(&selectionPainter,QRect(0,0,18,18),Qt::AlignCenter,QIcon::Selected,QIcon::On);
+                    selectionPainter.end();
+                    QCOMPARE(selected,normal);
+                    hashes.append(QCryptographicHash::hash(QByteArrayView(reinterpret_cast<const char*>(normal.constBits()),normal.sizeInBytes()),QCryptographicHash::Sha256));
+                    atlas.drawImage(QPoint(i%16*96+38,i/16*58+4),normal);
+                    atlas.drawText(QRect(i%16*96,i/16*58+27,96,30),Qt::AlignCenter|Qt::TextWordWrap,QString::fromLatin1(semanticId(kind)));
+                }
+                atlas.end();
+                for(const auto& pair:distinct)QVERIFY2(hashes[pair.first]!=hashes[pair.second],semanticId(pair.first));
+                if(!output().isEmpty())QVERIFY(sheet.save(output()+QString("/catalog-%1-%2.png").arg(dark?"dark":"light").arg(qRound(dpr*100))));
+            }
+        }
+        QApplication::setPalette(original);
+        QStringList missing;
+        QJsonArray mappings;
+        for (const auto& action : actionRegistry()) {
+            mappings.append(QJsonObject{{"actionId",action.id},{"iconId",QString::fromLatin1(semanticId(actionKind(action.id)))}});
+            // This text-only command has no equivalent in the approved catalog.
+            if (action.id == "insert.columnNumbers") { QVERIFY(iconForAction(action.id).isNull()); continue; }
+            if (iconForAction(action.id).isNull()) missing.append(action.id);
+        }
+        if(!output().isEmpty())QVERIFY(write(output()+"/registered-actions.json",QJsonDocument(mappings).toJson()));
+        QVERIFY2(missing.isEmpty(),qPrintable(missing.join(", ")));
+        QVERIFY(iconForAction("not.registered").isNull());
+        QCOMPARE(actionKind("file.save"),Save);
+        QMenu menu;
+        auto* registered=menu.addAction("Arbitrary presentation label");registered->setProperty("actionId","file.save");
+        auto* remove=menu.addAction("Delete");auto* close=menu.addAction("Close");auto* userValue=menu.addAction("user-defined value");
+        applyMenuIcons(&menu);
+        QCOMPARE(registered->icon().cacheKey(),icon(Save).cacheKey());
+        QVERIFY(!remove->icon().isNull());QVERIFY(remove->icon().cacheKey()!=close->icon().cacheKey());
+        QVERIFY(userValue->icon().isNull());
+    }
     void raster() {
         ApplicationThemeManager::instance().setMode(ThemeMode::Light);
         const bool baseline=qEnvironmentVariableIsSet("ZEROSLACK_ICONS_BASELINE");

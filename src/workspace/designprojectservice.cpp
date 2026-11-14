@@ -26,12 +26,12 @@ QString DesignProjectService::setWorkspace(const QString& path)
     if (!path.isEmpty() && (root.isEmpty() || !QFileInfo(root).isDir())) return tr("The workspace does not exist.");
     if (root == m_root) return {};
     if (root.isEmpty()) {
-        m_root.clear(); m_active.clear(); m_roots.clear(); m_store = {}; m_explicitTopMigrated = false;
+        m_root.clear(); m_active.clear(); m_roots.clear(); m_sourceTop = {}; m_store = {}; m_explicitTopMigrated = false;
         emit designProjectsChanged(); return {};
     }
     // A broken compatibility record must not retain another workspace's view
     // state or block automatic semantic browsing. Keep the file untouched.
-    m_root = root; m_active.clear(); m_roots.clear(); m_store = {}; m_explicitTopMigrated = false;
+    m_root = root; m_active.clear(); m_roots.clear(); m_sourceTop = {}; m_store = {}; m_explicitTopMigrated = false;
     simdock::WorkspaceStateFile store;
     QString error, active;
     QList<DesignHierarchyRoot> roots;
@@ -79,7 +79,39 @@ QString DesignProjectService::setWorkspace(const QString& path)
         // Legacy projects are compatibility input only. Browsing does not
         // create or grow a persisted list of allowed roots.
     }
+    const auto record = store.value();
+    if (record.contains("sourceTop")) {
+        const auto target = record.value("sourceTop").toObject();
+        const auto file = target.value("file").toString(), module = target.value("module").toString();
+        if (!record.value("sourceTop").isObject() || file.isEmpty() != module.isEmpty()
+            || (!file.isEmpty() && (QDir::isAbsolutePath(file) || !simdock::insideWorkspace(root, QDir(root).filePath(file)))))
+            return tr("Invalid source top; the existing record was preserved.");
+        m_sourceTop = {file.isEmpty() ? QString() : QDir(root).filePath(file), module};
+    } else {
+        // Only a file-bound, explicitly active legacy root identifies a source top.
+        for (const auto& item : roots) if (item.projectId == active && !item.file.isEmpty())
+            m_sourceTop = {item.file, item.module};
+    }
     m_root = root; m_roots = roots; m_active = active; m_explicitTopMigrated = migrated; m_store = std::move(store);
+    emit designProjectsChanged();
+    return {};
+}
+QString DesignProjectService::setSourceTop(const QString& file, const QString& module)
+{
+    if (m_root.isEmpty()) return tr("Open a workspace before selecting a source top.");
+    if (file.isEmpty() != module.trimmed().isEmpty()
+        || (!file.isEmpty() && !simdock::insideWorkspace(m_root, file)))
+        return tr("Choose a module definition in this workspace.");
+    const QPair<QString, QString> next(file.isEmpty() ? QString() : simdock::resolvedPath(file), module.trimmed());
+    simdock::WorkspaceStateFile store;
+    QString error;
+    if (!store.open(m_root, QStringLiteral("design"), QStringLiteral("zeroslack.design/v1"), &error)) return error;
+    auto record = store.value();
+    if (!record.contains("roots")) record.insert("roots", QJsonArray());
+    if (!record.contains("activeProject")) record.insert("activeProject", QString());
+    record.insert("sourceTop", QJsonObject{{"file", next.first.isEmpty() ? QString() : QDir(m_root).relativeFilePath(next.first)}, {"module", next.second}});
+    if (!store.save(record, &error)) return error;
+    m_store = std::move(store); m_sourceTop = next;
     emit designProjectsChanged();
     return {};
 }

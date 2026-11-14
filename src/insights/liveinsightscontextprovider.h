@@ -62,6 +62,10 @@ public:
 
     QString providerId() const override;
     QString displayName() const override;
+    bool showInToolRail() const override {
+        return !fixedKindEnabled || (fixedKind != LiveInsightKind::Kernel
+                                    && fixedKind != LiveInsightKind::Hotspot);
+    }
     QString iconKey() const override;
     ContextResource activationResource(
         const QString& workspaceId) const override;

@@ -5,6 +5,7 @@
 #include "compactlayout.h"
 #include "insightvisualstyle.h"
 #include "roundedicons.h"
+#include "uicontrols.h"
 #include <QMenu>
 #include <QActionGroup>
 #include <QWidgetAction>
@@ -156,24 +157,9 @@ struct SignalTracePanel::Private {
     void arrangeControls() {
         if(arranging || !content || !moreButton || !compactRole || !moreReferences)return;
         const QScopedValueRollback guard(arranging,true);
-        int verticalMargin=6;
-        if(mode->currentIndex()==2 && !detailsButton->isChecked()){
-            // Reserve a readable graph after zoom adds a scrollbar. Compact only
-            // outer whitespace; controls retain their normal hit areas.
-            int required=toolbar->minimumSize().height()+q->layout()->spacing()
-                +4*cycleView->fontMetrics().height()+2*cycleView->frameWidth()
-                +cycleView->horizontalScrollBar()->sizeHint().height();
-            if(!cycles->isHidden())required+=cycles->minimumSizeHint().height()+cycles->parentWidget()->layout()->spacing();
-            for(QWidget* row:{static_cast<QWidget*>(instance),static_cast<QWidget*>(status)})
-                if(!row->isHidden())required+=row->minimumSizeHint().height()+q->layout()->spacing();
-            verticalMargin=qBound(0,(q->height()-required)/2,6);
-        }
-        const QMargins desiredMargins(6,verticalMargin,6,verticalMargin);
-        if(q->layout()->contentsMargins()!=desiredMargins)q->layout()->setContentsMargins(desiredMargins);
-        const auto margins=q->layout()->contentsMargins();
-        const int available=qMax(0,q->contentsRect().width()-margins.left()-margins.right());
+        const int available=qMax(0,q->contentsRect().width()-12);
         const int gap=toolbar->spacing();
-        const auto width=[](QWidget* widget){return qMax(widget->minimumSizeHint().width(),widget->minimumWidth());};
+        const auto width=[](QWidget* widget){return qMax(widget->sizeHint().width(),widget->minimumWidth());};
         const bool trace=mode->currentIndex()==0;
         const auto required=[&](bool directionIcon,bool includeMain,bool includeCancel,int referenceWidth){
             int total=width(mode)+referenceWidth+width(moreButton)+3*gap;
@@ -208,11 +194,31 @@ struct SignalTracePanel::Private {
         const QString directionName=direction->currentText();
         if(directionIconIndex!=direction->currentIndex()){
             directionIconIndex=direction->currentIndex();
-            compactDirection->setIcon(RoundedIcons::icon(directionIconIndex==0?RoundedIcons::Left:RoundedIcons::Right));
+            compactDirection->setIcon(RoundedIcons::icon(directionIconIndex==0?RoundedIcons::TraceUpstream:RoundedIcons::TraceDownstream));
         }
         compactDirection->setToolTip(directionName);compactDirection->setAccessibleName(directionName);
         for(int i=0;i<directionMenu->actions().size();++i)directionMenu->actions()[i]->setChecked(i==direction->currentIndex());
         const bool detailsOpen=detailsButton->isChecked();
+        int verticalMargin=6,verticalSpacing=4;
+        if(mode->currentIndex()==2 && !detailsOpen){
+            // Budget normal control heights and both graph scrollbars before
+            // reducing whitespace. Zoom must retain four readable text rows.
+            int required=toolbar->sizeHint().height()
+                +4*cycleView->fontMetrics().height()+2*cycleView->frameWidth()
+                +cycleView->horizontalScrollBar()->sizeHint().height();
+            int gaps=1;
+            for(QWidget* row:{static_cast<QWidget*>(cycles),static_cast<QWidget*>(instance),static_cast<QWidget*>(status)})
+                if(!row->isHidden()){
+                    required+=qMax(row->sizeHint().height(),row->minimumSizeHint().height());
+                    ++gaps;
+                }
+            verticalSpacing=qBound(0,(q->height()-required)/gaps,4);
+            verticalMargin=qBound(0,(q->height()-required-gaps*verticalSpacing)/2,6);
+        }
+        q->layout()->setSpacing(verticalSpacing);
+        cycleView->parentWidget()->layout()->setSpacing(verticalSpacing);
+        const QMargins margins(6,verticalMargin,6,verticalMargin);
+        if(q->layout()->contentsMargins()!=margins)q->layout()->setContentsMargins(margins);
         const bool filterNeeded=mode->currentIndex()!=2 && (detailsOpen || mode->currentIndex()==1);
         const bool paging=detailsOpen && mode->currentIndex()!=2 && referenceCursor>=0;
         auto* view=detailsOpen?static_cast<QAbstractItemView*>(details)
@@ -220,9 +226,10 @@ struct SignalTracePanel::Private {
         int header=0;
         if(auto* tree=qobject_cast<QTreeWidget*>(view);tree && !tree->isHeaderHidden())header=tree->header()->sizeHint().height();
         if(view==table)header=table->horizontalHeader()->sizeHint().height();
-        const int rowHeight=view==table?table->verticalHeader()->defaultSectionSize():view->fontMetrics().height();
+        const int rowHeight=view==table?table->verticalHeader()->defaultSectionSize()
+            :qMax(view->fontMetrics().height(),view->sizeHintForRow(0));
         int needed=margins.top()+margins.bottom()+toolbar->minimumSize().height()+3*q->layout()->spacing()
-            +header+2*rowHeight+view->horizontalScrollBar()->sizeHint().height();
+            +header+4*rowHeight+2*view->frameWidth()+view->horizontalScrollBar()->sizeHint().height();
         if(!status->isHidden())needed+=status->minimumSizeHint().height()+q->layout()->spacing();
         if(detailsOpen && !detailSummary->isHidden())needed+=detailSummary->minimumSizeHint().height()+detailPage->layout()->spacing();
         if(filterNeeded)needed+=filterBar->minimumSizeHint().height()+q->layout()->spacing();
@@ -296,7 +303,7 @@ struct SignalTracePanel::Private {
     void setDetailsOpen(bool open) {
         {QSignalBlocker block(detailsButton);detailsButton->setChecked(open);}
         detailsButton->setText(open?QStringLiteral("Back"):QStringLiteral("References"));
-        detailsButton->setIcon(RoundedIcons::icon(open?RoundedIcons::Left:RoundedIcons::Info));
+        detailsButton->setIcon(RoundedIcons::icon(open?RoundedIcons::Back:RoundedIcons::TraceReferences));
         detailsButton->setAccessibleName(open?QStringLiteral("Back"):QStringLiteral("References"));
         detailsButton->setToolTip(open?QStringLiteral("Back — return to the current view"):QStringLiteral("References — show source references"));
         content->setCurrentIndex(open?1:0);
@@ -331,7 +338,7 @@ struct SignalTracePanel::Private {
         watcher->setFuture(QtConcurrent::run(&pool,[work,token] { return work([token]{return token->load();}); }));
     }
     QPushButton* button(QHBoxLayout* row,const QString& label,const QString& name,std::function<void()> action) {
-        auto* value=new QPushButton(label,q); value->setObjectName(name); InsightVisualStyle::applyToolbarButton(value);
+        auto* value=UiControls::pushButton(label,q); value->setObjectName(name); InsightVisualStyle::applyToolbarButton(value);
         row->addWidget(value); QObject::connect(value,&QPushButton::clicked,q,std::move(action)); return value;
     }
     void remember() {
@@ -483,7 +490,7 @@ struct SignalTracePanel::Private {
     void updatePins() {
         pathsMenu->clear();
         for (int i=0;i<pinned.size();++i) {
-            auto* entry=pathsMenu->addMenu(QStringLiteral("%1: %2 → %3").arg(i+1).arg(pinned[i].first().displayName(),pinned[i].last().displayName()));
+            auto* entry=UiControls::addMenu(pathsMenu,QStringLiteral("%1: %2 → %3").arg(i+1).arg(pinned[i].first().displayName(),pinned[i].last().displayName()));
             QObject::connect(entry->addAction(QStringLiteral("Open path")),&QAction::triggered,q,[this,i]{q->openPin(i);});
             QObject::connect(entry->addAction(QStringLiteral("Unpin")),&QAction::triggered,q,[this,i]{pinned.removeAt(i);pinDirections.removeAt(i);updatePins();});
         }
@@ -502,21 +509,21 @@ SignalTracePanel::SignalTracePanel(QWidget* parent):QWidget(parent),d(std::make_
     auto* top=new QHBoxLayout;d->toolbar=top;top->setSpacing(4);
     d->title=new CompactTitleLabel(this);d->title->setText(QStringLiteral("Signal Trace"));
     d->title->setTextInteractionFlags(Qt::TextSelectableByMouse);top->addWidget(d->title,1);
-    d->mode=new QComboBox(this);d->mode->setObjectName("traceMode");d->mode->addItems({"Trace","Heatmap","Feedback"});top->addWidget(d->mode);
-    d->direction=new QComboBox(this);d->direction->setObjectName("traceDirection");d->direction->addItems({"Upstream","Downstream"});top->addWidget(d->direction);
-    d->compactDirection=new QToolButton(this);d->compactDirection->setObjectName("traceCompactDirection");
-    d->compactDirection->setPopupMode(QToolButton::InstantPopup);d->directionMenu=new QMenu(d->compactDirection);
+    d->mode=UiControls::comboBox(this);d->mode->setObjectName("traceMode");d->mode->addItems({"Trace","Heatmap","Feedback"});top->addWidget(d->mode);
+    d->direction=UiControls::comboBox(this);d->direction->setObjectName("traceDirection");d->direction->addItems({"Upstream","Downstream"});top->addWidget(d->direction);
+    d->compactDirection=UiControls::toolButton(this);d->compactDirection->setObjectName("traceCompactDirection");
+    d->compactDirection->setPopupMode(QToolButton::InstantPopup);d->directionMenu=UiControls::menu(d->compactDirection);
     d->compactDirection->setMenu(d->directionMenu);top->addWidget(d->compactDirection);d->compactDirection->hide();
     auto* directionGroup=new QActionGroup(this);
     for(int i=0;i<d->direction->count();++i){auto* entry=d->directionMenu->addAction(d->direction->itemText(i));entry->setCheckable(true);directionGroup->addAction(entry);
         connect(entry,&QAction::triggered,this,[this,i]{d->direction->setCurrentIndex(i);});}
-    d->detailsButton=new QToolButton(this);d->detailsButton->setObjectName("traceDetails");d->detailsButton->setCheckable(true);
+    d->detailsButton=UiControls::toolButton(this);d->detailsButton->setObjectName("traceDetails");d->detailsButton->setCheckable(true);
     d->detailsButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);top->addWidget(d->detailsButton);
-    d->cancelButton=new QToolButton(this);d->cancelButton->setObjectName("traceCancel");d->cancelButton->setIcon(RoundedIcons::icon(RoundedIcons::Close));
+    d->cancelButton=UiControls::toolButton(this);d->cancelButton->setObjectName("traceCancel");d->cancelButton->setIcon(RoundedIcons::icon(RoundedIcons::Cancel));
     d->cancelButton->setToolTip("Cancel query");d->cancelButton->hide();top->addWidget(d->cancelButton);
     connect(d->cancelButton,&QToolButton::clicked,this,&SignalTracePanel::cancel);
-    auto* more=new QToolButton(this);d->moreButton=more;more->setObjectName("traceMore");more->setIcon(RoundedIcons::icon(RoundedIcons::More));more->setToolTip("Trace actions");more->setAccessibleName("Trace actions");
-    more->setPopupMode(QToolButton::InstantPopup);d->operations=new QMenu(more);more->setMenu(d->operations);top->addWidget(more);
+    auto* more=UiControls::toolButton(this);d->moreButton=more;more->setObjectName("traceMore");more->setIcon(RoundedIcons::icon(RoundedIcons::More));more->setToolTip("Trace actions");more->setAccessibleName("Trace actions");
+    more->setPopupMode(QToolButton::InstantPopup);d->operations=UiControls::menu(more);more->setMenu(d->operations);top->addWidget(more);
     const auto action=[this](QMenu* menu,const QString& text,const QString& name,std::function<void()> callback){
         auto* entry=menu->addAction(text);entry->setObjectName(name);connect(entry,&QAction::triggered,this,std::move(callback));return entry;
     };
@@ -524,36 +531,36 @@ SignalTracePanel::SignalTracePanel(QWidget* parent):QWidget(parent),d(std::make_
     d->forward=action(d->operations,"Forward","traceForward",[this]{goForward();});d->forward->setIcon(RoundedIcons::icon(RoundedIcons::Right));
     action(d->operations,"Refresh","traceRefresh",[this]{refresh();})->setIcon(RoundedIcons::icon(RoundedIcons::Refresh));
     action(d->operations,"Use selected as root","traceRebase",[this]{const auto object=selectedObject();if(object.isValid())showObject(object);});
-    auto* coneMenu=d->operations->addMenu("Expand cone");auto* cone=new QWidget(coneMenu);auto* coneLayout=new QHBoxLayout(cone);
-    d->depth=new QSpinBox(cone);d->depth->setObjectName("traceConeDepth");d->depth->setRange(1,8);d->depth->setValue(2);d->depth->setPrefix("Levels ");coneLayout->addWidget(d->depth);
+    auto* coneMenu=UiControls::addMenu(d->operations,"Expand cone");auto* cone=new QWidget(coneMenu);auto* coneLayout=new QHBoxLayout(cone);
+    d->depth=UiControls::spinBox(cone);d->depth->setObjectName("traceConeDepth");d->depth->setRange(1,8);d->depth->setValue(2);d->depth->setPrefix("Levels ");coneLayout->addWidget(d->depth);
     d->button(coneLayout,"Expand","traceCone",[this,coneMenu]{coneMenu->close();d->operations->close();expandCone(d->depth->value());});
     auto* coneAction=new QWidgetAction(coneMenu);coneAction->setDefaultWidget(cone);coneMenu->addAction(coneAction);
     action(d->operations,"Analyze instance","traceAnalyze",[this]{analyzeFeedback();});
     d->operations->addSeparator();
-    action(d->operations,"Pin selected path","tracePin",[this]{pinSelection();});d->pathsMenu=d->operations->addMenu("Pinned paths");d->updatePins();
+    action(d->operations,"Pin selected path","tracePin",[this]{pinSelection();});d->pathsMenu=UiControls::addMenu(d->operations,"Pinned paths");d->updatePins();
     action(d->operations,"Save trace…","traceSave",[this]{const auto path=QFileDialog::getSaveFileName(this,"Save trace",{},"Trace (*.ztrace)");if(!path.isEmpty()){QString error;if(!saveSession(path,&error))d->message(error);}});
     action(d->operations,"Open trace…","traceOpen",[this]{const auto path=QFileDialog::getOpenFileName(this,"Open trace",{},"Trace (*.ztrace)");if(!path.isEmpty()){QString error;if(!openSession(path,&error))d->message(error);}});
     d->operations->addSeparator();
     action(d->operations,"Fit diagram","traceFit",[this]{focusFit();});
     action(d->operations,"Copy table","traceCopy",[this]{QApplication::clipboard()->setText(QString::fromUtf8(d->heat->csv()));});
     action(d->operations,"Export table…","traceExport",[this]{const auto path=QFileDialog::getSaveFileName(this,"Export heatmap",{},"CSV (*.csv)");if(!path.isEmpty()){QString error;if(!exportHeatmap(path,&error))d->message(error);}});
-    d->mainArea=new QToolButton(this);d->mainArea->setObjectName("traceMainArea");d->mainArea->setIcon(RoundedIcons::icon(RoundedIcons::Expand));d->mainArea->setToolTip("Expand into main area");d->mainArea->hide();top->addWidget(d->mainArea);
+    d->mainArea=UiControls::toolButton(this);d->mainArea->setObjectName("traceMainArea");d->mainArea->setIcon(RoundedIcons::icon(RoundedIcons::Expand));d->mainArea->setToolTip("Expand into main area");d->mainArea->hide();top->addWidget(d->mainArea);
     d->mainAreaOverflow=action(d->operations,"Expand into main area","traceMainAreaOverflow",[this]{d->mainArea->click();});
     d->cancelOverflow=action(d->operations,"Cancel query","traceCancelOverflow",[this]{cancel();});
     d->referencesOverflow=action(d->operations,"Load more references","traceReferencesOverflow",[this]{d->moreReferences->click();});
     d->referencesOverflow->setVisible(false);
     d->mainAreaOverflow->setVisible(false);d->cancelOverflow->setVisible(false);
     connect(d->mainArea,&QToolButton::clicked,this,[this]{if(d->mainAreaHandler)d->mainAreaHandler(!d->expanded);});layout->addLayout(top);
-    d->instance=new QComboBox(this);d->instance->setObjectName("traceInstance");d->instance->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);d->instance->hide();layout->addWidget(d->instance);
+    d->instance=UiControls::comboBox(this);d->instance->setObjectName("traceInstance");d->instance->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);d->instance->hide();layout->addWidget(d->instance);
     d->filterBar=new QWidget(this);auto* filters=new QHBoxLayout(d->filterBar);d->filters=filters;filters->setContentsMargins(0,0,0,0);filters->setSpacing(4);
-    d->search=new QLineEdit(this);d->search->setObjectName("traceFilter");d->search->setPlaceholderText("Filter references");d->search->setAccessibleName("Filter references");filters->addWidget(d->search,1);
-    d->role=new QComboBox(this);d->role->setObjectName("traceRole");d->role->addItem("All roles");for(int i=0;i<6;++i)d->role->addItem(SignalTraceService::roleName(SignalTraceRole(i)));filters->addWidget(d->role);layout->addWidget(d->filterBar);
-    d->compactRole=new QToolButton(d->filterBar);d->compactRole->setObjectName("traceCompactRole");d->compactRole->setIcon(RoundedIcons::icon(RoundedIcons::Filter));
-    d->compactRole->setPopupMode(QToolButton::InstantPopup);d->roleMenu=new QMenu(d->compactRole);d->compactRole->setMenu(d->roleMenu);filters->addWidget(d->compactRole);d->compactRole->hide();
+    d->search=UiControls::lineEdit(this);d->search->setObjectName("traceFilter");d->search->setPlaceholderText("Filter references");d->search->setAccessibleName("Filter references");filters->addWidget(d->search,1);
+    d->role=UiControls::comboBox(this);d->role->setObjectName("traceRole");d->role->addItem("All roles");for(int i=0;i<6;++i)d->role->addItem(SignalTraceService::roleName(SignalTraceRole(i)));filters->addWidget(d->role);layout->addWidget(d->filterBar);
+    d->compactRole=UiControls::toolButton(d->filterBar);d->compactRole->setObjectName("traceCompactRole");d->compactRole->setIcon(RoundedIcons::icon(RoundedIcons::Filter));
+    d->compactRole->setPopupMode(QToolButton::InstantPopup);d->roleMenu=UiControls::menu(d->compactRole);d->compactRole->setMenu(d->roleMenu);filters->addWidget(d->compactRole);d->compactRole->hide();
     auto* roleGroup=new QActionGroup(this);
     for(int i=0;i<=d->role->count();++i){auto* entry=d->roleMenu->addAction(d->role->itemText(i));entry->setCheckable(true);roleGroup->addAction(entry);
         connect(entry,&QAction::triggered,this,[this,i]{d->role->setCurrentIndex(i);});}
-    d->filterMenu=d->operations->addMenu("Filter references");d->filterMenu->setObjectName("traceFilterMenu");
+    d->filterMenu=UiControls::addMenu(d->operations,"Filter references");d->filterMenu->setObjectName("traceFilterMenu");
     d->filterPopupContent=new QWidget(d->filterMenu);d->filterPopupLayout=new QVBoxLayout(d->filterPopupContent);
     d->filterPopupLayout->setContentsMargins(4,4,4,4);
     auto* filterAction=new QWidgetAction(d->filterMenu);filterAction->setDefaultWidget(d->filterPopupContent);d->filterMenu->addAction(filterAction);
@@ -580,14 +587,14 @@ SignalTracePanel::SignalTracePanel(QWidget* parent):QWidget(parent),d(std::make_
     d->table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents); d->table->horizontalHeader()->setSectionResizeMode(SignalTraceHeatModel::Distribution,QHeaderView::Stretch);
     d->pages->addWidget(d->table);
     auto* feedbackPage=new QWidget(d->pages); auto* feedbackLayout=new QVBoxLayout(feedbackPage); feedbackLayout->setContentsMargins(0,0,0,0);feedbackLayout->setSpacing(layout->spacing());
-    d->cycles=new QComboBox(feedbackPage); d->cycles->setObjectName("traceCycles");d->cycles->hide(); feedbackLayout->addWidget(d->cycles);
+    d->cycles=UiControls::comboBox(feedbackPage); d->cycles->setObjectName("traceCycles");d->cycles->hide(); feedbackLayout->addWidget(d->cycles);
     d->cycleScene=new QGraphicsScene(this); d->cycleView=new FeedbackView(d->cycleScene,feedbackPage); d->cycleView->setObjectName("traceCycleView");
     d->cycleView->setRenderHint(QPainter::Antialiasing); feedbackLayout->addWidget(d->cycleView); d->pages->addWidget(feedbackPage);
     auto* detailPage=new QWidget(d->content);d->detailPage=detailPage;d->content->addWidget(detailPage);
     auto* detailLayout=new QVBoxLayout(detailPage);detailLayout->setContentsMargins(0,0,0,0);
     d->detailSummary=new CompactTitleLabel(detailPage);detailLayout->addWidget(d->detailSummary);
     d->details=new QTreeWidget(detailPage); d->details->setObjectName("traceReferences"); d->details->setHeaderLabels({"Role","Source","Evidence"}); d->details->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
-    detailLayout->addWidget(d->details); d->moreReferences=new QPushButton("Load more references",detailPage); detailLayout->addWidget(d->moreReferences); d->moreReferences->hide();
+    detailLayout->addWidget(d->details); d->moreReferences=UiControls::pushButton("Load more references",detailPage); detailLayout->addWidget(d->moreReferences); d->moreReferences->hide();
     const auto changeMode=[this,coneMenu](int mode){
         d->pages->setCurrentIndex(mode);d->direction->setVisible(mode==0);d->setDetailsOpen(false);
         coneMenu->menuAction()->setVisible(mode==0);findChild<QAction*>("tracePin")->setVisible(mode==0);

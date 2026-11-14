@@ -89,7 +89,7 @@ def collect_notices(kind, work, output, fallback):
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, target)
                 notices.append(relative.as_posix())
-        if not notices and (name.startswith('@blocksuite/') or name == '@muyajs/core'):
+        if not notices and name == '@muyajs/core':
             shutil.copy2(fallback, destination / 'UPSTREAM-LICENSE.txt')
             notices.append('UPSTREAM-LICENSE.txt')
         if not notices:
@@ -131,7 +131,7 @@ def main():
     args = parser.parse_args()
     work, output = args.work_directory.resolve(), args.output_directory.resolve()
     if output.exists(): raise ValueError('Output must be a new directory, so stale chunks cannot be shipped.')
-    if output == work or work in output.parents and output.name in ('markdown', 'blocks'):
+    if output == work or work in output.parents and output.name in ('markdown',):
         raise ValueError('Output must be separate from the package-manager workspaces.')
     work.mkdir(parents=True, exist_ok=True)
     output.mkdir(parents=True)
@@ -141,7 +141,6 @@ def main():
     archives = {key: obtain(value, archive_dir) for key, value in inputs.items() if isinstance(value, dict)}
     for key, path in archives.items(): extract(path, work / 'vendor' / key)
     marktext = work / 'vendor/marktext' / ('marktext-' + inputs['marktext']['commit'])
-    blocksuite = work / 'vendor/blocksuite' / ('blocksuite-' + inputs['blocksuite']['commit'])
     pnpm = work / 'vendor/pnpm/package/bin/pnpm.cjs'
     env = os.environ.copy()
     env['PATH'] = str(args.node.resolve().parent) + os.pathsep + env.get('PATH', '')
@@ -156,7 +155,7 @@ def main():
     env['XDG_CACHE_HOME'] = str(work / 'cache')
     env['ZEROSLACK_SOURCE_ROOT'] = str(REPO)
     missing = []
-    for kind in ('markdown', 'blocks'):
+    for kind in ('markdown',):
         directory = work / kind
         directory.mkdir(exist_ok=True)
         if args.skip_install:
@@ -181,7 +180,7 @@ def main():
             for generated_source in patched_sources.glob('*.ts'):
                 if generated_source.is_file(): generated_source.unlink()
         subprocess.run([str(args.node), 'build.mjs'], cwd=directory, env=env, check=True)
-        missing += collect_notices(kind, directory, output, (marktext if kind == 'markdown' else blocksuite) / 'LICENSE')
+        missing += collect_notices(kind, directory, output, marktext / 'LICENSE')
     pdfjs = work / 'vendor/pdfjs/package'
     pdf = output / 'pdf'
     (pdf / 'vendor/build').mkdir(parents=True)
@@ -194,18 +193,17 @@ def main():
     licenses = output / 'licenses'
     shutil.copy2(pdfjs / 'LICENSE', licenses / 'PDFjs-Apache-2.0.txt')
     shutil.copy2(pdfjs / 'package.json', licenses / 'pdfjs-package.json')
-    for source, name in ((marktext / 'LICENSE', 'MarkText-Muya-MIT.txt'), (blocksuite / 'LICENSE', 'BlockSuite-MPL-2.0.txt'),
+    for source, name in ((marktext / 'LICENSE', 'MarkText-Muya-MIT.txt'),
                          (work / 'vendor/webview2/LICENSE.txt', 'WebView2-SDK-LICENSE.txt'),
                          (CONFIG / 'OpenSans-OFL.txt', 'OpenSans-OFL.txt')):
         shutil.copy2(source, licenses / name)
     shutil.copy2(CONFIG / 'NOTICE.txt', output / 'NOTICE.txt')
     sources = output / 'sources'
     sources.mkdir()
-    for key in ('marktext', 'blocksuite', 'pdfjs'): shutil.copy2(archives[key], sources / archives[key].name)
+    for key in ('marktext', 'pdfjs'): shutil.copy2(archives[key], sources / archives[key].name)
     shutil.copytree(CONFIG, sources / 'build-config')
     shutil.copytree(REPO / 'src/documents/web', sources / 'zeroslack-adapters')
     shutil.copy2(__file__, sources / 'build-document-editors.py')
-    if (work / 'blocks/patched-sources').exists(): shutil.copytree(work / 'blocks/patched-sources', sources / 'modified-blocksuite')
     if (work / 'markdown/patched-sources').exists(): shutil.copytree(work / 'markdown/patched-sources', sources / 'modified-muya')
     write_json(output / 'licenses/missing-license-text.json', missing)
     if missing: raise ValueError('Dependency license text requires review: ' + ', '.join(missing))

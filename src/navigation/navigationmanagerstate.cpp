@@ -83,7 +83,7 @@ void NavigationManager::NavigationCaches::clearFileList()
 
 void NavigationManager::NavigationCaches::clearDesignHierarchy()
 {
-    designHierarchy = {};
+    designHierarchy = {}; projection.reset(); sourceTop={}; simulationTop={};
     designRoots.clear();
     activeProjectId.clear();
     designFileScope.clear();
@@ -162,7 +162,7 @@ void NavigationManager::restoreDesignHierarchyCache()
         return;
 
     const DesignHierarchyCacheEntry entry = it.value();
-    caches.designHierarchy = entry.hierarchy;
+    caches.designHierarchy = entry.hierarchy; caches.projection.reset();
     caches.designRoots = entry.roots;
     caches.activeProjectId = entry.activeProjectId;
     caches.designFileScope = entry.fileScope;

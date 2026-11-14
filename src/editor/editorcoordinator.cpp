@@ -1,6 +1,8 @@
+#include "roundedicons.h"
 #include "uicontrols.h"
 #include "uidialogs.h"
 #include "editorcoordinator.h"
+#include "documentreferenceservice.h"
 #include <QApplication>
 #include <QClipboard>
 #include "filecreation.h"
@@ -620,6 +622,16 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
 void EditorCoordinator::refreshPinloomCodeLinks(
     MyCodeEditor* editor) const
 {
+    if(editor) {
+        auto* model=editor->blockModel();
+        if(editor->property("referenceObservedModel").value<QObject*>()!=model) {
+            editor->setProperty("referenceObservedModel",QVariant::fromValue(static_cast<QObject*>(model)));
+            const auto refresh=[this,guard=QPointer<MyCodeEditor>(editor),model] {if(guard && guard->blockModel()==model)refreshPinloomCodeLinks(guard);};
+            connect(model,&DocumentBlockModel::changed,this,refresh,Qt::QueuedConnection);
+            connect(model,&DocumentBlockModel::referenceRetryRequested,this,refresh,Qt::QueuedConnection);
+        }
+        DocumentReferenceService::refresh(model,editor->documentFileName(),editor->cachedDocumentText(),editor->syntaxDocument(),pinloomCodeLinkStore);
+    }
     if (!editor || !pinloomMarkersVisible || !pinloomCodeLinkStore
         || !pinloomCodeLinkStore->hasLinksForDocument(
             editor->documentFileName())) {
@@ -633,7 +645,8 @@ void EditorCoordinator::refreshPinloomCodeLinks(
             editor->documentFileName(),
             editor->cachedDocumentText(),
             editor->syntaxDocument());
-    for (const ResolvedPinloomCodeLink& link : links) {
+    for (ResolvedPinloomCodeLink link : links) {
+        link.anchor.links.removeIf([&](const auto& target){return DocumentReferenceService::hasLegacy(editor->blockModel(),link.anchor.id,target.id);});
         if (link.anchor.links.isEmpty())
             continue;
         QStringList titles;
@@ -1870,12 +1883,7 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
     for (const EditorContextMenuSectionModel& section :
          model.sections) {
         QMenu* targetMenu = menu;
-        if (section.section != EditorContextMenuSection::Standard) {
-            targetMenu = UiControls::addMenu(menu, section.title);
-            targetMenu->setObjectName(
-                QStringLiteral("editorContextMenu.%1")
-                    .arg(section.title.toCaseFolded()));
-        }
+        if (!menu->actions().isEmpty() && !section.items.isEmpty()) menu->addSeparator();
         for (const EditorContextMenuItem& item :
              section.items) {
             if (section.section
@@ -1889,6 +1897,7 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
             QAction* action = targetMenu->addAction(item.text);
             action->setObjectName(item.actionId);
             action->setProperty("actionId", item.actionId);
+            action->setIcon(RoundedIcons::iconForAction(item.actionId));
             if (const ActionDescriptor* descriptor =
                     findActionById(item.actionId)) {
                 action->setProperty(

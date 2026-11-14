@@ -314,7 +314,7 @@ bool ContextDockHost::addResource(const ContextResource& resource, QWidget* view
         const auto groups=registry->groups(QStringLiteral("right"));
         group=registry->createSplit(groups.last(),EditorSplitDirection::Below);
     }
-    { const QSignalBlocker block(group); group->addTab(section->frame,RoundedIcons::icon(RoundedIcons::Info),displayTitle(resource,view)); }
+    { const QSignalBlocker block(group); group->addTab(section->frame,RoundedIcons::icon(RoundedIcons::providerKind(resource.providerId)),displayTitle(resource,view)); }
     refreshSectionStatus(key);
     section->frame->show();
     view->show();

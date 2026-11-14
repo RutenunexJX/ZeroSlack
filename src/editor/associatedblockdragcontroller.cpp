@@ -18,6 +18,8 @@
 #include <QDragEnterEvent>
 #include <QLabel>
 #include <QFrame>
+#include <QPainter>
+#include "roundedicons.h"
 #include <QTabBar>
 #include <QTimer>
 #include <QScrollBar>
@@ -43,11 +45,6 @@ QWidget* blockDragSource(QWidget* widget) {
     for (auto* p=widget;p;p=p->parentWidget()) {
         if (p->objectName()=="editorBlockDragHandle" || p->objectName()=="associatedBlockDragHandle") return p;
         if (qobject_cast<QAbstractButton*>(p) || p->objectName()=="editorBlockTools" || p->objectName()=="associatedBlockTools") return nullptr;
-        if (p->objectName()=="editorBlockShell" || p->objectName()=="associatedBlockPage") {
-            auto* child=p->findChild<QWidget*>("editorBlockContent");
-            auto* content=child ? static_cast<EditorBlockContent*>(child) : nullptr;
-            return content && !content->isEditing() ? p : nullptr;
-        }
     }
     return nullptr;
 }
@@ -65,7 +62,8 @@ AssociatedBlockDragController::AssociatedBlockDragController(TabManager* value) 
     setObjectName("associatedBlockDragController"); qApp->installEventFilter(this);
     presentationTimer->setInterval(40);
     connect(presentationTimer,&QTimer::timeout,this,[this] {
-        if (!dragInProgress() || !valid(activeMime)) { restoreSource(); return; }
+        if (!dragInProgress()) { restoreSource(); return; }
+        if(!valid(activeMime)){cancelled=true;restoreSource();QDrag::cancel();return;}
         const auto point=QCursor::pos();
         for (auto* group:manager->editorSplitController()->groups()) {
             if (group->isVisible()) {
@@ -158,6 +156,7 @@ bool AssociatedBlockDragController::valid(const QMimeData* mime) const {
     return mime && mime==activeMime && DocumentBlockTransfer::current(sourceSnapshot);
 }
 QTabWidget* AssociatedBlockDragController::groupAt(QWidget* widget, const QPoint& global) const {
+    if(auto* group=manager->editorSplitController()->regionDropGroup(widget))return group;
     const auto groups=manager->editorSplitController()->groups();
     for (auto* p=widget;p;p=p->parentWidget()) if (auto* group=qobject_cast<QTabWidget*>(p); group && groups.contains(group)) return group;
     for (auto* group:groups) if (group->isVisible() && widget && widget->window()==group->window()
@@ -177,7 +176,7 @@ void AssociatedBlockDragController::restoreSource() {
 }
 void AssociatedBlockDragController::concealSource() {
     if (hiddenPresentation) return;
-    for (auto* page:manager->associatedBlockPages()) if (page->ownerDocument()==owner && page->blockId()==id && page->isVisible()) {
+    for (auto* page:manager->associatedBlockPresentations()) if (page->ownerDocument()==owner && page->blockId()==id && page->isVisible()) {
         QWidget* presentation=page;
         auto* sourceWindow=page->window();
         if (sourceWindow!=manager->editorSplitController()->initialGroup()->window()) {
@@ -187,7 +186,7 @@ void AssociatedBlockDragController::concealSource() {
         }
         hiddenPresentation=presentation; presentation->hide(); break;
     }
-    if (nativeDrag) nativeDrag->setPixmap(QPixmap());
+    // The bounded type ghost remains visible; no page screenshot covers the target.
 }
 bool AssociatedBlockDragController::gutterTarget(MyCodeEditor* editor, const QPoint& global, bool external) {
     if ((!external && !valid(activeMime)) || !editor || editor->documentReadOnly() || !manager->sharedDocumentForEditor(editor)) { clearPreview(); return false; }
@@ -254,8 +253,32 @@ void AssociatedBlockDragController::start(QWidget* handle, Qt::KeyboardModifiers
         if (auto* editor=qobject_cast<MyCodeEditor*>(p)) { document=manager->sharedDocumentForEditor(editor); break; }
     }
     if (!document || !DocumentBlockModel::get(document->textDocument())->find(blockId)) return;
+    QPointer<QWidget> focus=QApplication::focusWidget(), handleGuard=handle, movingContent;
+    QPointer<QLabel> placeholder;
     QPointer<QDrag> drag=new QDrag(this); drag->setMimeData(createMimeData(document,blockId));
-    drag->setPixmap(handle->grab()); nativeDrag=drag; dragImage=drag->pixmap(); cancelled=false; dragging=true; pressed.clear(); presentationTimer->start();
+    if(!valid(drag->mimeData())){drag->deleteLater();return;}
+    const auto* movingBlock=DocumentBlockModel::get(document->textDocument())->find(blockId);
+    const QString label=movingBlock->type.left(1).toUpper()+movingBlock->type.mid(1)+" block";
+    const qreal dpr=handle->devicePixelRatioF();QPixmap ghost(QSize(128,32)*dpr);ghost.setDevicePixelRatio(dpr);ghost.fill(Qt::transparent);
+    {QPainter painter(&ghost);painter.setRenderHint(QPainter::Antialiasing);
+        const auto& theme=InsightVisualStyle::theme();painter.setPen(QPen(theme.border,1));painter.setBrush(theme.panelBackground);
+        painter.drawRoundedRect(QRectF(1,1,126,30),6,6);RoundedIcons::icon(RoundedIcons::Grip).paint(&painter,QRect(6,8,16,16));
+        painter.setPen(theme.textPrimary);painter.drawText(QRect(28,0,96,32),Qt::AlignVCenter|Qt::AlignLeft,label);}
+    drag->setPixmap(ghost);drag->setHotSpot({14,16});nativeDrag=drag;dragImage=ghost;cancelled=false;dragging=true;pressed.clear();presentationTimer->start();
+    handle->setCursor(Qt::ClosedHandCursor);
+    if(auto* source=editorAncestor(handle))for(auto* shell:source->findChildren<QFrame*>("editorBlockShell"))
+        if(shell->property("blockId").toString()==blockId) {
+            movingContent=shell->findChild<QWidget*>("editorBlockContent");
+            if(movingContent){movingContent->setProperty("blockDragHidden",true);movingContent->hide();
+                placeholder=new QLabel(label,shell);placeholder->setAlignment(Qt::AlignCenter);
+                placeholder->setAttribute(Qt::WA_TransparentForMouseEvents);placeholder->setGeometry(movingContent->geometry());placeholder->show();}
+            break;
+        }
+    const auto restoreInline=qScopeGuard([&]{
+        delete placeholder.data();
+        if(movingContent){movingContent->setProperty("blockDragHidden",false);movingContent->show();}
+        if(handleGuard)handleGuard->setCursor(Qt::OpenHandCursor);
+    });
     QPointer<AssociatedBlockPage> sourcePage;
     for(auto* p=handle;p;p=p->parentWidget()) if((sourcePage=qobject_cast<AssociatedBlockPage*>(p))) break;
     QPointer<QTabWidget> sourceGroup=sourcePage ? manager->editorSplitController()->groupForPage(sourcePage) : nullptr;
@@ -327,10 +350,12 @@ void AssociatedBlockDragController::start(QWidget* handle, Qt::KeyboardModifiers
     if(result==Qt::IgnoreAction && sourcePage && sourceGroup && sourceGroup->indexOf(sourcePage)>=0) {
         sourceGroup->setCurrentWidget(sourcePage); sourcePage->setFocus(Qt::OtherFocusReason);
     }
+    if(result==Qt::IgnoreAction && focus && focus->isVisible())focus->setFocus(Qt::OtherFocusReason);
     activeMime.clear(); nativeDrag.clear(); if (drag) drag->deleteLater(); emit gestureFinished();
 }
 bool AssociatedBlockDragController::eventFilter(QObject* watched, QEvent* event) {
     auto* widget=qobject_cast<QWidget*>(watched);
+    if(dragging && event->type()==QEvent::ApplicationDeactivate){cancelled=true;QDrag::cancel();}
     if (dragging && event->type()==QEvent::KeyPress && static_cast<QKeyEvent*>(event)->key()==Qt::Key_Escape) cancelled=true;
     if (!widget) return false;
     if (auto* bar=qobject_cast<QTabBar*>(widget)) {
@@ -357,6 +382,8 @@ bool AssociatedBlockDragController::eventFilter(QObject* watched, QEvent* event)
     // Child removal events can arrive while a QWidget's layout is partially destroyed.
     // Only inspect the content tree for actual input, never lifecycle notifications.
     auto* handle=input ? blockDragSource(widget) : nullptr;
+    if((event->type()==QEvent::KeyPress || event->type()==QEvent::ShortcutOverride)
+        && (widget->objectName()=="editorBlockShell" || widget->objectName()=="associatedBlockPage"))handle=widget;
     if (event->type()==QEvent::ShortcutOverride || event->type()==QEvent::KeyPress) {
         auto* key=static_cast<QKeyEvent*>(event);
         const bool copy=key->matches(QKeySequence::Copy), cut=key->matches(QKeySequence::Cut), paste=key->matches(QKeySequence::Paste);
@@ -397,6 +424,7 @@ bool AssociatedBlockDragController::eventFilter(QObject* watched, QEvent* event)
     auto* e=static_cast<QDropEvent*>(event);
     const auto global=widget->mapToGlobal(e->position().toPoint());
     auto* hit=widget->objectName()=="editorLineNumberGutter" ? widget : widget->childAt(e->position().toPoint());
+    for(auto* ancestor=hit;ancestor;ancestor=ancestor->parentWidget())if(ancestor->objectName()=="editorLineNumberGutter"){hit=ancestor;break;}
     const bool gutter=hit && hit->objectName()=="editorLineNumberGutter";
     if (!e->mimeData()->hasFormat(mimeType)) {
         if (!gutter) return false;
@@ -429,6 +457,7 @@ bool AssociatedBlockDragController::eventFilter(QObject* watched, QEvent* event)
 bool AssociatedBlockDragController::routeTarget(QWidget* widget, const QPoint& global, bool drop, Qt::DropAction action) {
     if (!widget || !valid(activeMime) || (action==Qt::MoveAction && owner->readOnly())) { clearPreview(); return false; }
     proposedAction=action;
+    for(auto* ancestor=widget;ancestor;ancestor=ancestor->parentWidget())if(ancestor->objectName()=="editorLineNumberGutter"){widget=ancestor;break;}
     if (widget->objectName()=="editorLineNumberGutter") {
         if (!gutterTarget(editorAncestor(widget),global)) return false;
         if (drop) {
@@ -451,7 +480,8 @@ bool AssociatedBlockDragController::routeTarget(QWidget* widget, const QPoint& g
         clearPreview();
         bool overTabBar=false;
         for(auto* p=widget;p && p!=group;p=p->parentWidget()) if(qobject_cast<QTabBar*>(p)) { overTabBar=true; break; }
-        const auto direction=overTabBar ? EditorSplitDirection::Center : EditorDropPreviewOverlay::directionAt(group->rect(),group->mapFromGlobal(global));
+        const auto direction=overTabBar || manager->editorSplitController()->regionDropGroup(widget)
+            ? EditorSplitDirection::Center : EditorDropPreviewOverlay::directionAt(group->rect(),group->mapFromGlobal(global));
         if (drop) {
             auto* page=manager->detachAssociatedBlock(owner,id,group,[this,group,direction](auto* page) {
                 return direction!=EditorSplitDirection::Center
@@ -461,7 +491,9 @@ bool AssociatedBlockDragController::routeTarget(QWidget* widget, const QPoint& g
             if (!page) return false;
         } else {
             if (!splitPreview) splitPreview=new EditorDropPreviewOverlay(manager->editorSplitController()->host());
-            splitPreview->showPreview(group,direction);
+            auto* marker=widget;
+            while(marker && marker->property("editorDropRegion").toString().isEmpty())marker=marker->parentWidget();
+            splitPreview->showPreview(marker ? marker : group,direction);
         }
     }
     return true;

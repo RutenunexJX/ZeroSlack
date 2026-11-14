@@ -4,6 +4,7 @@
 #include "pinloompreviewimage.h"
 #include "roundedicons.h"
 #include "pinloomcodelinkcoordinator.h"
+#include "editorblockpreview.h"
 
 #include <QApplication>
 #include <QClipboard>
@@ -317,6 +318,15 @@ QToolButton* PinloomContextView::copyLinkButton() const
 QString PinloomContextView::statusText() const
 {
     return statusLabel->text();
+}
+
+void PinloomContextView::setOriginalSourceOnly()
+{
+    originalSourceOnly = true;
+    openTargetButton->setIcon(RoundedIcons::icon(RoundedIcons::OpenOriginal));
+    openTargetButton->setText(tr("Open original"));
+    openTargetButton->setEnabled(false);
+    if (selectedEntry.isValid()) resolveEntry(selectedEntry.identity, false);
 }
 
 void PinloomContextView::setLinkHandler(LinkHandler handler)
@@ -694,8 +704,8 @@ void PinloomContextView::selectEntry(const PinloomHostEntry& entry,
     technicalDetailsButton->show();
     technicalDetailsButton->setChecked(false);
     technicalDetailsLabel->hide();
-    openTargetButton->setEnabled(true);
-    openTargetButton->setText(QStringLiteral("Open"));
+    openTargetButton->setEnabled(!originalSourceOnly);
+    openTargetButton->setText(originalSourceOnly ? tr("Open original") : tr("Open"));
     openTargetButton->setToolTip(
         entry.type == QStringLiteral("clip")
             ? QStringLiteral("Insert this Saved Clip through Pinloom")
@@ -712,6 +722,7 @@ void PinloomContextView::resolveEntry(
 {
     imageLoader->cancel();
     const quint64 generation = ++resolveGeneration;
+    if (originalSourceOnly) openTargetButton->setEnabled(false);
     setPreviewState(QStringLiteral("pending"), QStringLiteral("Checking preview…"));
     if (!clientValue) {
         showDocument({}, QStringLiteral("Pinloom client is unavailable."),
@@ -792,7 +803,14 @@ void PinloomContextView::showDocument(
         setPreviewState(document.content.trimmed().isEmpty() ? QStringLiteral("link-only") : QStringLiteral("preview"),
             document.content.trimmed().isEmpty() ? QStringLiteral("Link only · Open the original in Pinloom") : QStringLiteral("Text preview available"));
     }
-    openTargetButton->setEnabled(true);
+    if (originalSourceOnly) {
+        const auto original = EditorBlockPreview::originalTargetForDocument(preferredIdentity, document);
+        openTargetButton->setText(tr("Open original"));
+        openTargetButton->setEnabled(original.available());
+        openTargetButton->setToolTip(original.available() ? tr("Open the original source") : original.reason);
+    } else {
+        openTargetButton->setEnabled(true);
+    }
     copyUriButton->setEnabled(document.entry.uri.isValid());
     if (announceChange)
         emit currentEntryChanged(selectedEntry);
@@ -813,9 +831,11 @@ void PinloomContextView::showImageFailure(const QString& reason)
         : reason.trimmed();
     showTextPreview(
         QStringLiteral("Image preview unavailable.\n\n%1").arg(failure));
-    openTargetButton->setText(QStringLiteral("Open original location"));
-    openTargetButton->setToolTip(
-        QStringLiteral("Open the original location through Pinloom"));
+    if (!originalSourceOnly) {
+        openTargetButton->setText(QStringLiteral("Open original location"));
+        openTargetButton->setToolTip(
+            QStringLiteral("Open the original location through Pinloom"));
+    }
     setStatus(failure);
     setPreviewState(QStringLiteral("link-only"), QStringLiteral("Link only · %1").arg(failure));
 }
@@ -836,6 +856,17 @@ void PinloomContextView::openCurrentEntry()
         return;
     setStatus(QStringLiteral("Opening through Pinloom..."));
     const QPointer<PinloomContextView> self(this);
+    if (originalSourceOnly) {
+        const auto generation = resolveGeneration;
+        EditorBlockPreview::openTarget(selectedEntry.identity.toUri().toString(), clientValue, this,
+            [self, generation] { return self && self->isVisible() && self->resolveGeneration == generation; },
+            [self](bool opened, const QString& message) {
+                if (self) self->setStatus(message.isEmpty()
+                    ? (opened ? tr("Original source opened.") : tr("Original source could not be opened."))
+                    : message);
+            });
+        return;
+    }
     clientValue->open(
         selectedEntry.identity,
         [self](bool opened, const QString& message) {

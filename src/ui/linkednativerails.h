@@ -12,7 +12,7 @@
 class ZEROSLACK_API LinkedNativeRails final : public QSplitter {
     Q_OBJECT
 public:
-    struct Reference { QString id, source, title; };
+    struct Reference { QString id, source, title; bool local = false; int height = 200; };
     struct Position { int y = 0; qint64 contentY = 0; int viewportY = 0; };
     struct Group {
         QString anchor, title;
@@ -57,9 +57,12 @@ public:
     QJsonObject snapshot() const;
     ConnectorSnapshot connectorSnapshot(const QWidget* coordinates) const;
     void setActiveAnchors(const QSet<QString>& ids);
+    bool setBlockWidget(const QString& id,QWidget* widget,int height);
+    void setRailsVisible(bool visible);
 
 signals:
     void visibleReferencesChanged(const QStringList& ids);
+    void releasingBlockWidget(const QString& id);
     void locateCodeRequested(const QString& id);
     void openOriginalRequested(const QString& id);
     void codeRatioChanged(double ratio);

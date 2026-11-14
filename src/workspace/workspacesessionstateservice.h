@@ -39,6 +39,7 @@ struct WorkspaceSessionUiState {
     QString navigationDesignQuery;
     int navigationActiveTab = 0;
     QString tabGroupingMode = QStringLiteral("none");
+    QString editorViewMode = QStringLiteral("editing");
     PanelLayoutState panelLayout;
     ContextWorkspaceState contextWorkspace;
     QJsonObject pageLayout;

@@ -1,4 +1,7 @@
 #include "tabmanager.h"
+#include "documentreferenceservice.h"
+#include "documentblocktransfer.h"
+#include "retireddocument.h"
 #include "associatedblockpage.h"
 #include "associatedblockdragcontroller.h"
 #include <QSplitter>
@@ -11,6 +14,7 @@
 #include "documentrecoveryqueue.h"
 #include "editorfileidentity.h"
 #include "uicontrols.h"
+#include "uidialogs.h"
 
 #include <QApplication>
 #include <QCryptographicHash>
@@ -360,7 +364,7 @@ TabManager::TabManager(QTabWidget* initialTabWidget, QObject* parent)
     previousActiveEditor = getCurrentEditor();
     lastActionEditor = previousActiveEditor;
     connect(qApp,&QApplication::focusChanged,this,[this](QWidget*,QWidget* now) {
-        if (!now) return;
+        if (!now || !now->isVisibleTo(now->window())) return;
         for (auto* widget=now; widget; widget=widget->parentWidget()) {
             if (auto* editor=qobject_cast<MyCodeEditor*>(widget); editor && sharedDocumentForEditor(editor)) {
                 lastActionEditor=editor; setContextPage(editor); return;
@@ -757,6 +761,14 @@ TabManager::applyCrashRecoveryCandidate(
         return result;
     }
 
+    const auto recoveryRecord = QJsonDocument::fromJson(comparison.recoveredText.toUtf8()).object();
+    if (RetiredDocument::isBlockDocument(comparison.candidate.originalFilePath)
+        || RetiredDocument::isBlockDocument(comparison.candidate.untitledDocumentId)
+        || (recoveryRecord.value("format") == "zeroslack.web-recovery" && recoveryRecord.value("kind") == "blocks")) {
+        result.status = CrashRecoveryStatus::InvalidArgument;
+        result.reason = RetiredDocument::message();
+        return result;
+    }
     SharedDocument* document = nullptr;
     if (WebDocumentPage::supportsFile(comparison.candidate.originalFilePath)
         || comparison.candidate.untitledDocumentId.startsWith(QStringLiteral("web:"))) {
@@ -1036,6 +1048,10 @@ bool TabManager::openFileInTab(const QString& requestedFileName)
         if (fileName.isEmpty())
             return false;
     }
+    if (RetiredDocument::isBlockDocument(fileName)) {
+        UiDialogs::warning(activeTabWidget(), QStringLiteral("Unsupported Document"), RetiredDocument::message());
+        return false;
+    }
     const QString owner = workspaceForFile(fileName);
     if (!owner.isEmpty() && identityKey(owner) != identityKey(activeWorkspaceRoot))
         emit workspaceActivationRequested(owner);
@@ -1199,6 +1215,24 @@ SharedDocument* TabManager::sharedDocumentForEditor(
         ? sharedDocuments->documentForView(editor)
         : nullptr;
 }
+bool TabManager::addSemanticReference(const QVariantMap& sourceMap,const QString& uri,const QString& caption,QString* error) {
+    const auto source=PinloomSourceSelection::fromVariantMap(sourceMap);
+    if(!source.isValid()) {if(error)*error="The source binding is invalid.";return false;}
+    const QPointer<MyCodeEditor> origin=editorActionTarget();
+    auto* document=acquireFileDocument(source.absoluteFilePath);
+    if(!document)return false;
+    if(!DocumentBlockTransfer::validateParticipant(document,true,error)){sharedDocuments->releaseIfUnused(document);return false;}
+    const auto id=DocumentReferenceService::insertSemantic(DocumentBlockModel::get(document->textDocument()),source,
+        document->textDocument()->toPlainText(),{uri,caption,true},error);
+    if(id.isEmpty()){sharedDocuments->releaseIfUnused(document);return false;}
+    if(document->viewCount()==0 && !createView(document,activeTabWidget())) {
+        DocumentBlockModel::get(document->textDocument())->undoAssociation(false);
+        sharedDocuments->releaseIfUnused(document);
+        if(error)*error="The owning code view could not be opened.";return false;
+    }
+    if(origin)origin->setFocus(Qt::OtherFocusReason);
+    return true;
+}
 
 MyCodeEditor* TabManager::editorActionTarget(
     const QString& preferredViewId) const
@@ -1229,11 +1263,13 @@ MyCodeEditor* TabManager::editorActionTarget(
          widget;
          widget = widget->parentWidget()) {
         auto* editor = qobject_cast<MyCodeEditor*>(widget);
-        if (isRegistered(editor))
+        if (isRegistered(editor) && editor->isVisibleTo(editor->window()))
             return editor;
     }
 
-    return isRegistered(lastActionEditor) ? lastActionEditor.data() : nullptr;
+    return isRegistered(lastActionEditor)
+            && lastActionEditor->isVisibleTo(lastActionEditor->window())
+        ? lastActionEditor.data() : nullptr;
 }
 
 bool TabManager::saveEditorView(
@@ -2459,10 +2495,10 @@ QStringList TabManager::restoreWorkspaceSessionTabs(const QString& workspaceRoot
             }
         }
         const QString kind = tab.kind=="associatedBlock" && (untitledBlock || fileIo.isSystemVerilogFile(path)) ? "associatedBlock"
-            : WebDocumentPage::supportsFile(path) ? (WebDocumentPage::kindForFile(path) == WebDocumentPage::Kind::Markdown ? "markdown" : "blocks")
+            : WebDocumentPage::supportsFile(path) ? "markdown"
             : PdfDocumentPage::supportsFile(path) ? "pdf" : fileIo.isSystemVerilogFile(path) ? "code" : QString();
         if (kind.isEmpty() || (!tab.kind.isEmpty() && kind != tab.kind)) { skip(); continue; }
-        if ((kind == "markdown" || kind == "blocks") && !tab.documentId.isEmpty()) {
+        if ((kind == "markdown") && !tab.documentId.isEmpty()) {
             if (tab.documentId.size() > 128) { skip(); continue; }
             const auto found = documentPaths.constFind(tab.documentId);
             if (found != documentPaths.cend() && *found != identityKey(path)) { skip(); continue; }
@@ -2470,7 +2506,7 @@ QStringList TabManager::restoreWorkspaceSessionTabs(const QString& workspaceRoot
         }
         auto* group = targetGroup(tab);
         QWidget* page = nullptr;
-        if (kind == "markdown" || kind == "blocks") {
+        if (kind == "markdown") {
             WebDocumentPage* web = nullptr;
             for (auto* candidate : webDocuments())
                 if (!restoredViews.contains(candidate) && EditorFileIdentity::same(candidate->fileName(), path)
@@ -2916,7 +2952,7 @@ SharedDocument* TabManager::acquireFileDocument(
 {
     if (loaded)
         *loaded = false;
-    if (!sharedDocuments)
+    if (!sharedDocuments || RetiredDocument::isBlockDocument(fileName))
         return nullptr;
     if (SharedDocument* existing =
             sharedDocuments->documentForFile(
@@ -3290,6 +3326,9 @@ void TabManager::observeDocument(
         return;
     observedDocuments.insert(document);
     auto* blockModel = DocumentBlockModel::get(document->textDocument());
+    connect(blockModel,&DocumentBlockModel::presentationMoved,this,[this,source=QPointer<SharedDocument>(document)](DocumentBlockModel* target,const QString& id){
+        if(source)transferAssociatedBlockContent(source,target,id);
+    });
     for (const auto& block : blockModel->items()) if (block.detached) previousDetachedBlocks[document].insert(block.id);
     connect(blockModel, &DocumentBlockModel::changed, this, [this, guarded=QPointer<SharedDocument>(document)] {
         QTimer::singleShot(0, this, [this,guarded] { if (guarded) reconcileAssociatedBlocks(guarded); });

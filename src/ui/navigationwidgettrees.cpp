@@ -495,7 +495,7 @@ void NavigationWidget::populateDesignTree()
 {
     if (!designModel) return;
     designTreeRefreshPending = false;
-    designModel->setReport(currentDesignHierarchy);
+    designModel->setReport(currentDesignHierarchy, currentDesignProjection);
 }
 
 QTreeWidgetItem* NavigationWidget::createFileItem(const QString& filePath)

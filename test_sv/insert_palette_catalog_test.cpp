@@ -11,7 +11,7 @@
 #define private public
 #include "mainwindow.h"
 #include "analysisscheduler.h"
-#include "temporaryeditorsearchprovider.h"
+#include "searchservice.h"
 #include "globalcontrolcoordinator.h"
 #include "globalcontrolpanel.h"
 #undef private
@@ -239,6 +239,73 @@ void runPaletteRegression(const QString& path)
     expect("no editor still returns no symbols", query("m ").isEmpty());
 }
 
+SearchResult symbolResult(
+    const QString& title,
+    SymbolTaxonomy::DeclarationKind kind,
+    const QString& filePath,
+    int line,
+    const QString& owner = QString())
+{
+    SearchResult result;
+    result.symbolDisplayName = title;
+    result.symbolRecord.name = title;
+    result.symbolRecord.declarationKind = kind;
+    result.symbolRecord.owner.name = owner;
+    result.symbolRecord.location.fileName = filePath;
+    result.symbolRecord.location.startLine = line;
+    result.symbolRecord.location.startColumn = 1;
+    result.symbolRecord.location.endLine = line;
+    result.symbolRecord.location.endColumn = 2;
+    result.symbolStableKey.fileName = filePath;
+    result.symbolStableKey.symbolName = title;
+    result.symbolStableKey.declarationKind = kind;
+    result.symbolStableKey.ownerScope = owner;
+    result.symbolStableKey.sourcePosition = line * 10;
+    result.symbolRecord.stableKey = result.symbolStableKey;
+    result.codeLink = RtlInsightLink::fromFileLine(filePath, line, 1);
+    result.score = 100;
+    return result;
+}
+
+void runSharedSearchCatalogRegression()
+{
+    QList<SearchResult> semanticMatches;
+    semanticMatches.reserve(209);
+    for (int index = 0; index < 205; ++index) {
+        const SymbolTaxonomy::DeclarationKind kind = index == 0
+            ? SymbolTaxonomy::DeclarationKind::Module
+            : (index == 1
+                   ? SymbolTaxonomy::DeclarationKind::Package
+                   : SymbolTaxonomy::DeclarationKind::Signal);
+        semanticMatches.append(symbolResult(
+            QStringLiteral("duplicate"),
+            kind,
+            QStringLiteral("/workspace/rtl/duplicate_%1.sv").arg(index),
+            index + 1,
+            QStringLiteral("owner_%1").arg(index)));
+    }
+    semanticMatches.append(semanticMatches.at(17));
+    semanticMatches.append(semanticMatches.at(104));
+    semanticMatches.append(semanticMatches.at(204));
+    std::reverse(semanticMatches.begin(), semanticMatches.end());
+
+    QList<SemanticSymbolRecord> semanticRecords;
+    semanticRecords.reserve(semanticMatches.size());
+    for (const SearchResult& match : semanticMatches)
+        semanticRecords.append(match.symbolRecord);
+    SemanticIndex catalogIndex;
+    catalogIndex.setSnapshot(
+        std::make_shared<SemanticIndexSnapshot>(
+            SemanticIndexSnapshot::fromSymbolRecords(semanticRecords)));
+    SearchService catalogService(&catalogIndex);
+    const QList<SearchResult> completeCatalog =
+        catalogService.symbolCatalog();
+    expect("semantic catalog remains complete beyond 200 entries",
+           completeCatalog.size() == semanticMatches.size()
+               && completeCatalog.size() > 200);
+
+}
+
 void runCatalogAndPanelRegression(const QString& path)
 {
     SemanticIndex::getInstance()->clearSemanticState();
@@ -246,85 +313,12 @@ void runCatalogAndPanelRegression(const QString& path)
     window.resize(1000, 700);
     window.show();
     auto* index = SemanticIndex::getInstance();
-    auto* provider = window.temporaryEditorSearchProvider.get();
-    expect("main window owns the live semantic search provider", provider != nullptr);
-    if (!provider)
-        return;
     const auto containsName = [&](const QString& name) {
-        const auto candidates = provider->query(name);
+        const auto candidates = SearchService(index).symbolCatalog();
         return std::any_of(candidates.cbegin(), candidates.cend(),
-                           [&](const auto& result) { return result.title == name; });
+            [&](const auto& result) { return result.symbolDisplayName == name; });
     };
     const QString source = fixtureText();
-    installSource(path, source);
-    ProjectSnapshot project;
-    project.workspaceRoot = QFileInfo(path).absolutePath();
-    project.systemVerilogFiles = {path};
-    const auto notifyBatch = [&] {
-        emit window.analysisScheduler->workspaceSymbolAnalysisFinished(
-            project, 1, index->getSymbolRecords().size());
-    };
-    const auto notifyFile = [&] {
-        emit window.analysisScheduler->fileSymbolAnalysisFinished(
-            path, index->getSymbolRecords().size());
-    };
-    notifyBatch();
-    expect("workspace notification publishes a nonempty catalog",
-           waitUntil([&] { return provider->semanticCatalogReady()
-               && !provider->query("palette_child").isEmpty(); }));
-    const auto firstRevision = window.temporaryEditorCatalogSnapshotRevision;
-    notifyFile();
-    expect("one publication's two notifications reuse one catalog",
-           provider->semanticCatalogReady()
-               && window.temporaryEditorCatalogSnapshotRevision == firstRevision);
-    const QString updated = source + "\nmodule added_later; endmodule\n";
-    installSource(path, updated);
-    notifyBatch();
-    expect("a new publication replaces the catalog",
-           waitUntil([&] { return provider->semanticCatalogReady()
-               && !provider->query("added_later").isEmpty(); })
-               && window.temporaryEditorCatalogSnapshotRevision > firstRevision);
-    const auto secondRevision = window.temporaryEditorCatalogSnapshotRevision;
-    notifyFile();
-    expect("the next publication is also rebuilt only once",
-           provider->semanticCatalogReady()
-               && window.temporaryEditorCatalogSnapshotRevision == secondRevision);
-    index->setSnapshot(index->snapshot());
-    notifyBatch();
-    expect("republishing the same snapshot object is a new revision",
-           window.temporaryEditorCatalogSnapshotRevision > secondRevision
-               && waitUntil([&] { return provider->semanticCatalogReady()
-                   && !provider->query("added_later").isEmpty(); }));
-
-    // Publish compatibility fixtures before asynchronous file analysis can
-    // supersede these intentionally synthetic snapshots of the same file.
-    index->clearSemanticState();
-    SlangManager slang;
-    const QString nativeA = QStringLiteral("module native_first; endmodule\n");
-    index->updateSymbolRecordsForFile(
-        path, slang.extractSymbolRecords(path, nativeA), nativeA);
-    notifyFile();
-    expect("compatibility writes publish refreshable records",
-           waitUntil([&] { return provider->semanticCatalogReady()
-               && containsName("native_first"); }));
-    const QString nativeB = QStringLiteral("module native_second; endmodule\n");
-    index->updateSymbolRecordsForFile(
-        path, slang.extractSymbolRecords(path, nativeB), nativeB);
-    notifyFile();
-    const bool replaced = waitUntil([&] { return provider->semanticCatalogReady()
-               && containsName("native_second")
-               && !containsName("native_first"); });
-    if (!replaced) qWarning() << "Compatibility publication" << index->snapshotRevision()
-        << window.temporaryEditorCatalogSnapshotRevision << index->getCachedFileContent(path)
-        << provider->query("native_second").size() << provider->query("native_first").size();
-    expect("compatibility writes advance the publication and replace old records", replaced);
-
-    window.analysisScheduler->symbolAnalyzer->analyzeFileContent(
-        path, QStringLiteral("module single_file_new; endmodule\n"));
-    expect("standalone file completion refreshes new published data",
-           waitUntil([&] { return provider->semanticCatalogReady()
-               && !provider->query("single_file_new").isEmpty()
-               && provider->query("native_second").isEmpty(); }));
 
     // Exercise the actual Ctrl+Space coordinator, panel and Enter dispatch.
     expect("editor file opens", writeText(path, source)
@@ -374,6 +368,14 @@ void runCatalogAndPanelRegression(const QString& path)
            writeText(root.filePath("a/a.sv"), "module catalog_a; endmodule\n")
                && writeText(root.filePath("b/b.sv"), "module catalog_b; endmodule\n"));
     auto* sessions = window.findChild<WorkspaceSessionCoordinator*>();
+    QObject::connect(window.workspaceManager.get(), &WorkspaceManager::projectChanged, &window,
+        [](const ProjectSnapshot& p) { std::printf("Catalog project: %s discovered=%d sv=%lld rev=%llu\n",qPrintable(p.workspaceRoot),p.sourceDiscoveryComplete,static_cast<long long>(p.systemVerilogFiles.size()),static_cast<unsigned long long>(p.revision)); });
+    QObject::connect(window.analysisScheduler.get(), &AnalysisScheduler::workspaceSymbolAnalysisStarted, &window,
+        [](const ProjectSnapshot& p,int count) { std::printf("Catalog started: %s files=%d\n",qPrintable(p.workspaceRoot),count); });
+    QObject::connect(window.analysisScheduler.get(), &AnalysisScheduler::workspaceSymbolAnalysisFinished, &window,
+        [](const ProjectSnapshot& p,int count,int symbols) { std::printf("Catalog finished: %s files=%d symbols=%d\n",qPrintable(p.workspaceRoot),count,symbols); });
+    QObject::connect(window.analysisScheduler.get(), &AnalysisScheduler::semanticAnalysisTelemetry, &window,
+        [](const SemanticAnalysisTelemetry& t) { std::printf("Catalog analysis: generation=%llu stage=%s reason=%s detail=%s\n",static_cast<unsigned long long>(t.generation),qPrintable(semanticAnalysisStageName(t.stage)),qPrintable(semanticAnalysisReasonName(t.reason)),qPrintable(t.detail)); });
     const auto ready = [&](const QString& name) {
         return waitUntil([&] {
             return !window.analysisScheduler->isSemanticAnalysisActive()
@@ -388,12 +390,18 @@ void runCatalogAndPanelRegression(const QString& path)
     expect("switching to workspace B replaces A's catalog",
            sessions && sessions->openWorkspace(root.filePath("b")) && ready("catalog_b")
                && !containsName("catalog_a"));
-    expect("closing B and activating A refreshes A again",
-           sessions && sessions->closeWorkspace(window.workspaceManager->activeWorkspaceIndex())
-               && ready("catalog_a") && !containsName("catalog_b"));
+    const bool closedB=sessions && sessions->closeWorkspace(window.workspaceManager->activeWorkspaceIndex());
+    const bool restoredA=closedB && ready("catalog_a");
+    if (!restoredA || containsName("catalog_b"))
+        std::printf("Catalog restore: closed=%d restored=%d active=%d A=%d B=%d root=%s files=%s\n",
+            closedB, restoredA, window.analysisScheduler->isSemanticAnalysisActive(),
+            containsName("catalog_a"), containsName("catalog_b"),
+            qPrintable(window.workspaceManager->getWorkspacePath()),
+            qPrintable(window.workspaceManager->getAllFiles().join(';')));
+    expect("closing B and activating A refreshes A again",closedB && restoredA && !containsName("catalog_b"));
     expect("closing the final workspace clears the catalog",
            sessions && sessions->closeWorkspace(window.workspaceManager->activeWorkspaceIndex())
-               && waitUntil([&] { return provider->semanticSourceCatalog.isEmpty(); }));
+               && waitUntil([&] { return index->getSymbolRecords().isEmpty(); }));
     index->clearSemanticState();
 }
 void runTemplateCacheAndWriterRegression()
@@ -573,6 +581,7 @@ int main(int argc, char** argv)
     const QString path = settings.filePath("palette.sv");
     runPaletteRegression(path);
     runTemplateCacheAndWriterRegression();
+    runSharedSearchCatalogRegression();
     runCatalogAndPanelRegression(path);
     runTemplateEntryRemovalRegression(settings.filePath("guarded.sv"));
     std::printf("%d checks, %d failures\n", checks, failures);

@@ -88,9 +88,6 @@ namespace ActionIds {
 inline constexpr const char FileNew[] =
     "file.new";
 inline constexpr const char FileNewMarkdown[] = "file.newMarkdown";
-inline constexpr const char FileNewBlocks[] = "file.newBlocks";
-inline constexpr const char FileImportMarkdown[] = "file.importMarkdown";
-inline constexpr const char FileExportMarkdown[] = "file.exportMarkdown";
 inline constexpr const char FileOpen[] =
     "file.open";
 inline constexpr const char FileSave[] =
@@ -207,10 +204,6 @@ inline constexpr const char WorkspaceCloseActive[] =
     "workspace.closeActive";
 inline constexpr const char WorkspaceConfigure[] =
     "workspace.configure";
-inline constexpr const char WorkspaceNextDiagnostic[] =
-    "workspace.diagnostic.next";
-inline constexpr const char WorkspacePreviousDiagnostic[] =
-    "workspace.diagnostic.previous";
 inline constexpr const char UserTemplatesOpenGlobal[] =
     "templates.user.openGlobal";
 inline constexpr const char UserTemplatesOpenWorkspace[] =

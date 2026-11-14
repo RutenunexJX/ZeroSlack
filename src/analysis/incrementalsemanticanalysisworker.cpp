@@ -215,6 +215,8 @@ WorkspaceAnalysisResult IncrementalSemanticAnalysisWorker::analyze(
             || snapshotInputsCoveredBy(*baseSnapshot, input.input()))
         && EffectiveValueService::getInstance()->isComputationCurrent(
             request.project.systemVerilogFiles, retainedState->analysisRevision)
+        && EffectiveValueService::getInstance()->canInstallPreparedDocumentFacts(
+            retainedState->facts)
         && input.input().equivalentTo(*retainedState->input)
         && input.stillMatchesDisk(cancelled)) {
         result.preparedSnapshot = retainedState->snapshot;

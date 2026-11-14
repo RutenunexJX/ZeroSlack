@@ -27,11 +27,14 @@ public:
     void schedule();
     void insert(const QVariantMap& preset, const QTextCursor& cursor);
     bool navigateFromCode(QKeyEvent* event);
-    void finishEditing();
+    bool finishEditing();
+    EditorBlockContent* takeContent(const QString& id);
+    void adoptContent(const QString& id, EditorBlockContent* content);
     int viewCount() const { return views.size(); }
     QString selected() const { return selectedId; }
     void select(const QString& id, bool edit = false);
     void addAssociationActions(class QMenu* menu);
+    void populateBlockMenu(class QMenu* menu, const QString& id);
 protected:
     bool eventFilter(QObject* object, QEvent* event) override;
 private:
@@ -41,6 +44,7 @@ private:
         QLabel* title = nullptr;
         QTextEdit* text = nullptr;
         QToolButton* collapse = nullptr;
+        QToolButton *edit = nullptr, *grip = nullptr;
         QWidget* tools = nullptr;
         quint64 revision = 0;
         quint64 styleRevision = 0;
@@ -52,8 +56,9 @@ private:
     QHash<QString,View> views;
     QString selectedId;
     bool scheduled = false, updating = false;
-    View createView(const EditorAssociatedBlock& block);
+    View createView(const EditorAssociatedBlock& block, EditorBlockContent* retained = nullptr);
     void returnToCode(const EditorAssociatedBlock& block);
     void leaveBlock(const QString& id, bool forward);
     void openOriginal(const QString& id);
+    void refreshControls();
 };

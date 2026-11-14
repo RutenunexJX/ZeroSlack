@@ -58,7 +58,7 @@ QWidget* WorkspaceSwitcher::createStrip(QWidget* parent)
 
     auto* open = UiControls::railButton(strip);
     open->setObjectName(QStringLiteral("openWorkspaceButton"));
-    open->setIcon(RoundedIcons::icon(RoundedIcons::ZoomIn));
+    open->setIcon(RoundedIcons::icon(RoundedIcons::OpenWorkspace));
     open->setToolTip(tr("Open workspace…"));
     open->setAccessibleName(open->toolTip());
     layout->addWidget(open);
@@ -82,7 +82,7 @@ void WorkspaceSwitcher::refresh()
         if (rebuild) {
             while (bar->count()) bar->removeTab(bar->count() - 1);
             for (const auto& entry : entries) {
-                const int index = bar->addTab(RoundedIcons::icon(RoundedIcons::Folder), QString());
+                const int index = bar->addTab(RoundedIcons::icon(RoundedIcons::Workspaces), QString());
                 bar->setTabData(index, entry.path);
             }
         }
@@ -128,7 +128,7 @@ void WorkspaceSwitcher::showContextMenu(QTabBar* bar, const QPoint& point)
     auto* menu = UiControls::menu(bar);
     menu->setObjectName(QStringLiteral("workspaceIconContextMenu"));
     menu->setAttribute(Qt::WA_DeleteOnClose);
-    auto* close = menu->addAction(RoundedIcons::icon(RoundedIcons::Close), tr("Close workspace"));
+    auto* close = menu->addAction(RoundedIcons::icon(RoundedIcons::CloseWorkspace), tr("Close workspace"));
     close->setObjectName(QStringLiteral("closeWorkspaceAction"));
     connect(close, &QAction::triggered, this, [this, path] { requestWorkspace(path, true); });
     menu->popup(bar->mapToGlobal(point));

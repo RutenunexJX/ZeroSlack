@@ -1,6 +1,7 @@
 #pragma once
 #include "roundedicons.h"
 #include <QHelpEvent>
+#include <QPainterPath>
 #include <QMouseEvent>
 #include <QPersistentModelIndex>
 #include <QStyledItemDelegate>
@@ -20,6 +21,8 @@ public:
     static constexpr int MissingNameRole = Qt::UserRole + 46;
     static constexpr int MissingTypeRole = Qt::UserRole + 47;
     static constexpr int SimulationRole = Qt::UserRole + 48;
+    static constexpr int SourceRole = Qt::UserRole + 49;
+    static constexpr int CategoryRole = Qt::UserRole + 50;
     std::function<void(const QString&)> activateProject;
     std::function<void(const QModelIndex&)> activateDesign;
 
@@ -48,18 +51,23 @@ public:
         if (index.data(FolderRole).toBool())
             row.icon = RoundedIcons::icon(tree->isExpanded(index) ? RoundedIcons::FolderOpen : RoundedIcons::Folder);
         else if (design && expandable && (option.state & (QStyle::State_MouseOver | QStyle::State_HasFocus)))
-            row.icon = RoundedIcons::icon(tree->isExpanded(index) ? RoundedIcons::Down : RoundedIcons::Right);
+            row.icon = RoundedIcons::icon(tree->isExpanded(index) ? RoundedIcons::TreeExpanded : RoundedIcons::TreeCollapsed);
         const bool project = !index.data(ProjectRole).toString().isEmpty();
         auto* style = tree->style();
         QStyleOptionViewItem background(row);
         background.text.clear(); background.icon = {};
-        style->drawControl(QStyle::CE_ItemViewItem, &background, painter, tree);
+        paintBackground(painter, background);
         row.rect.adjust(2 + depth * 14, 0, project ? -28 : 0, 0);
         // The full row already owns selection/hover painting.
         row.state &= ~(QStyle::State_Selected | QStyle::State_MouseOver | QStyle::State_HasFocus);
         if (option.state & QStyle::State_Selected)
             row.palette.setColor(QPalette::Text, option.palette.color(QPalette::HighlightedText));
-        style->drawControl(QStyle::CE_ItemViewItem, &row, painter, tree);
+        painter->save(); painter->setFont(row.font); painter->setPen(row.palette.color(QPalette::Text));
+        row.icon.paint(painter, QRect(row.rect.left(),row.rect.center().y()-9,18,18));
+        const auto textRect=row.rect.adjusted(24,0,-4,0);
+        painter->drawText(textRect,Qt::AlignVCenter|Qt::AlignLeft,
+            row.fontMetrics.elidedText(row.text,Qt::ElideRight,qMax(0,textRect.width())));
+        painter->restore();
         if (project) {
             const auto active = index.data(ActiveRole).toBool();
             if (active || (option.state & (QStyle::State_MouseOver | QStyle::State_HasFocus)))
@@ -156,11 +164,24 @@ protected:
         return false;
     }
 private:
+    void paintBackground(QPainter* painter, QStyleOptionViewItem row) const {
+        const bool focus=row.state & QStyle::State_HasFocus;
+        row.state &= ~QStyle::State_HasFocus;
+        // Ela owns this primitive; bypass QProxyStyle's native focus frame and
+        // CE_ItemViewItem's second content/background pass.
+        tree->style()->drawPrimitive(QStyle::PE_PanelItemViewItem,&row,painter,tree);
+        if(focus) {
+            painter->save();painter->setRenderHint(QPainter::Antialiasing);
+            painter->setPen(QPen(row.palette.color(QPalette::Highlight),2,Qt::SolidLine,Qt::RoundCap));
+            painter->drawLine(QPointF(row.rect.left()+2,row.rect.top()+8),QPointF(row.rect.left()+2,row.rect.bottom()-8));
+            painter->restore();
+        }
+    }
     QRect disclosureRect(const QRect& rect, const QModelIndex& index) const {
         int depth = 0;
         for (auto parent = index.parent(); parent.isValid(); parent = parent.parent()) ++depth;
         const int reserved = (index.data(UnresolvedRole).toBool() ? 22 : 0)
-            + (index.data(SimulationRole).toBool() ? 28 : 0);
+            + (index.data(SimulationRole).toBool() ? 28 : 0) + (index.data(SourceRole).toBool() ? 28 : 0);
         const int indent = qMin(depth * 14, qMax(0, rect.width() - reserved - 30
             - tree->fontMetrics().horizontalAdvance(QStringLiteral("…"))));
         return QRect(rect.left() + 2 + indent, rect.top(), 24, rect.height());
@@ -170,49 +191,57 @@ private:
         initStyleOption(&row, index);
         QStyleOptionViewItem background(row);
         background.text.clear(); background.icon = {};
-        tree->style()->drawControl(QStyle::CE_ItemViewItem, &background, painter, tree);
+        paintBackground(painter, background);
         const bool project = false;
         const bool unresolved = index.data(UnresolvedRole).toBool();
         const bool simulation = index.data(SimulationRole).toBool();
+        const bool source = index.data(SourceRole).toBool();
         const bool expandable = tree->model()->hasChildren(index);
         int depth = 0;
         for (auto parent = index.parent(); parent.isValid(); parent = parent.parent()) ++depth;
         const auto metrics = row.fontMetrics;
-        const int reserved = (unresolved ? 22 : 0) + (simulation ? 28 : 0);
+        const int reserved = (unresolved ? 22 : 0) + (simulation ? 28 : 0) + (source ? 28 : 0);
         // Keep one elision glyph after the icon slot (18), gap (6) and margins (2 + 4).
         const int indent = qMin(depth * 14, qMax(0, row.rect.width() - reserved - 30 - metrics.horizontalAdvance(QStringLiteral("…"))));
         QRect content = row.rect.adjusted(2 + indent, 0, -reserved - 4, 0);
         QRect icon(content.left(), content.center().y() - RoundedIcons::SidebarSize/2, RoundedIcons::SidebarSize, RoundedIcons::SidebarSize);
-        const auto decoration = expandable
-            ? RoundedIcons::icon(tree->isExpanded(index) ? RoundedIcons::Down : RoundedIcons::Right) : row.icon;
-        decoration.paint(painter, icon);
+        if(expandable) {
+            painter->save();painter->setRenderHint(QPainter::Antialiasing);
+            painter->setPen(QPen(row.palette.color(QPalette::Text),1.25,Qt::SolidLine,Qt::RoundCap,Qt::RoundJoin));
+            const QPointF c=QRectF(icon).center();QPainterPath path;
+            if(tree->isExpanded(index)){path.moveTo(c+QPointF(-3,-1.5));path.lineTo(c+QPointF(0,1.5));path.lineTo(c+QPointF(3,-1.5));}
+            else {path.moveTo(c+QPointF(-1.5,-3));path.lineTo(c+QPointF(1.5,0));path.lineTo(c+QPointF(-1.5,3));}
+            painter->drawPath(path);painter->restore();
+        } else row.icon.paint(painter, icon);
         QRect text = content.adjusted(24, 0, 0, 0);
         const bool selected = option.state & QStyle::State_Selected;
         const QColor primary = row.palette.color(selected ? QPalette::HighlightedText : QPalette::Text);
         const QColor backdrop = row.palette.color(selected ? QPalette::Highlight : QPalette::Base);
-        const QColor secondary((primary.red()*85 + backdrop.red()*15)/100,
-                               (primary.green()*85 + backdrop.green()*15)/100,
-                               (primary.blue()*85 + backdrop.blue()*15)/100);
+        const QColor secondary((primary.red()*65 + backdrop.red()*35)/100,
+                               (primary.green()*65 + backdrop.green()*35)/100,
+                               (primary.blue()*65 + backdrop.blue()*35)/100);
         const auto name = index.data(NameRole).toString();
         const auto type = index.data(TypeRole).toString();
-        painter->save(); painter->setFont(row.font);
+        painter->save(); auto primaryFont=row.font; primaryFont.setWeight(QFont::DemiBold); painter->setFont(primaryFont);
         painter->setPen(index.data(MissingNameRole).toBool() ? secondary : primary);
-        const int nameWidth = metrics.horizontalAdvance(name);
+        const int nameWidth = QFontMetrics(primaryFont).horizontalAdvance(name);
         painter->drawText(text, Qt::AlignVCenter | Qt::AlignLeft | Qt::TextSingleLine,
                           metrics.elidedText(name, Qt::ElideRight, qMax(0,text.width())));
         if (!type.isEmpty() && nameWidth + metrics.horizontalAdvance(QStringLiteral(" […]")) <= text.width()) {
             text.setLeft(text.left() + nameWidth + metrics.horizontalAdvance(QLatin1Char(' ')));
-            painter->setPen(secondary);
+            painter->setPen(secondary); painter->setFont(row.font);
             const int brackets = metrics.horizontalAdvance(QStringLiteral("[]"));
             painter->drawText(text, Qt::AlignVCenter | Qt::AlignLeft | Qt::TextSingleLine,
                 '[' + metrics.elidedText(type, Qt::ElideRight, qMax(0,text.width()-brackets)) + ']');
         }
         painter->restore();
-        if (simulation) {
+        if (source || simulation) {
             painter->save(); auto font = row.font; font.setPointSizeF(qMax(7.0, font.pointSizeF()-2));
             painter->setFont(font); painter->setPen(secondary);
             painter->drawText(QRect(row.rect.right() - (unresolved ? 22 : 0) - 28, row.rect.top(), 26, row.rect.height()),
-                Qt::AlignCenter, QStringLiteral("SIM")); painter->restore();
+                Qt::AlignCenter, simulation ? QStringLiteral("SIM") : QStringLiteral("SRC"));
+            if(source && simulation)painter->drawText(QRect(row.rect.right()-(unresolved?22:0)-56,row.rect.top(),26,row.rect.height()),Qt::AlignCenter,QStringLiteral("SRC"));
+            painter->restore();
         }
         if (unresolved) RoundedIcons::icon(RoundedIcons::Warning).paint(painter,
             QRect(row.rect.right() - (project ? 28 : 0) - 20, row.rect.center().y()-9, 18,18));

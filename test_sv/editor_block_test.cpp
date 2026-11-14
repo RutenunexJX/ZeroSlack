@@ -1,5 +1,6 @@
 #include "mycodeeditor.h"
 #include "documentblockmodel.h"
+#include "documentreferenceservice.h"
 #include "shareddocument.h"
 #include "formatterservice.h"
 #include "documentblockstore.h"
@@ -9,6 +10,7 @@
 #include "blocknotestyle.h"
 #include "editorblockcontent.h"
 #include "waveblockcontent.h"
+#include "insightvisualstyle.h"
 #include <QLibrary>
 #include <QPlainTextDocumentLayout>
 #include <QtTest>
@@ -16,6 +18,7 @@
 
 class EditorBlockTest : public QObject {
     Q_OBJECT
+    QTemporaryDir settings;
     std::unique_ptr<MyCodeEditor> editor;
     DocumentBlockModel* model() { return editor->blockModel(); }
     QString insert(int position = 0) {
@@ -24,6 +27,72 @@ class EditorBlockTest : public QObject {
         return model()->insert(fixed, cursor);
     }
 private slots:
+    void referenceDisplayKeepsOneIdentityAndEmbeddedMetrics() {
+        EditorAssociatedBlock reference;reference.type="reference";reference.uri="https://example.invalid/reference";
+        reference.caption="Specification";reference.height=230;reference.width=650;
+        const auto id=model()->insert(reference,editor->textCursor());QVERIFY(!id.isEmpty());
+        const auto original=*model()->find(id);const auto text=editor->toPlainText();
+        editor->selectAssociatedBlock(id);QFrame* shell=nullptr;
+        QTRY_VERIFY((shell=editor->findChild<QFrame*>("editorBlockShell")) && shell->isVisible());
+        const QPointer<QWidget> content=shell->findChild<QWidget*>("editorBlockContent");QVERIFY(content);
+        const auto embedded=shell->height();QVERIFY(embedded>36);
+        QVERIFY(DocumentReferenceService::setDisplay(model(),id,"compact"));QTRY_COMPARE(shell->height(),36);
+        QCOMPARE(model()->items().size(),1);QCOMPARE(model()->find(id)->uri,original.uri);
+        QCOMPARE(model()->find(id)->height,230);QCOMPARE(model()->find(id)->width,650);
+        QCOMPARE(model()->find(id)->appearance,original.appearance);QVERIFY(content);
+        auto* label=shell->findChild<QLabel*>(QString(),Qt::FindDirectChildrenOnly);QVERIFY(label);
+        QVERIFY(label->isVisible());QVERIFY(label->height()>0);QVERIFY(label->text().contains("Specification"));
+        QVERIFY(DocumentReferenceService::setDisplay(model(),id,"embedded"));QTRY_COMPARE(shell->height(),embedded);
+        QCOMPARE(shell->findChild<QWidget*>("editorBlockContent"),content.data());
+        QVERIFY(model()->undoAssociation(false));QTRY_COMPARE(shell->height(),36);
+        QVERIFY(model()->undoAssociation(true));QTRY_COMPARE(shell->height(),embedded);
+        QCOMPARE(editor->toPlainText(),text);
+        auto saved=model()->serialize();QTextDocument restoredDocument;restoredDocument.setPlainText(text);
+        auto* restored=DocumentBlockModel::get(&restoredDocument);QString error;QVERIFY(restored->restore(saved,&error));
+        QCOMPARE(restored->find(id)->reference,model()->find(id)->reference);QCOMPARE(restored->find(id)->appearance,original.appearance);
+        auto rows=saved["blocks"].toArray();auto row=rows[0].toObject();row["reference"]=QJsonObject{{"version",2},{"display","compact"}};
+        rows[0]=row;saved["blocks"]=rows;const auto before=restored->serialize();QVERIFY(!restored->restore(saved,&error));QCOMPARE(restored->serialize(),before);
+    }
+    void initTestCase() {
+        QVERIFY(settings.isValid());QSettings::setDefaultFormat(QSettings::IniFormat);
+        QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings.path());
+        QCoreApplication::setOrganizationName("ZeroSlackTests");QCoreApplication::setApplicationName("BlockWave");
+    }
+    void scrollbarDiagnosticsUseRealLocationsAndPreserveNativeScroll() {
+        QStringList lines{"module scroll_test;"};for(int i=1;i<80;++i)lines<<QString("  logic signal_%1;").arg(i);lines<<"endmodule";
+        editor->setPlainText(lines.join('\n'));editor->resize(520,280);editor->show();
+        auto* bar=editor->verticalScrollBar();QVERIFY(bar);QTRY_VERIFY(bar->maximum()>0);
+        SemanticDiagnostic first;first.line=50;first.column=5;first.message="First issue";first.severity=SemanticDiagnostic::Error;
+        editor->setDiagnosticHighlights({first});
+        const auto mark=[&] {
+            const auto image=bar->grab().toImage();const auto color=InsightVisualStyle::theme().syntax.errorUnderline.rgb();
+            for(int y=0;y<image.height();++y)for(int x=0;x<image.width();++x)
+                if(image.pixelColor(x,y).rgb()==color)return QPoint(qRound(x/bar->devicePixelRatioF()),qRound(y/bar->devicePixelRatioF()));
+            return QPoint(-1,-1);
+        };
+        QTRY_VERIFY(mark().x()>=0);auto* overview=bar->findChild<QWidget*>("editorDiagnosticOverview");QVERIFY(overview && overview->isVisible());
+        QCOMPARE(overview->parentWidget(),bar);QVERIFY(overview->testAttribute(Qt::WA_TransparentForMouseEvents));
+        QTest::mouseClick(bar,Qt::LeftButton,Qt::NoModifier,mark());QCOMPARE(editor->textCursor().blockNumber(),49);QCOMPARE(editor->textCursor().positionInBlock(),4);
+        SemanticDiagnostic second=first;second.column=9;second.message="Second issue";editor->setDiagnosticHighlights({first,second});bar->setValue(0);QCoreApplication::processEvents();
+        QTest::mouseClick(bar,Qt::LeftButton,Qt::NoModifier,mark());
+        QTRY_VERIFY(qobject_cast<QMenu*>(QApplication::activePopupWidget()));auto* menu=qobject_cast<QMenu*>(QApplication::activePopupWidget());
+        QCOMPARE(menu->actions().size(),2);QVERIFY(menu->actions()[1]->text().contains("50:9"));menu->actions()[1]->trigger();menu->close();
+        QCOMPARE(editor->textCursor().blockNumber(),49);QCOMPARE(editor->textCursor().positionInBlock(),8);
+        bar->setValue(0);QTest::keyClick(bar,Qt::Key_PageDown);QVERIFY(bar->value()>0);bar->setValue(0);
+        QStyleOptionSlider option;option.initFrom(bar);option.rect=bar->rect();option.orientation=Qt::Vertical;
+        option.minimum=bar->minimum();option.maximum=bar->maximum();option.pageStep=bar->pageStep();option.sliderPosition=0;option.sliderValue=0;
+        const auto slider=bar->style()->subControlRect(QStyle::CC_ScrollBar,&option,QStyle::SC_ScrollBarSlider,bar);
+        const auto start=slider.center();QTest::mousePress(bar,Qt::LeftButton,Qt::NoModifier,start);
+        QMouseEvent move(QEvent::MouseMove,start+QPoint(0,30),bar->mapToGlobal(start+QPoint(0,30)),Qt::NoButton,Qt::LeftButton,Qt::NoModifier);
+        QApplication::sendEvent(bar,&move);QTest::mouseRelease(bar,Qt::LeftButton,Qt::NoModifier,start+QPoint(0,30));QVERIFY(bar->value()>0);
+        editor->setDiagnosticHighlights({});QTRY_VERIFY(!overview->isVisible());
+        editor->setPlainText("module m;\ninitial begin\n  a = 1;\n  b = 2;\nend\nendmodule\n");
+        insert(editor->toPlainText().indexOf("a ="));QTRY_VERIFY(!editor->syntaxDocument()->hasPendingEdits());QVERIFY(editor->toggleFoldAtLineForTest(1));
+        first.line=3;first.column=3;editor->setDiagnosticHighlights({first});QCoreApplication::processEvents();
+        QTRY_VERIFY(mark().x()>=0);QTest::mouseClick(bar,Qt::LeftButton,Qt::NoModifier,mark());
+        QCOMPARE(editor->textCursor().blockNumber(),2);QVERIFY(editor->foldLineVisibleForTest(2));QVERIFY(!model()->items().isEmpty());
+        auto options=editor->annotationDisplayOptions();options.enabled=false;editor->setAnnotationDisplayOptions(options);QTRY_VERIFY(!overview->isVisible());
+    }
     void namedPresetsPreserveLegacyAndRoundTrip() {
         for (const auto& type:QStringList{"text","image","reference","attachment","code","wave"}) {
             const auto id=model()->insert(type,QTextCursor(editor->document()),type=="wave" ? WaveBlockContent::initialProject() : "sample");
@@ -40,47 +109,122 @@ private slots:
     }
     void tickxMemoryEditorPreviewAndIndependentCopy() {
         QString issue; const auto payload=WaveBlockContent::initialProject(); QVERIFY2(WaveBlockContent::validate(payload.toUtf8(),&issue),qPrintable(issue));
-        EditorAssociatedBlock block; block.type="wave"; block.text=payload; block.height=360;
+        EditorAssociatedBlock block;block.type="wave";block.text=payload;block.autoHeight=true;
         const auto id=model()->insert(block,QTextCursor(editor->document()));
-        WaveBlockContent view(model(),id,nullptr); view.resize(900,400); view.present(payload,false); view.show();
-        auto* native=view.findChild<QWidget*>("WaveStimulusEditor"); QVERIFY(native);
-        QCOMPARE(native->property("wavewidgets.contract").toString(),QString("wave-workbench.stimulus-editor/v1"));
-        auto* canvas=native->findChild<QWidget*>("stimulusCanvas"); QVERIFY(canvas);
-        QVERIFY(QMetaObject::invokeMethod(canvas,"zoomIn")); QVERIFY(QMetaObject::invokeMethod(canvas,"fitScenario"));
-        QLibrary library(QCoreApplication::applicationDirPath()+"/components/tickx/wavewidgets.dll"); QVERIFY(library.load());
+        WaveBlockContent view(model(),id,nullptr);view.resize(900,440);QVERIFY(view.present(payload,false));view.show();
+        auto* native=view.findChild<QWidget*>("WaveEditor");QVERIFY(native);
+        auto* canvas=native->findChild<QWidget*>("waveEditorCanvas");QVERIFY(canvas);
+        QCOMPARE(native->property("wavewidgets.contract").toString(),QString("wave-workbench.wave-editor/v1"));
+        QVERIFY(!view.findChild<QTabWidget*>("waveBlockTabs"));
+        QLibrary library(QCoreApplication::applicationDirPath()+"/components/tickx/wavewidgets.dll");QVERIFY(library.load());
+        using Read=int(*)(QWidget*,char*,size_t,size_t*,char*,size_t);
         using Update=int(*)(QWidget*,const char*,size_t,char*,size_t);
-        auto update=reinterpret_cast<Update>(library.resolve("wavewidgets_update_stimulus_editor_v1")); QVERIFY(update);
-        auto project=QJsonDocument::fromJson(payload.toUtf8()).object(); auto scenarios=project["scenarios"].toArray(); auto scenario=scenarios[0].toObject();
-        auto lanes=scenario["lanes"].toArray(); auto lane=lanes[0].toObject(); auto segments=lane["segments"].toArray(); auto segment=segments[0].toObject(); segment["value"]="1";
-        segments[0]=segment; lane["segments"]=segments; lanes[0]=lane; scenario["lanes"]=lanes; scenarios[0]=scenario; project["scenarios"]=scenarios;
-        const auto changed=QJsonDocument(project).toJson(QJsonDocument::Compact); char message[2048]{};
-        QCOMPARE(update(native,changed.constData(),size_t(changed.size()),message,sizeof(message)),0);
-        QVERIFY2(view.flush(&issue),qPrintable(issue)); QVERIFY(model()->dirty());
-        const auto edited=model()->find(id)->text; QVERIFY(edited.contains("\"value\":\"1\""));
-        auto* undo=native->findChild<QPushButton*>("stimulusUndo"); QVERIFY(undo && undo->isEnabled()); undo->click(); QVERIFY(view.flush(&issue));
-        QVERIFY(model()->find(id)->text.contains("\"value\":\"0\""));
-        model()->endTextSession();
-        QCOMPARE(update(native,changed.constData(),size_t(changed.size()),message,sizeof(message)),0);
-        QVERIFY(view.flush(&issue)); model()->endTextSession();
-        QVERIFY(model()->undoAssociation(false)); view.present(model()->find(id)->text,false);
-        native=view.findChild<QWidget*>("WaveStimulusEditor"); QVERIFY(native);
-        QVERIFY(!native->findChild<QPushButton*>("stimulusUndo")->isEnabled());
-        QVERIFY(model()->find(id)->text.contains("\"value\":\"0\""));
-        QVERIFY(model()->undoAssociation(true)); view.present(model()->find(id)->text,false);
-        native=view.findChild<QWidget*>("WaveStimulusEditor"); QVERIFY(native);
-        QVERIFY(!native->findChild<QPushButton*>("stimulusUndo")->isEnabled());
-        QVERIFY(model()->find(id)->text.contains("\"value\":\"1\""));
-        QVERIFY(model()->undoAssociation(false)); view.present(model()->find(id)->text,false);
-        native=view.findChild<QWidget*>("WaveStimulusEditor"); QVERIFY(native);
-        view.present(model()->find(id)->text,true); QVERIFY(!native->isEnabled());
-        auto* tabs=view.findChild<QTabWidget*>("waveBlockTabs"); QVERIFY(tabs); auto* preview=tabs->currentWidget();
-        QCOMPARE(preview->property("wavewidgets.contract").toString(),QString("wave-workbench.waveform-view/v1"));
-        QCOMPARE(preview->property("presentationState").toString(),QString("ready"));
-        QVERIFY(QMetaObject::invokeMethod(preview,"zoomIn")); bool selected=false;
-        QVERIFY(QMetaObject::invokeMethod(preview,"selectLane",Q_RETURN_ARG(bool,selected),Q_ARG(QString,QString("signal")))); QVERIFY(selected);
-        bool revealed=false; QVERIFY(QMetaObject::invokeMethod(preview,"revealTick",Q_RETURN_ARG(bool,revealed),Q_ARG(qint64,qint64(20)))); QVERIFY(revealed);
-        const auto copy=model()->transferTo(model(),id,QTextCursor(editor->document()),true); QVERIFY(!copy.isEmpty()); QVERIFY(copy!=id);
-        model()->editText(copy,edited); QVERIFY(model()->find(id)->text.contains("\"value\":\"0\""));
+        using Action=int(*)(QWidget*,const char*,char*,size_t);
+        const auto read=reinterpret_cast<Read>(library.resolve("wavewidgets_wave_editor_state_v1"));
+        const auto configure=reinterpret_cast<Update>(library.resolve("wavewidgets_configure_wave_editor_v1"));
+        const auto action=reinterpret_cast<Action>(library.resolve("wavewidgets_wave_editor_action_v1"));QVERIFY(read && configure && action);
+        char message[2048]{};
+        const auto state=[&]{size_t size=0;if(read(native,nullptr,0,&size,message,sizeof message)!=0)return QJsonObject{};
+            QByteArray data(qsizetype(size),Qt::Uninitialized);if(read(native,data.data(),size,&size,message,sizeof message)!=0)return QJsonObject{};
+            data.chop(1);return QJsonDocument::fromJson(data).object();};
+        const auto lanes=[&]{return QJsonDocument::fromJson(model()->find(id)->text.toUtf8()).object()["scenarios"].toArray()[0].toObject()["lanes"].toArray();};
+        QCOMPARE(lanes().size(),0);QCOMPARE(state()["mode"].toString(),QString("preview"));
+        QVERIFY(action(native,"add-bit",message,sizeof message)!=0);
+        QVERIFY(view.present(payload,false,true));
+        const auto add=[&](const char* kind,const QString& name,const QString& parameter){
+            QCOMPARE(action(native,kind,message,sizeof message),0);
+            auto* nameEdit=native->findChild<QLineEdit*>("QuickLaneNameEdit");QVERIFY(nameEdit && nameEdit->isVisible());
+            nameEdit->setFocus();nameEdit->selectAll();QTest::keyClicks(nameEdit,name);
+            auto* field=native->findChild<QLineEdit*>("QuickLaneParameterEdit");
+            if(!parameter.isEmpty()){QVERIFY(field && field->isVisible());field->setFocus();field->selectAll();QTest::keyClicks(field,parameter);}
+            QTest::keyClick(parameter.isEmpty()?nameEdit:field,Qt::Key_Return);QTest::qWait(20);
+        };
+        add("add-clock","clock","10 ns");add("add-bit","enable",{});add("add-bus","data","8");
+        QVERIFY2(view.flush(&issue),qPrintable(issue));QCOMPARE(lanes().size(),3);QCOMPARE(lanes()[2].toObject()["width"].toInt(),8);
+        const auto edited=model()->find(id)->text;
+        const auto config=QJsonDocument(QJsonObject{{"view",QJsonObject{{"cursorTick","7000"},{"startTick","1000"},{"endTick","40000"}}}}).toJson(QJsonDocument::Compact);
+        QCOMPARE(configure(native,config.constData(),size_t(config.size()),message,sizeof message),0);const auto beforeView=state().value("view");
+        QVERIFY(view.present(edited,false,false));QCOMPARE(view.findChild<QWidget*>("WaveEditor"),native);
+        QCOMPARE(native->findChild<QWidget*>("waveEditorCanvas"),canvas);QCOMPARE(state().value("view"),beforeView);QVERIFY(native->isEnabled());
+        QVERIFY(view.present(edited,false,true));QCOMPARE(state().value("view"),beforeView);
+        QCOMPARE(action(native,"undo",message,sizeof message),0);QTRY_COMPARE(lanes().size(),2);
+        QCOMPARE(action(native,"redo",message,sizeof message),0);QTRY_COMPARE(lanes().size(),3);
+        QCOMPARE(view.findChild<QWidget*>("WaveEditor"),native);
+        QCOMPARE(action(native,"add-bus",message,sizeof message),0);
+        auto* width=native->findChild<QLineEdit*>("QuickLaneParameterEdit");QVERIFY(width);width->setFocus();width->selectAll();QTest::keyClicks(width,"0");
+        QVERIFY(!view.flush(&issue));QVERIFY(!view.present(model()->find(id)->text,false,false));QCOMPARE(state()["mode"].toString(),QString("edit"));
+        QCOMPARE(lanes().size(),3);width->selectAll();QTest::keyClicks(width,"16");QVERIFY2(view.flush(&issue),qPrintable(issue));QCOMPARE(lanes().size(),4);
+        WaveBlockContent second(model(),id,nullptr);QVERIFY(second.present(model()->find(id)->text,false));
+        auto* peer=second.findChild<QWidget*>("WaveEditor");QVERIFY(peer && peer!=native);
+        const auto copy=model()->transferTo(model(),id,QTextCursor(editor->document()),true);QVERIFY(!copy.isEmpty() && copy!=id);
+        QVERIFY(model()->undoAssociation(false));QVERIFY(!model()->find(copy));
+        QVERIFY(model()->undoAssociation(false));QCOMPARE(lanes().size(),3);
+        QCOMPARE(second.findChild<QWidget*>("WaveEditor"),peer);QCOMPARE(view.findChild<QWidget*>("WaveEditor"),native);
+        QVERIFY(model()->undoAssociation(true));QCOMPARE(lanes().size(),4);
+        QWidget reparented;view.setParent(&reparented);QCOMPARE(view.findChild<QWidget*>("WaveEditor"),native);view.setParent(nullptr);
+        QVERIFY(view.present(model()->find(id)->text,true));QVERIFY(native->isEnabled());QVERIFY(action(native,"add-bit",message,sizeof message)!=0);
+        QVERIFY(view.flush(&issue));
+        const auto saved=model()->serialize();QTextDocument restoredDocument;auto* restored=DocumentBlockModel::get(&restoredDocument);
+        QVERIFY(restored->restore(saved,&issue));WaveBlockContent reopened(restored,id,nullptr);QVERIFY(reopened.present(restored->find(id)->text,false));
+        QCOMPARE(restored->find(id)->text,model()->find(id)->text);QVERIFY(reopened.findChild<QWidget*>("WaveEditor"));
+    }
+    void tickxStyleUsesHostHistoryAndPreservesViews() {
+        const auto payload=WaveBlockContent::initialProject();QVERIFY(!payload.isEmpty());
+        const auto id=model()->insert("wave",QTextCursor(editor->document()),payload);
+        WaveBlockContent first(model(),id,nullptr),second(model(),id,nullptr);
+        first.resize(900,440);first.show();QVERIFY(first.present(payload,false,true));
+        QVERIFY(second.present(payload,false));
+        auto* native=first.findChild<QWidget*>("WaveEditor");QVERIFY(native);
+        QVERIFY(native->property("wavewidgets.capabilities").toStringList().contains("wave-style/v1"));
+        auto* entry=native->findChild<QAction*>("waveEditorStyle");QVERIFY(entry&&entry->isEnabled()&&entry->shortcut().isEmpty());
+        QLibrary library(QCoreApplication::applicationDirPath()+"/components/tickx/wavewidgets.dll");QVERIFY(library.load());
+        using Action=int(*)(QWidget*,const char*,char*,size_t);
+        using Read=int(*)(QWidget*,char*,size_t,size_t*,char*,size_t);
+        const auto action=reinterpret_cast<Action>(library.resolve("wavewidgets_wave_editor_action_v1"));
+        const auto read=reinterpret_cast<Read>(library.resolve("wavewidgets_wave_editor_state_v1"));QVERIFY(action&&read);
+        char message[2048]{};
+        const auto state=[&](QWidget* widget){size_t size=0;if(read(widget,nullptr,0,&size,message,sizeof message)!=0)return QJsonObject{};
+            QByteArray data(qsizetype(size),Qt::Uninitialized);if(read(widget,data.data(),size,&size,message,sizeof message)!=0)return QJsonObject{};
+            data.chop(1);return QJsonDocument::fromJson(data).object();};
+        const auto choose=[&](const QString& preset,bool accept){
+            QCOMPARE(action(native,"wave-style",message,sizeof message),0);
+            QTRY_VERIFY(native->findChild<QDialog*>("SignalStyleDefaultsDialog"));
+            auto* dialog=native->findChild<QDialog*>("SignalStyleDefaultsDialog");QVERIFY(dialog->isVisible());
+            auto* combo=dialog->findChild<QComboBox*>("SignalStylePreset");QVERIFY(combo&&combo->findData(preset)>=0);
+            QTest::mouseClick(combo,Qt::LeftButton);QTRY_VERIFY(combo->view()->isVisible());
+            QTest::keyClick(combo->view(),Qt::Key_Home);
+            for(int i=0;i<combo->findData(preset);++i)QTest::keyClick(combo->view(),Qt::Key_Down);
+            QTest::keyClick(combo->view(),Qt::Key_Return);QCOMPARE(combo->currentData().toString(),preset);
+            QString issue;QVERIFY(!first.flush(&issue));QVERIFY(!issue.isEmpty());
+            auto* buttons=dialog->findChild<QDialogButtonBox*>();QVERIFY(buttons);
+            QTest::mouseClick(buttons->button(accept?QDialogButtonBox::Ok:QDialogButtonBox::Cancel),Qt::LeftButton);
+            QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);QCoreApplication::processEvents();
+        };
+        QVERIFY(QTest::qWaitForWindowExposed(&first));
+        QTRY_VERIFY(state(native).value("view").toObject().value("endTick").toString().toLongLong()>0);
+        model()->markSaved();const auto generation=model()->revision();const auto beforeView=state(native).value("view");
+        choose("blueprint",false);QCOMPARE(model()->find(id)->text,payload);QCOMPARE(model()->revision(),generation);QVERIFY(!model()->dirty());
+        QSignalSpy changes(model(),&DocumentBlockModel::changed);
+        choose("blueprint",true);QTRY_COMPARE(changes.size(),1);QVERIFY(model()->dirty());
+        const auto blueprint=model()->find(id)->text;QVERIFY(blueprint!=payload);
+        auto project=QJsonDocument::fromJson(blueprint.toUtf8()).object();
+        QCOMPARE(project["waveWorkbench.signalAppearance"].toObject()["preset"].toString(),QString("blueprint"));
+        QCOMPARE(state(native)["view"],beforeView);
+        QVERIFY(first.present(blueprint,false));QCOMPARE(state(native)["view"],beforeView);QVERIFY(!entry->isEnabled());
+        QVERIFY(action(native,"wave-style",message,sizeof message)!=0);QVERIFY(first.present(blueprint,false,true));
+        QVERIFY(model()->undoAssociation(false));QCOMPARE(model()->find(id)->text,payload);
+        QVERIFY(model()->undoAssociation(true));QCOMPARE(model()->find(id)->text,blueprint);
+        const auto repeatGeneration=model()->revision();choose("blueprint",true);QCOMPARE(model()->revision(),repeatGeneration);
+        choose("paper",true);QTRY_VERIFY(model()->find(id)->text!=blueprint);const auto paper=model()->find(id)->text;
+        QCOMPARE(state(native)["view"],beforeView);
+        QVERIFY(second.present(paper,false));QVERIFY(first.findChild<QWidget*>("WaveEditor")==native);
+        const auto copy=model()->transferTo(model(),id,QTextCursor(editor->document()),true);QVERIFY(!copy.isEmpty()&&copy!=id);
+        QCOMPARE(model()->find(copy)->text,paper);choose("blueprint",true);QTRY_COMPARE(model()->find(id)->text,blueprint);QCOMPARE(model()->find(copy)->text,paper);
+        QTextDocument restoredDocument;restoredDocument.setPlainText(editor->toPlainText());auto* restored=DocumentBlockModel::get(&restoredDocument);
+        QString issue;QVERIFY2(restored->restore(model()->serialize(),&issue),qPrintable(issue));
+        WaveBlockContent reopened(restored,id,nullptr);QVERIFY(reopened.present(restored->find(id)->text,false));QCOMPARE(restored->find(id)->text,blueprint);
+        QVERIFY(first.present(blueprint,true,true));QVERIFY(!entry->isEnabled());QVERIFY(action(native,"wave-style",message,sizeof message)!=0);
+        QVERIFY2(first.flush(&issue),qPrintable(issue));QCOMPARE(model()->find(id)->text,blueprint);
     }
     void init() {
         editor = std::make_unique<MyCodeEditor>(); editor->resize(800, 500);
@@ -130,10 +274,13 @@ private slots:
         const auto id = insert(3); editor->selectAssociatedBlock(id, true);
         auto* text = editor->findChild<QTextEdit*>("editorBlockText"); QVERIFY(text); QVERIFY(text->hasFocus());
         QTest::keyClicks(text, "more"); QVERIFY(model()->find(id)->text.contains("more"));
-        QTest::keyClick(text, Qt::Key_Escape);
-        auto* shell = editor->findChild<QFrame*>("editorBlockShell"); QVERIFY(shell && shell->hasFocus());
-        QTest::keyClick(shell, Qt::Key_Escape); QVERIFY(editor->hasFocus()); QCOMPARE(editor->textCursor().position(), 3);
-        QTest::keyClick(editor.get(), Qt::Key_Down); QVERIFY(shell->hasFocus());
+        const auto before=text->toPlainText();QTest::keyClick(text, Qt::Key_Escape);
+        QVERIFY(!text->isReadOnly());QCOMPARE(text->toPlainText(),before);
+        auto* shell = editor->findChild<QFrame*>("editorBlockShell"); QVERIFY(shell);
+        auto* edit=shell->findChild<QToolButton*>("blockEditToggle");QVERIFY(edit && edit->isChecked());
+        edit->click();QVERIFY(text->isReadOnly());QVERIFY(!edit->isChecked());
+        editor->selectAssociatedBlock(id);QVERIFY(shell->hasFocus());
+        QTest::keyClick(shell,Qt::Key_Return);QVERIFY(text->isReadOnly());
         QTest::keyClick(shell, Qt::Key_Delete); QVERIFY(!model()->find(id));
         QTest::keyClick(editor.get(), Qt::Key_Z, Qt::ControlModifier); QVERIFY(model()->find(id));
     }
@@ -173,7 +320,7 @@ private slots:
         for(int y=from;y<qMin(to,from+qCeil(30*scale));++y) for(int x=qCeil(3*scale);x<qFloor((gutter->width()-20)*scale);++x)
             badgeVisible|=capture.pixel(x,y)!=background;
         QVERIFY2(badgeVisible,"The association gutter must display its type and ordinal");
-        for(int y=from+qCeil(32*scale);y<to;++y) for(int x=qCeil(18*scale);x<qFloor((gutter->width()-20)*scale);++x) {
+        for(int y=from+qCeil(60*scale);y<to;++y) for(int x=qCeil(18*scale);x<qFloor((gutter->width()-20)*scale);++x) {
             if (capture.pixel(x,y)!=background) {
                 qWarning()<<"gutter pixel"<<QPoint(x,y)<<Qt::hex<<capture.pixel(x,y)<<background
                     <<"gap"<<from<<to<<"gutter"<<gutter->geometry()<<"viewport"<<editor->viewport()->geometry();
@@ -254,8 +401,9 @@ private slots:
         QTextCursor selection(editor->document()); selection.setPosition(12); selection.setPosition(50,QTextCursor::KeepAnchor); editor->setTextCursor(selection);
         const auto id=model()->insert("text",selection,"selected range"); editor->selectAssociatedBlock(id,true);
         auto* text=editor->findChild<QTextEdit*>("editorBlockText"); QVERIFY(text);
-        QTest::keyClick(text,Qt::Key_Escape); auto* shell=editor->findChild<QFrame*>("editorBlockShell"); QVERIFY(shell);
-        QTest::keyClick(shell,Qt::Key_Escape); QCOMPARE(editor->textCursor(),selection);
+        auto* shell=editor->findChild<QFrame*>("editorBlockShell");QVERIFY(shell);
+        auto* toggle=shell->findChild<QToolButton*>("blockEditToggle");QVERIFY(toggle);toggle->click();
+        editor->setFocus();QCOMPARE(editor->textCursor(),selection);
         for (int width : {360,900,360}) {
             editor->resize(width,640); QCoreApplication::processEvents(); editor->viewport()->repaint();
             QTextCursor cursor(editor->document()); cursor.setPosition(45); editor->setTextCursor(cursor); editor->ensureCursorVisible();

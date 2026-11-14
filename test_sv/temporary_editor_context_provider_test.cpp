@@ -179,7 +179,7 @@ int main(int argc, char* argv[])
     int backNotifications = 0;
     QObject::connect(contextView, &TemporaryEditorContextView::currentLocationChanged,
                      &window, [&backNotifications](const EditorLocation&) { ++backNotifications; });
-    contextView->backButton()->click();
+    contextView->goBack();
     check(contextView->currentLocation().refersToSameDocument(first)
               && contextView->currentLocation().line == first.line
               && controller.floatingWindow()->resource().title

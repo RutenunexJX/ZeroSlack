@@ -19,7 +19,7 @@ protected:
         auto color = palette().color(isEnabled() ? QPalette::Active : QPalette::Disabled, QPalette::Text);
         color.setAlphaF(.68); painter.setPen(color);
         painter.drawText(rect().adjusted(20, 0, -2, 0), Qt::AlignVCenter | Qt::AlignLeft, text());
-        if (underMouse() || hasFocus()) RoundedIcons::icon(isChecked() ? RoundedIcons::Down : RoundedIcons::Right)
+        if (underMouse() || hasFocus()) RoundedIcons::icon(isChecked() ? RoundedIcons::TreeExpanded : RoundedIcons::TreeCollapsed)
             .paint(&painter, QRect(1, (height()-14)/2, 14, 14));
     }
     void enterEvent(QEnterEvent* event) override { QPushButton::enterEvent(event); update(); }

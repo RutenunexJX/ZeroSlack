@@ -90,16 +90,7 @@ QIcon contextProviderIcon(
         return icon;
     }
 
-    using namespace RoundedIcons;
-    if (providerId == QStringLiteral("temporaryEditor")) return icon(File);
-    if (providerId == QStringLiteral("rtlInsight.kernel")) return icon(KernelGraph);
-    if (providerId == QStringLiteral("rtlInsight.block")) return icon(ModuleGraph);
-    if (providerId == QStringLiteral("rtlInsight.hotspot")) return icon(HotspotGraph);
-    if (providerId == QStringLiteral("rtlInsight.state")) return icon(StateGraph);
-    if (providerId == QStringLiteral("liveInsights")) return icon(Activity);
-    if (providerId == QStringLiteral("xips")) return icon(IpCatalog);
-    if (providerId == QStringLiteral("simdock")) return icon(Simulation);
-    return icon(Bookmark);
+    return RoundedIcons::icon(RoundedIcons::providerKind(providerId));
 }
 }
 
@@ -573,10 +564,12 @@ bool ContextWorkspaceController::registerProvider(
         id,
         iconName,
         window ? window->style() : nullptr);
-    if (!railValue->addEntry(entry))
-        return false;
-    railValue->setEntryVisible(id, !unpinnedProviders.contains(id));
-    toolbox->addEntry(id, entry.title, entry.icon, !unpinnedProviders.contains(id));
+    if (provider->showInToolRail()) {
+        if (!railValue->addEntry(entry))
+            return false;
+        railValue->setEntryVisible(id, !unpinnedProviders.contains(id));
+        toolbox->addEntry(id, entry.title, entry.icon, !unpinnedProviders.contains(id));
+    }
     provider->setProviderStateChangedHandler([this]() {
         if (!restoringState)
             emit workspaceStateChanged();
@@ -632,12 +625,15 @@ QStringList ContextWorkspaceController::providerIds() const
 
 bool ContextWorkspaceController::isProviderPinned(const QString& id) const
 {
-    return providers.contains(id) && !unpinnedProviders.contains(id);
+    const auto provider = providers.find(id);
+    return provider != providers.end() && provider->second->showInToolRail()
+        && !unpinnedProviders.contains(id);
 }
 
 bool ContextWorkspaceController::setProviderPinned(const QString& id, bool pinned)
 {
-    if (!providers.contains(id)) return false;
+    const auto provider = providers.find(id);
+    if (provider == providers.end() || !provider->second->showInToolRail()) return false;
     if (pinned) unpinnedProviders.remove(id);
     else unpinnedProviders.insert(id);
     railValue->setEntryVisible(id, pinned);
@@ -1483,9 +1479,12 @@ ContextWorkspaceRestoreResult ContextWorkspaceController::restoreState(
     if (dockValue && dockHostValue) {
         const bool previousApplying = applyingDockWidth;
         applyingDockWidth = true;
+        // The shared region also owns document tabs, which are restored before
+        // context resources and must not be hidden just because no tool is pinned.
+        const bool hasRightPages = dockHostValue->pageRegistry()->regionHasPages(QStringLiteral("right"));
+        if (hasRightPages) sidebarPages->setCurrentWidget(dockHostValue);
         applyDockVisibility(
-            state.dockVisible
-            && dockHostValue->areaResourceCount(false) > 0, false, false);
+            state.dockVisible && hasRightPages, false, false);
         setBottomAreaVisible(state.bottomDockVisible && dockHostValue->areaResourceCount(true) > 0, false);
         if (!sharedLeftHost) leftDockValue->setVisible(state.leftDockVisible && dockHostValue->areaResourceCount(Qt::LeftDockWidgetArea) > 0);
         if (!sharedLeftHost && !preserveRestoredDockGeometry && window && leftDockValue->isVisible()) {
@@ -1498,7 +1497,7 @@ ContextWorkspaceRestoreResult ContextWorkspaceController::restoreState(
             && state.dockWidth > 0
             && !dockValue->isFloating()
             && window
-            && dockHostValue->resourceCount() > 0) {
+            && hasRightPages) {
             window->resizeDocks(
                 {dockValue},
                 {boundedDockWidthForWindow(

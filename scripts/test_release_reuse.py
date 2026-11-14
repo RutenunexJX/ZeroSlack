@@ -8,6 +8,34 @@ import release_gate as gate
 from test_policy import PolicyError, digest, dump, read_json, require
 
 
+def verify_wave_component_identity(root,check):
+    fixture=Path(root)/'wave-identity-fixture';component=fixture/'components/tickx';component.mkdir(parents=True)
+    metadata={'version':'fixture','baseCommit':'frozen-base','sourceDirty':True,
+              'sourcePatchSha256':'a'*64,'capabilities':['wave-style/v1','wave-workbench/v1']}
+    names=['wavewidgets.dll','WaveWorkbenchEla.dll','LICENSE','NOTICE','THIRD-PARTY-NOTICES.md','build-info.json']
+    for name in names:
+        if name=='build-info.json': dump(component/name,metadata)
+        else: (component/name).write_bytes(('non-executable contract fixture: '+name).encode())
+    info={**metadata,'revision':metadata['baseCommit']}
+    dump(fixture/'build-info.json',{'nativeComponents':{'tickx':info}})
+    receipt={'configuration':{'ZEROSLACK_TICKX_WIDGETS_ROOT':'frozen-fixture'},
+             'packageInputs':{'components/tickx/'+name:digest(component/name) for name in names}}
+    gate.verify_tickx_payload(fixture,receipt);check(True,'Wave component accepts complete frozen source identity')
+    def rejected(action,name):
+        try: action()
+        except PolicyError: check(True,name)
+        else: check(False,name)
+    for name in names:
+        path=component/name;original=path.read_bytes();path.write_bytes(original+b'changed')
+        rejected(lambda:gate.verify_tickx_payload(fixture,receipt),'Wave component rejects changed '+name)
+        path.write_bytes(original)
+    for field,value in [('revision','other-base'),('sourceDirty',False),('sourcePatchSha256','b'*64),('capabilities',[])]:
+        dump(fixture/'build-info.json',{'nativeComponents':{'tickx':{**info,field:value}}})
+        rejected(lambda:gate.verify_tickx_payload(fixture,receipt),'Wave component rejects mismatched '+field)
+    dump(fixture/'build-info.json',{'nativeComponents':{'tickx':info}})
+    gate.verify_tickx_payload(fixture,receipt);check(True,'Wave component restored fixture remains valid')
+
+
 def verify_first_package_sources(root,check):
     fixture=Path(root)/'first-package-fixture';fixture.mkdir()
     native={'version':'2.16.2','channel':'formal','dirty':False,'sourceDirty':False,
@@ -194,6 +222,7 @@ def verify_release_reuse(root,check):
         # A missing imported record fails before either execution path is entered.
         rejected(lambda:gate.reuse(root/'missing.json',gate.REPOSITORY,root/'unused.json'),'missing evidence cannot trigger silent fallback execution')
     verify_first_package_sources(root,check)
+    verify_wave_component_identity(root,check)
     verify_install_manifest(root,check)
     return {'status':'passed','root':str(root)}
 

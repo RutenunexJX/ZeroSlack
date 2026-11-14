@@ -420,6 +420,25 @@ qreal EditorViewProjection::documentHeight() const
     return projectedDocumentHeight;
 }
 
+qreal EditorViewProjection::sourceScrollFraction(MyCodeEditor* editor,int sourceLine,int column) const
+{
+    if(!editor || !editor->document())return 0;
+    const auto block=editor->document()->findBlockByNumber(sourceLine);if(!block.isValid())return 0;
+    auto* bar=editor->verticalScrollBar();
+    const qreal extent=qMax(1,bar->maximum()-bar->minimum()+bar->pageStep());
+    const auto* layout=block.layout();
+    const auto textLine=layout?layout->lineForTextPosition(qBound(0,column,block.length()-1)):QTextLine();
+    if(!active())return qBound<qreal>(0,(block.firstLineNumber()+(textLine.isValid()?textLine.lineNumber():0))/extent,1);
+    int row=visibleRowForSourceLine(sourceLine);bool folded=row<0;
+    if(folded){
+        int first=0,last=visibleRowCount();
+        while(first<last){const int middle=(first+last)/2;if(sourceLineForVisibleRow(middle)<=sourceLine)first=middle+1;else last=middle;}
+        row=qMax(0,first-1);
+    }
+    if(row<0 || row>=visibleRowCount())return 0;
+    return qBound<qreal>(0,(rowTop(row)+(!folded && textLine.isValid()?textLine.y():0))/extent,1);
+}
+
 QTextCursor EditorViewProjection::cursorForPosition(
     MyCodeEditor* editor,
     const QPoint& position) const

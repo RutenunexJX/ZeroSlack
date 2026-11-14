@@ -194,6 +194,8 @@ public:
         const std::shared_ptr<PreparedFactsState>& state,
         const QString& fileName, const QString& content);
     static qsizetype logicalFactsBytes(const std::shared_ptr<PreparedFactsState>& state);
+    bool canInstallPreparedDocumentFacts(
+        const std::shared_ptr<PreparedFactsState>& state) const;
     // commit must not emit signals or call back into this service. It runs
     // after facts validation under the same lock as the facts installation.
     PreparedFactsInstallResult installPreparedDocumentFacts(
@@ -235,6 +237,7 @@ private:
     std::shared_ptr<const DocumentSnapshot> readSnapshot;
 
     SemanticIndex* semanticIndex() const;
+    bool preparedFactsCurrentLocked(const PreparedFactsState& state) const;
     void registerComputation(
         std::uint64_t computationRevision,
         const QStringList& affectedFiles);

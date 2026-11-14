@@ -18,14 +18,17 @@ class ZEROSLACK_API AssociatedBlockPage final : public QWidget {
     Q_OBJECT
 public:
     AssociatedBlockPage(SharedDocument* document, const QString& blockId, QWidget* parent = nullptr,
-                        const QString& viewId = {}, const EditorAssociatedBlock* prepared = nullptr);
+                        const QString& viewId = {}, const EditorAssociatedBlock* prepared = nullptr,
+                        EditorBlockContent* retained = nullptr);
     ~AssociatedBlockPage() override;
     SharedDocument* ownerDocument() const;
     DocumentBlockModel* model() const;
     QString blockId() const { return id; }
     QString viewIdentity() const { return view; }
     QString title() const;
-    void finishEditing();
+    bool finishEditing();
+    EditorBlockContent* takeContent();
+    void adoptContent(EditorBlockContent* value);
     void replay(bool redo);
 signals:
     void statusChanged();
@@ -35,6 +38,7 @@ signals:
 protected:
     bool eventFilter(QObject*, QEvent*) override;
     void resizeEvent(QResizeEvent*) override;
+    void paintEvent(QPaintEvent*) override;
 private:
     QPointer<SharedDocument> document;
     QString id, view;
@@ -42,9 +46,10 @@ private:
     EditorBlockContent* content = nullptr;
     QLabel *origin = nullptr, *description = nullptr;
     PinloomHostClient* client = nullptr;
-    QToolButton *grip = nullptr, *remove = nullptr;
+    QToolButton *grip = nullptr, *remove = nullptr, *edit = nullptr;
     QWidget* tools = nullptr;
     bool updating = false;
     void refresh();
+    void refreshControls();
     void openOriginal();
 };

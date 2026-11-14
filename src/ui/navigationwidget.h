@@ -30,6 +30,7 @@
 #include <atomic>
 #include <memory>
 class DesignHierarchyModel;
+struct DesignTreeProjection;
 
 class EditorSplitController;
 
@@ -76,7 +77,7 @@ public:
     void updateFileHierarchy(
         const QStringList& files,
         const QList<WorkspaceVirtualSourceGroup>& groups);
-    void updateDesignHierarchy(const DesignHierarchyReport& report);
+    void updateDesignHierarchy(const DesignHierarchyReport& report, std::shared_ptr<const DesignTreeProjection> projection = {});
     void clearDesignHierarchy();
     void setDesignProjectExpanded(const QString& projectId, bool expanded);
     bool selectDesignInstance(const QString& instancePath,bool reveal=false);
@@ -145,6 +146,7 @@ private:
     QWidget* designTab = nullptr;
     QTreeView* designTreeWidget = nullptr;
     QVBoxLayout* designTabLayout = nullptr;
+    std::shared_ptr<const DesignTreeProjection> currentDesignProjection;
     DesignHierarchyModel* designModel = nullptr;
     DesignHierarchyModel* designSearchModel = nullptr;
     QLabel* designStateLabel = nullptr;

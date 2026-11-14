@@ -434,6 +434,7 @@ QJsonObject sessionObject(
         QStringLiteral("navigationDesignQuery"),
         state.ui.navigationDesignQuery);
     ui.insert(QStringLiteral("navigationActiveTab"), state.ui.navigationActiveTab);
+    ui.insert(QStringLiteral("editorViewMode"),state.ui.editorViewMode);
     ui.insert(
         QStringLiteral("tabGroupingMode"),
         state.ui.tabGroupingMode);
@@ -721,6 +722,8 @@ void restoreUi(
         object.value(
             QStringLiteral("tabGroupingMode"))
             .toString(QStringLiteral("none"));
+    ui->editorViewMode=object.value(QStringLiteral("editorViewMode")).toString();
+    if(ui->editorViewMode!="clean" && ui->editorViewMode!="expanded")ui->editorViewMode="editing";
     if (object.contains(QStringLiteral("panelLayout"))) {
         const QJsonObject panelLayout =
             object.value(QStringLiteral("panelLayout")).toObject();

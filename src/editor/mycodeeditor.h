@@ -1,6 +1,7 @@
 #ifndef MYCODEEDITOR_H
 #define MYCODEEDITOR_H
 class DocumentBlockModel;
+class EditorBlockContent;
 
 #include "zeroslackexport.h"
 
@@ -267,10 +268,15 @@ public:
                                 int finalCursor, QString* error = nullptr);
     void cancelSlashSearch();
     void addBlockAssociationMenu(QMenu* menu);
+    void populateAssociatedBlockMenu(QMenu* menu, const QString& id);
     DocumentBlockModel* blockModel() const;
     void finishBlockEditing();
     void selectAssociatedBlock(const QString& id, bool edit = false);
+    EditorBlockContent* takeAssociatedBlockContent(const QString& id);
+    void adoptAssociatedBlockContent(const QString& id, EditorBlockContent* content);
     int associatedBlockViewCount() const;
+    bool associatedBlocksVisible() const { return !property("blockMarkersOnly").toBool(); }
+    void setAssociatedBlocksVisible(bool visible);
     void startTemplateSlotMode(int insertionStart,
                                int insertedLength,
                                const CodeTemplateSlotList& slotMetadata);
@@ -482,6 +488,7 @@ private:
     QList<MyCodeEditor*> sharedDocumentViewsForFormatting() const;
 
 signals:
+    void viewProjectionChanged();
     void editorBlockInsertRequested(const QVariantMap& preset, const QTextCursor& sourceCursor);
     void editorBlockPageRequested(const QString& blockId);
     void editorBlockClipboardRequested(const QString& blockId, bool cut);

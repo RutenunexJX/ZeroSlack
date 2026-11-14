@@ -8,8 +8,8 @@
 #include "inlinecommandmode.h"
 #include "commandlayercommandregistry.h"
 #include "customabbreviationservice.h"
+#include "diagnosticservice.h"
 #include "diagnosticsrefreshcontroller.h"
-#include "diagnosticnavigationservice.h"
 #include "documentmodel.h"
 #include "effectivevalueservice.h"
 #include "editorsemanticcontextservice.h"
@@ -10198,51 +10198,6 @@ int main(int argc, char** argv) {
         {},
         {},
         {diagnosticNavErrorB, diagnosticNavWarningA, diagnosticNavErrorA}));
-    DiagnosticNavigationService diagnosticNavigation;
-    DiagnosticNavigationQuery navQuery;
-    navQuery.currentFileName = diagnosticNavFileA;
-    navQuery.currentLine = 3;
-    navQuery.currentColumn = 1;
-    navQuery.scope = DiagnosticPanelScope::CurrentFile;
-    navQuery.severity = DiagnosticSeverityFilter::All;
-    DiagnosticNavigationResult navResult =
-        diagnosticNavigation.navigate(navQuery);
-    expectBool("Diagnostic navigation current file next",
-               navResult.found
-                   && navResult.diagnostic.diagnostic.fileName
-                          == diagnosticNavFileA
-                   && navResult.diagnostic.diagnostic.line == 5,
-               true);
-    navQuery.previous = true;
-    navResult = diagnosticNavigation.navigate(navQuery);
-    expectBool("Diagnostic navigation current file previous",
-               navResult.found
-                   && navResult.diagnostic.diagnostic.fileName
-                          == diagnosticNavFileA
-                   && navResult.diagnostic.diagnostic.line == 2,
-               true);
-    navQuery.previous = false;
-    navQuery.currentLine = 1;
-    navQuery.severity = DiagnosticSeverityFilter::Errors;
-    navResult = diagnosticNavigation.navigate(navQuery);
-    expectBool("Diagnostic navigation severity filter",
-               navResult.found
-                   && navResult.diagnostic.diagnostic.fileName
-                          == diagnosticNavFileA
-                   && navResult.diagnostic.diagnostic.line == 2,
-               true);
-    navQuery.scope = DiagnosticPanelScope::WorkspaceFiles;
-    navQuery.severity = DiagnosticSeverityFilter::All;
-    navQuery.workspaceFiles = {diagnosticNavFileA, diagnosticNavFileB};
-    navQuery.currentFileName = diagnosticNavFileA;
-    navQuery.currentLine = 6;
-    navResult = diagnosticNavigation.navigate(navQuery);
-    expectBool("Diagnostic navigation workspace wraps by location",
-               navResult.found
-                   && navResult.diagnostic.diagnostic.fileName
-                          == diagnosticNavFileB
-                   && navResult.diagnostic.diagnostic.line == 1,
-               true);
     DiagnosticPanelQueryOptions ownerOptions;
     ownerOptions.scope = DiagnosticPanelScope::AllFiles;
     const DiagnosticReport ownerReport =
@@ -10258,18 +10213,6 @@ int main(int argc, char** argv) {
     }
     expectBool("Diagnostic owner display names",
                sawSlangOwner && sawSemanticOwner,
-               true);
-    DiagnosticNavigationQuery noDiagnosticQuery;
-    noDiagnosticQuery.currentFileName = diagnosticNavFileA;
-    noDiagnosticQuery.scope = DiagnosticPanelScope::WorkspaceFiles;
-    noDiagnosticQuery.workspaceFiles = {diagnosticNavFileA};
-    noDiagnosticQuery.severity = DiagnosticSeverityFilter::Info;
-    const DiagnosticNavigationResult noDiagnosticResult =
-        diagnosticNavigation.navigate(noDiagnosticQuery);
-    expectBool("Diagnostic navigation reports empty result",
-               !noDiagnosticResult.found
-                   && noDiagnosticResult.failureReason
-                          == QStringLiteral("No diagnostics"),
                true);
     SemanticIndex::getInstance()->clearSnapshot();
 

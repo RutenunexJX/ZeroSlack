@@ -50,6 +50,7 @@ public:
     QString statusText() const;
     QString previewState() const { return selectedPreviewState; }
     QString previewReason() const { return selectedPreviewReason; }
+    void setOriginalSourceOnly();
     void setLinkHandler(LinkHandler handler);
     void setCreateLinkHandler(CreateLinkHandler handler);
     void setLinkSource(const QVariantMap& source);
@@ -95,6 +96,7 @@ private:
     QVariantList activeBoundEntries;
     bool boundMode = false;
     bool resumeReadRequests = false;
+    bool originalSourceOnly = false;
     LinkHandler linkHandler;
     CreateLinkHandler createLinkHandler;
     quint64 linkSourceGeneration = 0;

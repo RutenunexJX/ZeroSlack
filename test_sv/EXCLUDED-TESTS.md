@@ -104,7 +104,6 @@
 | ela_scoped_search_panel_test | run | scoped_search_panel_test | Registered test retained in the default safe set; runtime failures are not exclusions. | 2026-11-06 |
 | ela_settings_center_panel_test | run | settings_center_panel_test | Registered test retained in the default safe set; runtime failures are not exclusions. | 2026-11-06 |
 | ela_signal_usage_hotspot_panel_test | run | signal_usage_hotspot_panel_test | Registered test retained in the default safe set; runtime failures are not exclusions. | 2026-11-06 |
-| ela_temporary_editor_context_search_test | run | temporary_editor_context_search_test | Registered test retained in the default safe set; runtime failures are not exclusions. | 2026-11-06 |
 | ela_ui_dialog_contract_1.25_test | run | ui_dialog_contract_test | Registered test retained in the default safe set; runtime failures are not exclusions. | 2026-11-06 |
 | ela_ui_dialog_contract_1.5_test | run | ui_dialog_contract_test | Registered test retained in the default safe set; runtime failures are not exclusions. | 2026-11-06 |
 | ela_ui_dialog_contract_1_test | run | ui_dialog_contract_test | Registered test retained in the default safe set; runtime failures are not exclusions. | 2026-11-06 |

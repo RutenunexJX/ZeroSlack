@@ -72,7 +72,14 @@ QJsonObject DocumentBlockTransfer::snapshot(SharedDocument* source, const QStrin
     const auto* block=model->find(id); if (!block) { if (error) *error="The selected block no longer exists."; return {}; }
     auto metadata=model->serialize();
     for (const auto& item:metadata.value("blocks").toArray()) if (item.toObject().value("id")==id) {
-        metadata["blocks"]=QJsonArray{item}; break;
+        auto portable=item.toObject();
+        if (block->type=="reference") {
+            const auto resolved=model->presentation(id);
+            if (resolved.uri.isEmpty() || resolved.removedReference()) { if(error)*error="Resolve the reference before copying it."; return {}; }
+            portable["uri"]=resolved.uri; portable["caption"]=resolved.caption;
+            portable["reference"]=QJsonObject::fromVariantMap(DocumentBlockModel::positionReference(block->reference.value("display","embedded").toString()));
+        }
+        metadata["blocks"]=QJsonArray{portable}; break;
     }
     QJsonObject result{{"format","zeroslack.block-clipboard"},{"version",1},{"metadata",metadata}};
     if (!block->asset.isEmpty()) {

@@ -17,8 +17,18 @@ struct EditorAssociatedBlock {
     int order = 0, width = 480, height = 160;
     bool missing = false, collapsed = false;
     bool autoHeight = false, detached = false;
-    QVariantMap appearance;
+    QVariantMap appearance, reference;
+    QString referenceStatus; // Resolved view state; never serialized.
     quint64 revision = 1;
+    bool compactReference() const { return type == "reference" && reference.value("display") == "compact"; }
+    bool removedReference() const { return type == "reference" && reference.value("display") == "removed"; }
+};
+
+struct ReferencePresentation {
+    QString uri, caption, status;
+    int start = 0, end = 0;
+    bool missing = false;
+    bool operator==(const ReferencePresentation&) const = default;
 };
 
 class FormatterTriviaPositionMapper;
@@ -32,6 +42,10 @@ public:
     static DocumentBlockModel* get(QTextDocument* document);
     const QList<EditorAssociatedBlock>& items() const { return blocks; }
     const EditorAssociatedBlock* find(const QString& id) const;
+    EditorAssociatedBlock presentation(const QString& id) const;
+    void setReferencePresentations(const QHash<QString,ReferencePresentation>& values);
+    static QVariantMap positionReference(const QString& display = "embedded");
+    static bool validReference(const QVariantMap& value);
     QString insert(const QString& type, const QTextCursor& source, const QString& text = {});
     QString insert(EditorAssociatedBlock block, const QTextCursor& source, std::function<bool(const QString&)> prepare = {});
     QStringList insertMany(QList<EditorAssociatedBlock> values, const QTextCursor& source, const QString& beforeId = {});
@@ -46,6 +60,8 @@ public:
     void editText(const QString& id, const QString& text);
     void endTextSession();
     bool flushContents(QString* error = nullptr);
+    int presentationHeight(const QString& id,int fallback) const { return presentationHeights.value(id,fallback); }
+    void setPresentationHeight(const QString& id,int height);
     bool undoAssociation(bool redo);
     void beginTextReplay();
     void endTextReplay();
@@ -70,7 +86,10 @@ public:
     void setError(const QString& message);
     void cloneIdentity();
 signals:
+    void referenceRetryRequested(const QString& id);
+    void presentationMoved(DocumentBlockModel* target,const QString& id);
     void contentsFlushRequested(QString* error);
+    void presentationChanged();
     void changed();
     void dirtyChanged(bool dirty);
     void historyChanged();
@@ -95,6 +114,8 @@ private:
     int applied = 0;
     struct AnchorState { QHash<QString, EditorAssociatedBlock> entries; quint64 stamp = 0; };
     QMap<int, AnchorState> textStates;
+    QHash<QString,int> presentationHeights;
+    QHash<QString,ReferencePresentation> referencePresentations;
     bool replaying = false;
     bool formatting = false;
     bool textBarrier = false;

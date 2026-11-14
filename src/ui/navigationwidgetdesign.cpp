@@ -88,6 +88,7 @@ void NavigationWidget::startDesignSearch()
     if (designSearchFilter.isEmpty()) return;
     if (designSearchWatcher) { designSearchCancellation->store(true); return; }
     const auto report = designModel->report();
+    const auto projection = designModel->projection();
     const auto query = designSearchFilter;
     const auto generation = designSearchGeneration;
     const auto cancellation = std::make_shared<std::atomic_bool>(false);
@@ -95,11 +96,11 @@ void NavigationWidget::startDesignSearch()
     auto* watcher = new QFutureWatcher<QList<QString>>(this);
     designSearchWatcher = watcher;
     designTreeWidget->setProperty("designSearchPending", true);
-    connect(watcher, &QFutureWatcher<QList<QString>>::finished, this, [this, watcher, report, query, generation, cancellation] {
+    connect(watcher, &QFutureWatcher<QList<QString>>::finished, this, [this, watcher, report, projection, query, generation, cancellation] {
         const auto ids = watcher->result(); designSearchWatcher = nullptr; watcher->deleteLater();
         if (!cancellation->load() && generation == designSearchGeneration && query == designSearchFilter
             && report == designModel->report()) {
-            designSearchModel->setSearchResults(report, ids);
+            designSearchModel->setSearchResults(report, ids, projection);
             setDesignTreeModel(designSearchModel);
             refreshSimulationTop();
             designTreeWidget->setProperty("designSearchPending", false);
@@ -107,13 +108,15 @@ void NavigationWidget::startDesignSearch()
         } else if (!designSearchFilter.isEmpty()) designSearchTimer->start();
         else designTreeWidget->setProperty("designSearchPending", false);
     });
-    watcher->setFuture(QtConcurrent::run([report, query, cancellation] {
+    watcher->setFuture(QtConcurrent::run([projection, query, cancellation] {
         QList<QString> matches;
-        for (const auto& node : report->nodes) {
+        for (const auto& row : projection->nodes) {
+            const auto& node = row.semantic;
             if (cancellation->load()) return QList<QString>();
             if (node.instancePath.contains(query, Qt::CaseInsensitive)
                 || node.moduleType.contains(query, Qt::CaseInsensitive)
-                || node.definitionFile.contains(query, Qt::CaseInsensitive)) matches.append(node.id);
+                || row.file.contains(query, Qt::CaseInsensitive) || row.name.contains(query, Qt::CaseInsensitive))
+                if(!row.category)matches.append(row.id);
         }
         return matches;
     }));

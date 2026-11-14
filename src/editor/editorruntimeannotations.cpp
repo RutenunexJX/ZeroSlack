@@ -38,7 +38,6 @@ constexpr const char* kDiagnosticAnnotationSource =
     "semantic-diagnostics";
 constexpr const char* kGhostAnnotationSource =
     "semantic-ghosts";
-constexpr int kDiagnosticOverviewBucketCount = 1024;
 
 int diagnosticSeverityRank(SemanticDiagnostic::Severity severity)
 {
@@ -545,7 +544,7 @@ void MyCodeEditorState::setDiagnosticHighlights(
             layerDiagnostics);
     }
 
-    rebuildDiagnosticOverviewIndex(editor);
+    if(diagnosticOverview)diagnosticOverview->schedule();
     refreshDiagnosticPresentation(editor);
     editor->setProperty(kDiagnosticsEmptyProperty, diagnostics.isEmpty());
     gutter.handleUpdateRequest(editor, editor->viewport()->rect(), 0);
@@ -559,42 +558,13 @@ void MyCodeEditorState::clearDiagnosticHighlights(MyCodeEditor* editor)
     diagnostics.clear();
     diagnosticIndexesByLine.clear();
     diagnosticSeverityByLine.clear();
-    diagnosticOverviewSeverityByBucket.clear();
+    if(diagnosticOverview)diagnosticOverview->schedule();
     annotationLayer.removeSource(
         QString::fromLatin1(kDiagnosticAnnotationSource));
     selections.highlightDiagnostics(editor, {});
     editor->setProperty(kDiagnosticsEmptyProperty, true);
     gutter.handleUpdateRequest(editor, editor->viewport()->rect(), 0);
     editor->viewport()->update();
-}
-
-void MyCodeEditorState::rebuildDiagnosticOverviewIndex(
-    const MyCodeEditor* editor)
-{
-    diagnosticOverviewSeverityByBucket.clear();
-    if (!editor || editor->blockCount() <= 0)
-        return;
-
-    const int denominator = qMax(1, editor->blockCount() - 1);
-    for (auto it = diagnosticSeverityByLine.cbegin();
-         it != diagnosticSeverityByLine.cend();
-         ++it) {
-        const int bucket = qBound(
-            0,
-            qRound(static_cast<qreal>(it.key())
-                   / denominator
-                   * (kDiagnosticOverviewBucketCount - 1)),
-            kDiagnosticOverviewBucketCount - 1);
-        const auto existing =
-            diagnosticOverviewSeverityByBucket.constFind(bucket);
-        if (existing
-                == diagnosticOverviewSeverityByBucket.constEnd()
-            || diagnosticSeverityRank(it.value())
-                   > diagnosticSeverityRank(existing.value())) {
-            diagnosticOverviewSeverityByBucket.insert(
-                bucket, it.value());
-        }
-    }
 }
 
 void MyCodeEditorState::refreshDiagnosticPresentation(
@@ -845,6 +815,7 @@ void MyCodeEditorState::setAnnotationDisplayOptions(
     if (annotationDisplayOptions == normalized)
         return;
     annotationDisplayOptions = normalized;
+    if(diagnosticOverview)diagnosticOverview->schedule();
     if (!editor)
         return;
     if (!annotationDisplayOptions.enabled)

@@ -51,6 +51,9 @@ if source.is_relative_to(target) or target.is_relative_to(source):
     raise RuntimeError('Resource source and target overlap')
 source_files, source_dirs = inventory(source)
 target_files, target_dirs = inventory(target)
+for path in source_files:
+    if any(part.lower().startswith('blocksuite') or part.lower() in ('blocks', 'modified-blocksuite') for part in path.parts):
+        raise RuntimeError('Rebuild document resources without the retired BlockSuite editor: ' + str(path))
 if source_files.keys() & target_dirs or source_dirs & target_files.keys():
     raise RuntimeError('Resource source and target have conflicting file/directory types')
 

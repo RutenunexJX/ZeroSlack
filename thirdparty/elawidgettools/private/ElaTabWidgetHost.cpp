@@ -519,7 +519,7 @@ bool ElaTabWidgetHost::commitDrop(QMimeData* mime, const QPoint& position)
     ElaTabWidget* target = group;
     if (area != ElaTabWidget::DropArea::Center && split) target = split(group, area);
     const int index = area == ElaTabWidget::DropArea::Center
-        ? group->tabBar()->tabAt(group->tabBar()->mapFrom(group, position)) : -1;
+        ? group->tabBar()->tabAt(group->tabBar()->mapFromGlobal(group->mapToGlobal(position))) : -1;
     if (!target || !data->source->transferHostedTab(data->page, target, index)) return false;
     data->source = target; data->committed = true;
     if (data->page) data->page->setFocus(Qt::OtherFocusReason);
@@ -566,7 +566,7 @@ bool ElaTabWidgetHost::eventFilter(QObject* watched, QEvent* event)
     if (watched == group->tabBar())
         return false; // The original ElaTabBar enter/leave/drop route handles this.
     auto* widget = qobject_cast<QWidget*>(watched);
-    const QPoint position = widget->mapTo(group, drop->position().toPoint());
+    const QPoint position = group->mapFromGlobal(widget->mapToGlobal(drop->position().toPoint()));
     const auto area = areaAt(position);
     if (event->type() != QEvent::Drop) {
         showIndicator(area);

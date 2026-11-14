@@ -6,6 +6,8 @@
 #include <QLabel>
 #include <QVBoxLayout>
 #include <QFileInfo>
+#include <QListWidget>
+#include <QPlainTextEdit>
 
 PinloomReferencePicker::PinloomReferencePicker(PinloomHostClient* value, const QString& initialUri, QWidget* parent)
     : UiDialog(parent), client(value)
@@ -13,7 +15,11 @@ PinloomReferencePicker::PinloomReferencePicker(PinloomHostClient* value, const Q
     setObjectName(QStringLiteral("pinloomReferencePicker")); setWindowTitle(tr("Insert reference"));
     auto* layout = new QVBoxLayout(this); layout->setContentsMargins(16,40,16,16);
     tabs = UiControls::tabWidget(this); tabs->setObjectName(QStringLiteral("referencePickerMode"));
-    browser = new PinloomContextView(client, tabs); tabs->addTab(browser,tr("Find in Pinloom"));
+    browser = new PinloomContextView(client, tabs);
+    browser->setOriginalSourceOnly();
+    browser->resultList()->setMinimumHeight(browser->fontMetrics().height()*6);
+    browser->previewEditor()->setMinimumHeight(browser->previewEditor()->fontMetrics().height()*8);
+    tabs->addTab(browser,tr("Find in Pinloom"));
     auto* linkPage = new QWidget(tabs); auto* linkLayout = new QVBoxLayout(linkPage);
     link = UiControls::lineEdit(linkPage); link->setObjectName(QStringLiteral("referencePickerLink"));
     link->setPlaceholderText(tr("pinloom://… · file:///… · https://…"));
@@ -25,7 +31,7 @@ PinloomReferencePicker::PinloomReferencePicker(PinloomHostClient* value, const Q
     auto* cancel = UiControls::pushButton(tr("Cancel"),this); cancel->setObjectName(QStringLiteral("referencePickerCancel")); actions->addWidget(cancel);
     insert = UiControls::pushButton(tr("Insert reference"),this); insert->setObjectName(QStringLiteral("referencePickerInsert")); actions->addWidget(insert);
     insert->setAutoDefault(false); insert->setEnabled(false); cancel->setDefault(true);
-    layout->addLayout(actions); resize(620,520);
+    layout->addLayout(actions); resize(720,680);
     loader = new PinloomPreviewImageLoader(this);
     connect(cancel,&QPushButton::clicked,this,&QDialog::reject);
     connect(insert,&QPushButton::clicked,this,[this] { updateSelection(); if(insert->isEnabled()) accept(); });

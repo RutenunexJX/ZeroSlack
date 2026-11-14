@@ -43,7 +43,9 @@ struct CrashRecoveryApplyResult :
 
 class DocumentRecoveryQueue;
 class AssociatedBlockPage;
+class EditorBlockContent;
 class AssociatedBlockDragController;
+class DocumentBlockModel;
 struct EditorAssociatedBlock;
 
 struct WorkspacePathMutation {
@@ -88,12 +90,16 @@ public:
     PdfDocumentPage* currentPdfDocument() const;
     QList<PdfDocumentPage*> pdfDocuments() const;
     bool hasCurrentDocument() const;
-    bool importMarkdownDocument(const QString& sourcePath = QString());
     bool openFileInTab(const QString& fileName);
+    bool addSemanticReference(const QVariantMap& source, const QString& uri, const QString& caption, QString* error);
     bool saveCurrentTab();
     bool saveAsCurrentTab();
     AssociatedBlockPage* currentAssociatedBlock() const;
     QList<AssociatedBlockPage*> associatedBlockPages() const;
+    QList<AssociatedBlockPage*> associatedBlockPresentations() const;
+    AssociatedBlockPage* createBlockPresentation(SharedDocument* document,const QString& id,QWidget* parent);
+    EditorBlockContent* takeBlockContent(SharedDocument* document,const QString& id);
+    bool blockDragInProgress() const;
     AssociatedBlockPage* openAssociatedBlock(SharedDocument* document, const QString& id,
         QTabWidget* group = nullptr, const QString& viewId = {});
     AssociatedBlockPage* detachAssociatedBlock(SharedDocument* document, const QString& id,
@@ -344,6 +350,7 @@ private:
     quint64 recoveryCaptureCharacters = 0;
     std::unique_ptr<EditorSplitController> splitController;
     std::unique_ptr<AssociatedBlockDragController> blockDragController;
+    QList<QPointer<AssociatedBlockPage>> blockPresentations;
     QHash<SharedDocument*, QSet<QString>> previousDetachedBlocks;
     QHash<SharedDocument*, QHash<QString, ClosedTabState>> blockPageLocations;
     QList<WorkspaceSessionTabState> pendingAssociatedTabs;
@@ -465,7 +472,9 @@ private:
     bool closePdfDocument(PdfDocumentPage* page, bool remember = true);
     bool closeAssociatedBlock(AssociatedBlockPage* page, bool confirm = true, bool remember = true);
     void reconcileAssociatedBlocks(SharedDocument* document);
+    void transferAssociatedBlockContent(SharedDocument* source,DocumentBlockModel* target,const QString& id);
     void updateAssociatedBlockTitle(AssociatedBlockPage* page);
+    void connectBlockPresentation(AssociatedBlockPage* page);
     AssociatedBlockPage* createAssociatedBlockPage(SharedDocument* document, const QString& id,
         QTabWidget* group, const QString& viewId = {}, const EditorAssociatedBlock* prepared = nullptr);
     bool confirmWebDocuments(const QList<WebDocumentPage*>& pages);

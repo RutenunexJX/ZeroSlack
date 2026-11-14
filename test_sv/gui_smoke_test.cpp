@@ -13146,9 +13146,8 @@ int main(int argc, char** argv)
                    && themeFloating
                    && themeFloating->isVisible()
                    && themeContextView
-                   && themeContextView->searchField()
-                   && themeContextView->searchField()->isVisible()
                    && themeContextView->editor()
+                   && themeContextView->editor()->isVisible()
                    && themeContextView->editor()->document()
                           == themeTextDocument
                    && themeContextController->rail()->isVisible()

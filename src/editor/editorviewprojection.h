@@ -54,6 +54,7 @@ public:
                              const QTextBlock& block) const;
     QPointF contentOffset(MyCodeEditor* editor) const;
     qreal documentHeight() const;
+    qreal sourceScrollFraction(MyCodeEditor*,int sourceLine,int column) const;
 
     QTextCursor cursorForPosition(MyCodeEditor* editor,
                                   const QPoint& position) const;

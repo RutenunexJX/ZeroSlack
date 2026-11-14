@@ -3,7 +3,6 @@
 
 #include "contextcontentprovider.h"
 #include "editorlocation.h"
-#include "editorsearchcandidate.h"
 
 #include <QPointer>
 
@@ -16,7 +15,6 @@ class ZEROSLACK_API TemporaryEditorContextProvider final
     : public IContextContentProvider
 {
 public:
-    using SearchProvider = EditorSearchTaskProvider;
 
     explicit TemporaryEditorContextProvider(TabManager* tabManager);
 
@@ -57,11 +55,9 @@ public:
         const ContextResource& resource,
         const QString& workspaceRoot) const override;
 
-    void setSearchProvider(SearchProvider provider);
 
 private:
     QPointer<TabManager> tabManagerValue;
-    SearchProvider searchProvider;
 };
 
 #endif // TEMPORARYEDITORCONTEXTPROVIDER_H

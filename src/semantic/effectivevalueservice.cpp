@@ -389,6 +389,36 @@ EffectiveValueService::prepareDocumentFactsState(
     return state;
 }
 
+bool EffectiveValueService::canInstallPreparedDocumentFacts(
+    const std::shared_ptr<PreparedFactsState>& state) const
+{
+    if (!state || state->computationRevision == 0)
+        return false;
+    QReadLocker locker(&factsLock);
+    return preparedFactsCurrentLocked(*state);
+}
+
+bool EffectiveValueService::preparedFactsCurrentLocked(const PreparedFactsState& state) const
+{
+    for (auto it = state.factsByFile.constBegin();
+         it != state.factsByFile.constEnd(); ++it) {
+        if (requestedRevisionByFile.value(it.key(), 0)
+                > state.computationRevision
+            || (factsByFile.contains(it.key())
+                && factsByFile.value(it.key()).computationRevision > state.computationRevision)) {
+            return false;
+        }
+    }
+
+    for (const QString& file : state.removedFiles) {
+        if (requestedRevisionByFile.value(file, 0) > state.computationRevision
+            || (factsByFile.contains(file)
+                && factsByFile.value(file).computationRevision > state.computationRevision))
+            return false;
+    }
+    return true;
+}
+
 EffectiveValueService::PreparedFactsInstallResult
 EffectiveValueService::installPreparedDocumentFacts(
     std::shared_ptr<PreparedFactsState> state,
@@ -400,22 +430,8 @@ EffectiveValueService::installPreparedDocumentFacts(
 
     auto retired = std::make_shared<RetiredFactsState>();
     QWriteLocker locker(&factsLock);
-    for (auto it = state->factsByFile.constBegin();
-         it != state->factsByFile.constEnd(); ++it) {
-        if (requestedRevisionByFile.value(it.key(), 0)
-                > state->computationRevision
-            || (factsByFile.contains(it.key())
-                && factsByFile.value(it.key()).computationRevision > state->computationRevision)) {
-            return {};
-        }
-    }
-
-    for (const QString& file : state->removedFiles) {
-        if (requestedRevisionByFile.value(file, 0) > state->computationRevision
-            || (factsByFile.contains(file)
-                && factsByFile.value(file).computationRevision > state->computationRevision))
-            return {};
-    }
+    if (!preparedFactsCurrentLocked(*state))
+        return {};
     // No state has changed on either side if the publication identity fails.
     // beginComputation / invalidation cannot interleave between this commit
     // and the facts swap, and neither operation calls an observer.

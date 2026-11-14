@@ -1,3 +1,4 @@
+#include "roundedicons.h"
 #include <QScrollArea>
 #include "uidialogs.h"
 #include "workspacechrome.h"
@@ -19,6 +20,7 @@
 #include "editingtimeservice.h"
 #include "editingtimewidget.h"
 #include "tabmanager.h"
+#include "documentreferenceservice.h"
 #include "workspacemanager.h"
 #include "projectmodel.h"
 #include "analysisscheduler.h"
@@ -47,7 +49,6 @@
 #include "pinloomcodelinkcoordinator.h"
 #include "pinloomcontextprovider.h"
 #include "pinloomhostclient.h"
-#include "diagnosticnavigationservice.h"
 #include "diagnosticservice.h"
 #include "editorappearancesettings.h"
 #include "ghostannotationservice.h"
@@ -77,7 +78,6 @@
 #include "settingscenterservice.h"
 #include "searchservice.h"
 #include "temporaryeditorcontextprovider.h"
-#include "temporaryeditorsearchprovider.h"
 #include "usertemplateservice.h"
 #include "activitylogpanelcoordinator.h"
 #include "activitylogservice.h"
@@ -154,24 +154,6 @@ struct SemanticDecorationBuildResult {
     SemanticDecorationReport report;
     qint64 elapsedMs = 0;
 };
-
-DiagnosticPanelScope diagnosticScopeFromProblemsCombo(QComboBox* combo)
-{
-    if (!combo)
-        return DiagnosticPanelScope::CurrentFile;
-
-    switch (combo->currentData().toInt()) {
-    case 1:
-        return DiagnosticPanelScope::WorkspaceFiles;
-    case 2:
-        return DiagnosticPanelScope::AllFiles;
-    default:
-        return DiagnosticPanelScope::CurrentFile;
-    }
-}
-
-
-
 
 }
 
@@ -314,6 +296,7 @@ MainWindow::MainWindow(QWidget *parent)
     inputFeedback->hide();
     titleStatusLayout->addWidget(inputFeedback);
     titleStatusLayout->addWidget(simulationWorkspace.get());
+    if(linkedContextController)titleStatusLayout->addWidget(linkedContextController->createModeButtons(titleStatus));
     titleStatusLayout->addWidget(new EditingTimeWidget(editingTimeService.get(), titleStatus));
     editorCoordinator->setTemplateInputFeedbackHandler([inputFeedback](const QString& feedback) {
         inputFeedback->setText(inputFeedback->fontMetrics().elidedText(feedback.simplified(), Qt::ElideRight, 340));
@@ -527,34 +510,6 @@ void MainWindow::refreshThemePresentation()
     update();
 }
 
-void MainWindow::refreshTemporaryEditorFileCatalog()
-{
-    if (!temporaryEditorSearchProvider)
-        return;
-    const QStringList cachedFiles = workspaceManager
-        ? workspaceManager->getAllFiles()
-        : QStringList{};
-    const QString workspaceRoot = workspaceManager
-        ? workspaceManager->getWorkspacePath()
-        : QString{};
-    temporaryEditorSearchProvider->setWorkspaceFiles(
-        cachedFiles, workspaceRoot, true);
-}
-
-void MainWindow::refreshTemporaryEditorSemanticCatalog()
-{
-    if (!temporaryEditorSearchProvider)
-        return;
-    const auto* index = SemanticIndex::getInstance();
-    const std::uint64_t revision = index->snapshotRevision();
-    // Every compatibility write and clear advances the one publication.
-    // Batch and file notifications for that publication share one build.
-    if (temporaryEditorCatalogSnapshotRevision == revision)
-        return;
-    temporaryEditorSearchProvider->setSemanticSnapshot(index->snapshot());
-    temporaryEditorCatalogSnapshotRevision = revision;
-}
-
 void MainWindow::setupEditorCentralArea()
 {
     QWidget* editorContainer = new QWidget(this);
@@ -576,43 +531,6 @@ void MainWindow::setupEditorCentralArea()
     documentReviewCoordinator->setupExternalConflictReviewUi(layout, editorContainer);
     if (tabManager) {
         tabManager->enableSplitLayout(editorSplitHost);
-        temporaryEditorSearchProvider =
-            std::make_unique<TemporaryEditorSearchProvider>();
-        refreshTemporaryEditorFileCatalog();
-        refreshTemporaryEditorSemanticCatalog();
-        if (workspaceManager) {
-            connectTemporaryEditorFileCatalogRefresh(
-                workspaceManager.get(),
-                this,
-                [this]() {
-                    refreshTemporaryEditorFileCatalog();
-                });
-            connect(workspaceManager.get(),
-                    &WorkspaceManager::workspaceActivated,
-                    this,
-                    [this](
-                        int, const QString&, const QString&) {
-                        // Drop the old workspace catalog before rebasing file
-                        // paths; otherwise every old symbol is rebuilt first.
-                        temporaryEditorCatalogSnapshotRevision = 0;
-                        if (temporaryEditorSearchProvider) {
-                            temporaryEditorSearchProvider
-                                ->setSemanticCatalog({});
-                        }
-                        refreshTemporaryEditorFileCatalog();
-                    });
-            connect(workspaceManager.get(),
-                    &WorkspaceManager::workspaceClosed,
-                    this,
-                    [this]() {
-                        temporaryEditorCatalogSnapshotRevision = 0;
-                        if (temporaryEditorSearchProvider) {
-                            temporaryEditorSearchProvider
-                                ->setSemanticCatalog({});
-                        }
-                        refreshTemporaryEditorFileCatalog();
-                    });
-        }
         connect(tabManager.get(),
                 &TabManager::tabGroupCreated,
                 this,
@@ -701,7 +619,8 @@ void MainWindow::setupWelcomePage()
 
 void MainWindow::refreshWelcomePage()
 {
-    if (linkedContextController && linkedContextController->isActive())
+    if (linkedContextController && linkedContextController->isActive()
+        && (workspaceManager->isWorkspaceOpen() || tabManager->editorSplitController()->regionHasPages("main")))
         return;
     if (!welcomePage || !recentProjectsLayout || !centralContentStack)
         return;
@@ -987,10 +906,6 @@ void MainWindow::setupManagerConnections()
             [this](const QString&, int) {
                 if (editorCoordinator)
                     editorCoordinator->refreshPinloomCodeLinkMarkers();
-                if (!analysisScheduler
-                    || !analysisScheduler->isSemanticAnalysisActive()) {
-                    refreshTemporaryEditorSemanticCatalog();
-                }
 
             });
     connect(analysisScheduler.get(),
@@ -1004,13 +919,6 @@ void MainWindow::setupManagerConnections()
             &AnalysisScheduler::workspaceSymbolAnalysisFinished,
             this,
             [this](const ProjectSnapshot&, int, int) {
-                const QVariant pending =
-                    property("pendingSemanticPublicationTelemetry");
-                const bool triviaOnly = pending.isValid()
-                    && pending.value<SemanticAnalysisTelemetry>().impact
-                           == SemanticChangeImpact::TriviaOnly;
-                if (!triviaOnly)
-                    refreshTemporaryEditorSemanticCatalog();
                 refreshDiagnosticsAnalysisState();
 
                 requestLiveInsightUpdates();
@@ -1521,12 +1429,9 @@ void MainWindow::setupFileCommandCoordinator()
     const QStringList actionIds = {
         QString::fromLatin1(ActionIds::FileNew),
         QString::fromLatin1(ActionIds::FileNewMarkdown),
-        QString::fromLatin1(ActionIds::FileNewBlocks),
         QString::fromLatin1(ActionIds::FileOpen),
         QString::fromLatin1(ActionIds::FileSave),
         QString::fromLatin1(ActionIds::FileSaveAs),
-        QString::fromLatin1(ActionIds::FileImportMarkdown),
-        QString::fromLatin1(ActionIds::FileExportMarkdown),
         QString::fromLatin1(ActionIds::WorkspaceOpen),
     };
     auto* fileMenu = UiControls::addMenu(menuBar(), tr("&File"));
@@ -1542,6 +1447,7 @@ void MainWindow::setupFileCommandCoordinator()
             descriptor->canonicalName, this);
         action->setObjectName(shortcutAlias.adapterKey);
         action->setProperty("actionId", descriptor->id);
+        action->setIcon(RoundedIcons::iconForAction(descriptor->id));
         action->setProperty(
             "executionRoute",
             descriptor->executionRoute);
@@ -1554,7 +1460,8 @@ void MainWindow::setupFileCommandCoordinator()
                 effectiveActionShortcut(descriptor->id),
                 QKeySequence::PortableText));
         addAction(action);
-        fileMenu->addAction(action);
+        if (actionId != QString::fromLatin1(ActionIds::FileNew)
+            && actionId != QString::fromLatin1(ActionIds::FileNewMarkdown)) fileMenu->addAction(action);
         connect(
             action,
             &QAction::triggered,
@@ -1900,7 +1807,10 @@ void MainWindow::setupPanelLayoutController()
     });
     if (auto* navigation = findChild<NavigationWidget*>())
         connect(workspaceSimulation.get(), &simdock::WorkspaceSimulationController::targetChanged,
-                navigation, &NavigationWidget::refreshSimulationTop);
+                navigation, [this,navigation] {
+                    navigation->refreshSimulationTop();
+                    navigationManager->refreshDesignHierarchy();
+                });
     auto* runLogDock = new QDockWidget(tr("Run log"), this);
     runLogDock->setObjectName(QStringLiteral("simulationRunLogDock"));
     runLogDock->setWidget(simulation->runLogWidget());
@@ -2076,8 +1986,6 @@ void MainWindow::setupLinkedContext()
     if (contextWorkspaceController) {
         chrome.append(contextWorkspaceController->rail());
         chrome.append(contextWorkspaceController->peekHost());
-        for (auto* floating : contextWorkspaceController->floatingWindows())
-            chrome.append(floating);
     }
     linkedContextController = std::make_unique<LinkedContextController>(
         this, centralContentStack, editorCentralPage, tabManager.get(),
@@ -2094,7 +2002,6 @@ void MainWindow::setupLinkedContext()
     });
     connect(linkedContextController.get(), &LinkedContextController::aboutToEnter, this, [this] {
         linkedNormalState = std::make_unique<WorkspaceSessionUiState>();
-        linkedNormalState->pageLayout = tabManager->workspaceSessionPageLayout(workspaceManager->getWorkspacePath());
         linkedNormalState->mainWindowGeometry = saveGeometry();
         linkedNormalState->mainWindowState = saveState();
         if (panelLayoutController)
@@ -2111,14 +2018,22 @@ void MainWindow::setupLinkedContext()
         QSignalBlocker blocker(action);
         action->setChecked(active);
         if (!active) {
-            if (linkedNormalState && panelLayoutController)
-                panelLayoutController->restoreLayoutState(linkedNormalState->panelLayout);
+            if (linkedNormalState && panelLayoutController) {
+                auto state=panelLayoutController->layoutState();
+                state.expandedBottomHeight=linkedNormalState->panelLayout.expandedBottomHeight;
+                state.bottomPanelHeights=linkedNormalState->panelLayout.bottomPanelHeights;
+                state.bottomCollapsed=linkedNormalState->panelLayout.bottomCollapsed;
+                panelLayoutController->restoreLayoutState(state);
+            }
             linkedNormalState.reset();
             refreshWelcomePage();
         }
     });
     connect(linkedContextController.get(), &LinkedContextController::message, this,
         [this](const QString& text) { postActivityMessage(text, 5000); });
+    connect(linkedContextController.get(),&LinkedContextController::modeChanged,this,[this]{
+        if(workspaceSessionCoordinator)workspaceSessionCoordinator->scheduleSessionSave();
+    });
     connect(editorCoordinator.get(), &EditorCoordinator::pinloomCodeLinksChanged,
         linkedContextController.get(), &LinkedContextController::refreshAnchors);
     connect(workspaceManager.get(), &WorkspaceManager::workspaceActivated, this,
@@ -2413,32 +2328,11 @@ void MainWindow::setupWorkspaceMenu()
             QString::fromLatin1(
                 ActionIds::WorkspaceConfigure));
 
-    workspaceMenu->addSeparator();
-    QAction* nextDiagnosticAction =
-        addRegistryMenuAction(
-            workspaceMenu,
-            QString::fromLatin1(
-                ActionIds::WorkspaceNextDiagnostic));
-    QAction* previousDiagnosticAction =
-        addRegistryMenuAction(
-            workspaceMenu,
-            QString::fromLatin1(
-                ActionIds::WorkspacePreviousDiagnostic));
-    if (nextDiagnosticAction)
-        nextDiagnosticAction->setShortcutContext(
-            Qt::ApplicationShortcut);
-    if (previousDiagnosticAction) {
-        previousDiagnosticAction->setShortcutContext(
-            Qt::ApplicationShortcut);
-    }
     connect(
         workspaceMenu,
         &QMenu::aboutToShow,
         this,
-        [this,
-         configureAction,
-         nextDiagnosticAction,
-         previousDiagnosticAction]() {
+        [this, configureAction]() {
             const bool workspaceAvailable =
                 workspaceManager
                 && workspaceManager->isWorkspaceOpen();
@@ -2448,14 +2342,6 @@ void MainWindow::setupWorkspaceMenu()
             }
             if (configureAction)
                 configureAction->setEnabled(workspaceAvailable);
-            if (nextDiagnosticAction) {
-                nextDiagnosticAction->setEnabled(
-                    workspaceAvailable);
-            }
-            if (previousDiagnosticAction) {
-                previousDiagnosticAction->setEnabled(
-                    workspaceAvailable);
-            }
         });
 }
 
@@ -2502,8 +2388,10 @@ void MainWindow::setupToolsMenu()
 
     userTemplatesMenu = UiControls::addMenu(toolsMenu, tr("Templates"));
     userTemplatesMenu->setObjectName(QStringLiteral("userTemplatesMenu"));
+    userTemplatesMenu->setIcon(RoundedIcons::icon(RoundedIcons::Templates));
     auto* manageTemplates = userTemplatesMenu->addAction(QStringLiteral("Manage Templates…"));
     manageTemplates->setObjectName(QStringLiteral("manageSimulationTemplates"));
+    manageTemplates->setIcon(RoundedIcons::icon(RoundedIcons::Templates));
     connect(manageTemplates, &QAction::triggered, this, [this] { if (simulationCommands) simulationCommands->manage(); });
 
     QAction* openGlobalAction =
@@ -2789,6 +2677,24 @@ ActionExecutionResult MainWindow::executeActionRoute(
             : QStringLiteral("Pinloom binding markers hidden.");
         return succeeded();
     }
+    if (route==QStringLiteral("ui.pinloom.linkSelection")) {
+        const QPointer<MyCodeEditor> editor=tabManager?tabManager->editorActionTarget(invocation.parameters.value("editorViewId").toString()):nullptr;
+        if(!editor || editor->documentReadOnly())return fail("The source editor is unavailable or read-only.");
+        const auto source=invocation.parameters.value("linkSource").toMap();
+        if(!PinloomSourceSelection::fromVariantMap(source).isValid())return fail("Select a code object inside the workspace.");
+        const QPointer<QTextDocument> document=editor->document();
+        const auto revision=editor->semanticDocumentRevision(); const auto cursor=editor->textCursor();
+        const auto root=workspaceManager->getWorkspacePath();
+        PinloomHostClient client(this);
+        const auto chosen=DocumentReferenceService::pick(&client,editor);
+        if(!chosen.accepted){result.message="Reference selection canceled.";return succeeded();}
+        if(!editor || !document || editor->document()!=document || editor->semanticDocumentRevision()!=revision
+            || editor->textCursor()!=cursor || editor->documentReadOnly() || workspaceManager->getWorkspacePath()!=root)
+            return fail("The source editor changed while selecting the reference. Try again.");
+        QString issue;
+        if(!tabManager->addSemanticReference(source,chosen.uri,chosen.caption,&issue))return fail(issue);
+        editor->setFocus(Qt::OtherFocusReason);result.message="Reference added.";return succeeded();
+    }
     if (PinloomCodeLinkCoordinator::handlesRoute(route)) {
         if (!pinloomCodeLinkCoordinator)
             return fail(QStringLiteral(
@@ -2804,14 +2710,6 @@ ActionExecutionResult MainWindow::executeActionRoute(
             fileCommandCoordinator->newFile();
         } else if (route == QStringLiteral("ui.file.newMarkdown")) {
             if (!tabManager || !tabManager->createWebDocumentFile(WebDocumentPage::Kind::Markdown)) return fail();
-        } else if (route == QStringLiteral("ui.file.newBlocks")) {
-            if (!tabManager || !tabManager->createWebDocumentFile(WebDocumentPage::Kind::Blocks)) return fail();
-        } else if (route == QStringLiteral("ui.file.importMarkdown")) {
-            if (!tabManager || !tabManager->importMarkdownDocument()) return fail();
-        } else if (route == QStringLiteral("ui.file.exportMarkdown")) {
-            if (!tabManager || !tabManager->currentWebDocument() || tabManager->currentWebDocument()->documentKind() != WebDocumentPage::Kind::Blocks)
-                return fail(QStringLiteral("Open a block document to export it as Markdown."));
-            if (!tabManager->currentWebDocument()->exportMarkdown()) return fail();
         } else if (route
                    == QStringLiteral("ui.file.open")) {
             fileCommandCoordinator->openFile();
@@ -3637,26 +3535,6 @@ ActionExecutionResult MainWindow::executeActionRoute(
     }
     if (route
         == QStringLiteral(
-            "ui.diagnostics.next")) {
-        if (!workspaceManager
-            || !workspaceManager->isWorkspaceOpen()) {
-            return fail();
-        }
-        navigateDiagnostic(false);
-        return succeeded();
-    }
-    if (route
-        == QStringLiteral(
-            "ui.diagnostics.previous")) {
-        if (!workspaceManager
-            || !workspaceManager->isWorkspaceOpen()) {
-            return fail();
-        }
-        navigateDiagnostic(true);
-        return succeeded();
-    }
-    if (route
-        == QStringLiteral(
             "ui.userTemplates.openGlobal")) {
         openGlobalUserTemplates();
         return succeeded();
@@ -3946,9 +3824,8 @@ void MainWindow::setupWorkspaceSessionCoordinator()
     WorkspaceSessionUiBridge bridge;
     bridge.captureUiState =
         [this](bool rememberPanelState) {
-            if (linkedContextController && linkedContextController->isActive() && linkedNormalState)
-                return *linkedNormalState;
             WorkspaceSessionUiState state;
+            if(linkedContextController)state.editorViewMode=linkedContextController->modeName();
             if (tabManager && workspaceManager)
                 state.pageLayout = tabManager->workspaceSessionPageLayout(workspaceManager->getWorkspacePath());
             if (rememberPanelState) {
@@ -3972,6 +3849,12 @@ void MainWindow::setupWorkspaceSessionCoordinator()
             }
             if (simulationWorkspace)
                 state.contextWorkspace.providerStates.insert(QStringLiteral("simdock"), simulationWorkspace->saveState());
+            if(linkedContextController && linkedContextController->isActive() && linkedNormalState && rememberPanelState){
+                state.mainWindowState=linkedNormalState->mainWindowState;
+                state.panelLayout.expandedBottomHeight=linkedNormalState->panelLayout.expandedBottomHeight;
+                state.panelLayout.bottomCollapsed=linkedNormalState->panelLayout.bottomCollapsed;
+                state.panelLayout.bottomPanelHeights=linkedNormalState->panelLayout.bottomPanelHeights;
+            }
             return state;
         };
     bridge.restoreUiState =
@@ -4038,6 +3921,7 @@ void MainWindow::setupWorkspaceSessionCoordinator()
             // Reapply the saved window bounds after the final page topology exists.
             if (result.geometryRestored)
                 result.geometryRestored = restoreGeometry(state.mainWindowGeometry);
+            if(linkedContextController)linkedContextController->setModeName(state.editorViewMode);
             return result;
         };
     bridge.showStatus =
@@ -4085,63 +3969,6 @@ void MainWindow::setupWorkspaceSessionCoordinator()
             snapshot.value(
                 QStringLiteral(
                     "layout.rememberPanelState")).toBool());
-    }
-}
-
-void MainWindow::navigateDiagnostic(bool previous)
-{
-    ProblemsPanelCoordinator* problemsPanel =
-        semanticDocks ? semanticDocks->problemsPanelCoordinator() : nullptr;
-    MyCodeEditor* editor = tabManager ? tabManager->getCurrentEditor() : nullptr;
-    const DocumentSnapshot document =
-        tabManager ? tabManager->getCurrentDocument() : DocumentSnapshot();
-
-    DiagnosticNavigationQuery query;
-    query.currentFileName = document.fileName;
-    if (editor) {
-        const QTextCursor cursor = editor->textCursor();
-        query.currentLine = cursor.blockNumber() + 1;
-        query.currentColumn = cursor.positionInBlock() + 1;
-    }
-    query.previous = previous;
-    query.workspaceFiles =
-        workspaceManager ? workspaceManager->getSystemVerilogFiles()
-                         : QStringList();
-    query.scope = diagnosticScopeFromProblemsCombo(
-        problemsPanel ? problemsPanel->scopeCombo() : nullptr);
-    query.severity = problemsPanel ? problemsPanel->severityFilter() : DiagnosticSeverityFilter::All;
-
-    DiagnosticNavigationService service;
-    const DiagnosticNavigationResult result = service.navigate(query);
-    if (!result.found) {
-        {
-            postActivityMessage(
-                result.failureReason.isEmpty()
-                    ? QStringLiteral("No diagnostics")
-                    : result.failureReason,
-                3000);
-        }
-        return;
-    }
-
-    if (!navigationCommandCoordinator
-        || !navigationCommandCoordinator->navigateToFileAndLineAndFlash(
-            result.diagnostic.diagnostic.fileName,
-            result.diagnostic.diagnostic.line,
-            result.diagnostic.diagnostic.column)) {
-            postActivityMessage(
-                QStringLiteral("Failed to open diagnostic location"),
-                4000);
-        return;
-    }
-
-    {
-        postActivityMessage(
-            QStringLiteral("%1 diagnostic: %2")
-                .arg(previous ? QStringLiteral("Previous")
-                              : QStringLiteral("Next"),
-                     result.diagnostic.messageDisplayName),
-            3000);
     }
 }
 

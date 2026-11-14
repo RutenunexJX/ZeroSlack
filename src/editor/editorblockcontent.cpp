@@ -12,6 +12,7 @@
 #include <QMenu>
 #include <QPainter>
 #include <QApplication>
+#include <QToolButton>
 #include <QCursor>
 #include <QFileDialog>
 #include <QSaveFile>
@@ -20,10 +21,12 @@ void EditorBlockContent::refreshTools(QWidget* frame, QWidget* tools) {
     if (!frame || !tools) return;
     const auto point=frame->mapFromGlobal(QCursor::pos());
     const auto* focus=QApplication::focusWidget();
-    tools->setVisible((frame->rect().adjusted(-4,-4,4,4).contains(point) && point.y()<46
-        && point.x()>frame->width()-tools->sizeHint().width()-28)
-        || (focus && (focus==tools || tools->isAncestorOf(focus)))
-        || (QApplication::activePopupWidget() && frame->isAncestorOf(QApplication::activePopupWidget())));
+    const bool near=frame->rect().adjusted(-4,-4,4,4).contains(point);
+    const bool focused=(focus && (focus==frame || frame->isAncestorOf(focus))) || frame->property("blockGutterFocused").toBool();
+    tools->setVisible(near || focused || (QApplication::activePopupWidget() && frame->isAncestorOf(QApplication::activePopupWidget())));
+    if(auto* edit=frame->findChild<QToolButton*>("blockEditToggle",Qt::FindDirectChildrenOnly)) {
+        edit->setVisible(near || focused || edit->isChecked());edit->raise();
+    }
     tools->raise();
 }
 
@@ -45,7 +48,7 @@ void EditorBlockContent::addAppearanceMenu(QMenu* menu, DocumentBlockModel* valu
     });
     auto* appearance=menu->addMenu("Appearance");
     const auto change=[model,id,guard,readOnly](const QString& key, const QString& value) {
-        if (!guard || !model || readOnly()) return;
+        if (!guard || !model || readOnly() || !model->flushContents()) return;
         if (const auto* block=model->find(id)) {
             auto next=*block;
             if (key.isEmpty() || !BlockNoteStyle::validPreset(next.appearance)) next.appearance=BlockNoteStyle::defaults(next.type);
@@ -87,7 +90,10 @@ void EditorBlockContent::addAppearanceMenu(QMenu* menu, DocumentBlockModel* valu
 EditorBlockContent::EditorBlockContent(DocumentBlockModel* value, PinloomHostClient* client,
     const EditorAssociatedBlock& block, QWidget* parent) : QWidget(parent),model(value),id(block.id) {
     setObjectName("editorBlockContent");
-    setAttribute(Qt::WA_TransparentForMouseEvents);
+    setAttribute(Qt::WA_NoMousePropagation);
+    retryConnection=connect(model,&DocumentBlockModel::referenceRetryRequested,this,[this](const QString& requested) {
+        if(requested==id && model) {resourceKey.clear();present(model->presentation(id),locked);}
+    });
     auto* layout=new QVBoxLayout(this); layout->setContentsMargins(0,0,0,0); layout->setSpacing(4);
     if (block.type=="wave") {
         wave=new WaveBlockContent(model,id,this); layout->addWidget(wave,1);
@@ -97,7 +103,7 @@ EditorBlockContent::EditorBlockContent(DocumentBlockModel* value, PinloomHostCli
         text->setMouseTracking(true); layout->addWidget(text,1); setFocusProxy(text);
         connect(text,&QTextEdit::textChanged,this,[this] { if(!updating && model && !text->isReadOnly()) model->editText(id,text->toPlainText()); });
     } else {
-        preview=new EditorBlockPreview(model,client,this);
+        preview=new EditorBlockPreview(model,new PinloomHostClient(this),this);
         imageHost=new QWidget(this); auto* imageRow=new QHBoxLayout(imageHost); imageRow->setContentsMargins(0,0,0,0);
         image=new PinloomPreviewImageLabel(imageHost); image->activated=[this] { if(openOriginal) openOriginal(); };
         imageRow->addStretch(); imageRow->addWidget(image,1); imageRow->addStretch(); layout->addWidget(imageHost,1);
@@ -109,23 +115,41 @@ EditorBlockContent::EditorBlockContent(DocumentBlockModel* value, PinloomHostCli
         referenceText->setMinimumSize(0,0); layout->addWidget(referenceText,1); referenceText->hide();
     }
 }
-void EditorBlockContent::setEditing(bool value) {
-    editing=value; setAttribute(Qt::WA_TransparentForMouseEvents,!value);
-    if (!model) return;
-    if (value) {
+void EditorBlockContent::rebind(DocumentBlockModel* value) {
+    if(!value || value==model || !value->find(id))return;
+    model=value;resourceKey.clear();revision=0;
+    disconnect(retryConnection);
+    retryConnection=connect(model,&DocumentBlockModel::referenceRetryRequested,this,[this](const QString& requested) {
+        if(requested==id && model){resourceKey.clear();present(model->presentation(id),locked);}
+    });
+    if(preview)preview->rebind(value);
+    if(wave)wave->rebind(value);
+}
+bool EditorBlockContent::setEditing(bool value) {
+    if (!model || (value && locked)) return false;
+    if(editing==value)return true;
+    if(!value && wave) {
+        QString issue;if(!wave->flush(&issue)){model->setError(issue);return false;}
+    }
+    if(wave)if(const auto* block=model->find(id))if(!wave->present(block->text,locked,value))return false;
+    editing=value;
+    if(text)text->setReadOnly(locked || !editing);
+    if(value) {
         model->beginTextSession(id);
-        if (wave) wave->focusContent();
-        else if (text) text->setFocus(Qt::OtherFocusReason);
-        else if (referenceText && referenceText->isVisible()) referenceText->setFocus(Qt::OtherFocusReason);
-    } else { if(wave) { QString issue; wave->flush(&issue); if(!issue.isEmpty()) model->setError(issue); } model->endTextSession(); }
+        if(wave)wave->focusContent();
+        else if(text)text->setFocus(Qt::OtherFocusReason);
+        else if(referenceText && referenceText->isVisible())referenceText->setFocus(Qt::OtherFocusReason);
+    } else model->endTextSession();
+    return true;
 }
 void EditorBlockContent::present(const EditorAssociatedBlock& block, bool readOnly, bool compact) {
     if (!model || id!=block.id) return;
-    setVisible(!compact); updating=true;
+    setVisible(!compact && !property("blockDragHidden").toBool()); updating=true; locked=readOnly;
     if (wave) {
-        wave->present(block.text,readOnly);
+        wave->present(block.text,readOnly,editing);
     } else if (text) {
-        text->setReadOnly(readOnly);
+        text->setVerticalScrollBarPolicy(block.autoHeight ? Qt::ScrollBarAlwaysOff : Qt::ScrollBarAsNeeded);
+        text->setReadOnly(readOnly || !editing);
         if (text->toPlainText()!=block.text) text->setPlainText(block.text);
         if (revision!=block.revision || styleRevision!=BlockNoteStyle::instance().revision()) {
             const auto appearance=BlockNoteStyle::instance().appearance(block.appearance);
@@ -143,14 +167,15 @@ void EditorBlockContent::present(const EditorAssociatedBlock& block, bool readOn
             BlockNoteStyle::format(referenceText->document(),appearance);
         }
         image->setMaximumWidth(block.width);
-        const auto key=model->documentId()+'\n'+block.asset+'\n'+block.uri+'\n'+block.caption;
+        const auto key=model->documentId()+'\n'+block.asset+'\n'+block.uri+'\n'+block.caption+'\n'+block.referenceStatus+'\n'+QString::number(block.revision);
         if(compact) { preview->cancel(); resourceKey.clear(); image->clearSourcePixmap(); imageHost->hide(); }
         else if(resourceKey!=key) {
             resourceKey=key; const QPointer<EditorBlockContent> self(this);
             preview->request(id,[self,key](const EditorBlockPreviewResult& result) {
                 if(!self || self->resourceKey!=key || !self->model) return;
-                const auto* current=self->model->find(self->id); if(!current) return;
+                const auto presented=self->model->presentation(self->id); const auto* current=&presented; if(current->id.isEmpty()) return;
                 QStringList content;
+                if(!current->referenceStatus.isEmpty())content<<current->referenceStatus;
                 if(!current->caption.isEmpty() && EditorBlockPreview::linkOnlyText(*current).isEmpty()) content<<current->caption;
                 if(!result.status.isEmpty()) content<<result.status;
                 self->description->setText(content.join('\n')); self->description->setVisible(!content.isEmpty());

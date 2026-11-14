@@ -262,6 +262,8 @@ public:
     static QJsonObject webThemeTokens();
     static QJsonObject webThemeTokens(bool dark);
     static QColor subtleBorder(const QColor& surface, const QColor& foreground);
+    static QColor workspaceRegionSurface(bool primary);
+    static QColor workspaceTabSelected(bool focused);
 
     static QColor roleColor(InsightVisualRole role);
     static QColor roleColor(InsightVisualRole role, ThemeMode mode);

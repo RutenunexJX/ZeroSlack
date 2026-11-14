@@ -252,10 +252,11 @@ void NavigationWidget::updateFileHierarchy(
     populateFileTree();
 }
 
-void NavigationWidget::updateDesignHierarchy(const DesignHierarchyReport& report)
+void NavigationWidget::updateDesignHierarchy(const DesignHierarchyReport& report, std::shared_ptr<const DesignTreeProjection> projection)
 {
     saveDesignViewState();
     currentDesignHierarchy = report;
+    currentDesignProjection = std::move(projection);
     designAnalysisPending = false;
     populateDesignTree();
 }
@@ -363,10 +364,10 @@ void NavigationWidget::onDesignTreeDoubleClicked(const QModelIndex& index)
 {
     auto* model = qobject_cast<DesignHierarchyModel*>(designTreeWidget->model());
     const auto node = model ? model->node(index) : DesignHierarchyNode();
-    if (node.id.isEmpty()) return;
+    if (node.id.isEmpty() && node.definitionFile.isEmpty()) return;
     if (model == designSearchModel) {
         designSearchLineEdit->clear();
-        const auto current = designModel->indexForId(node.id);
+        const auto current = designModel->indexForId(index.data(Qt::UserRole).toString());
         for (auto parent = current.parent(); parent.isValid(); parent = parent.parent()) designTreeWidget->expand(parent);
         designTreeWidget->setCurrentIndex(current); designTreeWidget->scrollTo(current);
     }
@@ -406,7 +407,9 @@ void NavigationWidget::onFileTreeContextMenuRequested(const QPoint& pos)
 void NavigationWidget::onDesignTreeContextMenuRequested(const QPoint& pos)
 {
     auto* model = qobject_cast<DesignHierarchyModel*>(designTreeWidget->model());
-    emit designNodeContextMenuRequested(model->node(designTreeWidget->indexAt(pos)),
+    const auto index=designTreeWidget->indexAt(pos);
+    designTreeWidget->setCurrentIndex(index);
+    emit designNodeContextMenuRequested(model->node(index),
         designTreeWidget->viewport()->mapToGlobal(pos));
 }
 
@@ -439,16 +442,16 @@ void NavigationWidget::setupUI()
         auto font = documentMenu->font(); font.setBold(true); heading->setFont(font);
     };
     addGroup(tr("Documents"));
-    for (const auto& entry : {qMakePair(QStringLiteral("New Markdown"), QStringLiteral("markdown")), qMakePair(QStringLiteral("New Block Document"), QStringLiteral("blocks")), qMakePair(QStringLiteral("Open File…"), QStringLiteral("open"))}) {
+    for (const auto& entry : {qMakePair(QStringLiteral("New File"), QStringLiteral("file")), qMakePair(QStringLiteral("New Markdown Document"), QStringLiteral("markdown")), qMakePair(QStringLiteral("Open File…"), QStringLiteral("open"))}) {
         auto* action = documentMenu->addAction(entry.first); action->setObjectName(QStringLiteral("leftDocument.") + entry.second);
         connect(action, &QAction::triggered, this, [this, id = entry.second] { emit documentActionRequested(id); });
     }
     documentMenu->addSeparator();
     addGroup(tr("Panels"));
-    auto* filesAction = documentMenu->addAction(RoundedIcons::icon(RoundedIcons::File), tr("Files"));
+    auto* filesAction = documentMenu->addAction(RoundedIcons::icon(RoundedIcons::Files), tr("Files"));
     filesAction->setObjectName(QStringLiteral("leftPanel.files"));
     connect(filesAction, &QAction::triggered, this, [this] { setActiveTab(FileTab); });
-    auto* designAction = documentMenu->addAction(RoundedIcons::icon(RoundedIcons::Hierarchy), tr("Design"));
+    auto* designAction = documentMenu->addAction(RoundedIcons::icon(RoundedIcons::Design), tr("Design"));
     designAction->setObjectName(QStringLiteral("leftPanel.design"));
     connect(designAction, &QAction::triggered, this, [this] { setActiveTab(DesignTab); });
     addDocument->setMenu(documentMenu); addDocument->setPopupMode(QToolButton::InstantPopup);
@@ -496,7 +499,7 @@ void NavigationWidget::setupFileTab()
     fileTabLayout->addWidget(fileTreeWidget);
     fileTab->setLayout(fileTabLayout);
 
-    const auto index = tabWidget->addTab(fileTab, RoundedIcons::icon(RoundedIcons::File), QString());
+    const auto index = tabWidget->addTab(fileTab, RoundedIcons::icon(RoundedIcons::Files), QString());
     tabWidget->setTabToolTip(index, tr("Files"));
     tabWidget->tabBar()->setAccessibleTabName(index, tr("Files"));
 }
@@ -545,7 +548,7 @@ void NavigationWidget::setupDesignTab()
         revealPendingDesignProject(); updateDesignPresentation(); refreshSimulationTop();
         if (!designSearchFilter.isEmpty()) designSearchTimer->start();
     });
-    const auto index = tabWidget->addTab(designTab, RoundedIcons::icon(RoundedIcons::Hierarchy), QString());
+    const auto index = tabWidget->addTab(designTab, RoundedIcons::icon(RoundedIcons::Design), QString());
     tabWidget->setTabToolTip(index, tr("Design")); tabWidget->tabBar()->setAccessibleTabName(index, tr("Design"));
 }
 

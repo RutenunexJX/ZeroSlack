@@ -3,6 +3,7 @@
 #include "mycodeeditor.h"
 #include "tabmanager.h"
 #include "webdocumentpage.h"
+#include "retireddocument.h"
 #include "pdfdocumentpage.h"
 #include "shareddocument.h"
 #include "documenttemplatemodel.h"
@@ -298,8 +299,10 @@ QJsonObject ZeroSlackAutomationService::document(const QJsonObject& request, con
     const auto file = absolute(root, request.value("file").toString());
     if (request.value("file").toString().isEmpty() || !simdock::plainPathWithin(root, file))
         return failure("invalid_file", "file must identify a plain path within the workspace.");
+    if (RetiredDocument::isBlockDocument(file))
+        return failure("unsupported_document_kind", RetiredDocument::message());
     if (WebDocumentPage::supportsFile(file) || PdfDocumentPage::supportsFile(file))
-        return failure("unsupported_document_kind", "document.* operates on text/code buffers. Markdown, block and PDF pages use their GUI document sessions.");
+        return failure("unsupported_document_kind", "document.* operates on text/code buffers. Markdown and PDF pages use their GUI document sessions.");
     if (QFileInfo(file).size() > 8*1024*1024) return failure("input_limit", "The document exceeds 8 MiB.");
     MyCodeEditor* editor = nullptr;
     if (window && window->tabManager) {

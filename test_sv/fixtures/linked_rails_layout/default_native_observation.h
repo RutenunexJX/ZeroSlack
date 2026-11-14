@@ -91,6 +91,7 @@ template<class Harness> QJsonObject capture(Harness& h,QJsonArray* raw=nullptr) 
     wheelOn(right->viewport(),-120);
     if(!scrollFinished(right->verticalScrollBar())||!capturePhase("right-detached"))return {};
     const auto activeSession=h.snapshot().value("session");
+    const auto latestView=motion(h.editor());
     const bool closed=h.controller->setActive(false);
     const auto exit=h.snapshot();
     return {{"schema","zeroslack-default-native-frozen/v1"},{"platform",QGuiApplication::platformName()},
@@ -99,6 +100,7 @@ template<class Harness> QJsonObject capture(Harness& h,QJsonArray* raw=nullptr) 
             {"resourcesEmpty",h.resources().isEmpty()},{"sessionCleared",exit["session"].toString().isEmpty()},
             {"priorSessionNonempty",!activeSession.toString().isEmpty()},{"editorPreserved",h.editor()==originalEditor},
             {"documentPreserved",h.editor()->document()==originalDocument},{"editorViewRestored",motion(h.editor())==originalView},
+            {"latestEditorViewPreserved",motion(h.editor())==latestView},
             {"originalPageRestored",h.stack->currentWidget()==h.page}}},
         {"coverage","Controller references/resources; actual Qt rails members, view geometry and widget/action tree; real editor sampling, fold and wheel events; matching connector geometry/request/layout/content/paint identities. Offscreen: no claim for DWM, OS hit testing or screenshot pixel equality."}};
 }

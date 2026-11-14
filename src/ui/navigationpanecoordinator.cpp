@@ -174,7 +174,13 @@ void NavigationPaneCoordinator::connectNavigationInputs(
         connect(navigationWidget, &NavigationWidget::documentActionRequested, tabManager, [this, tabManager](const QString& action) {
             setExpanded(true);
             if (action == QStringLiteral("open")) tabManager->openFileInRegion(QString(), QStringLiteral("left"));
-            else tabManager->createWebDocumentFile(action == QStringLiteral("markdown") ? WebDocumentPage::Kind::Markdown : WebDocumentPage::Kind::Blocks, QString(), QStringLiteral("left"));
+            else if (action == QStringLiteral("file")) {
+                if(auto* group=tabManager->editorSplitController()->regionGroup(QStringLiteral("left"))) {
+                    tabManager->editorSplitController()->setActiveGroup(group);
+                    tabManager->createNewTab();
+                }
+            }
+            else if (action == QStringLiteral("markdown")) tabManager->createWebDocumentFile(WebDocumentPage::Kind::Markdown, QString(), QStringLiteral("left"));
         });
         pageRegistry->setRegionRevealHandler(QStringLiteral("left"),[this] { setExpanded(true); });
         tabHoverTimer=new QTimer(this); tabHoverTimer->setInterval(40);

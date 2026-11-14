@@ -78,7 +78,7 @@ void Workbench::buildUi()
     row->addWidget(m_run);
     connect(m_run, &QPushButton::clicked, this, &Workbench::startSimulation);
     m_settings = UiControls::toolButton(this); m_settings->setObjectName(QStringLiteral("openSettings"));
-    m_settings->setIcon(RoundedIcons::icon(RoundedIcons::Settings));
+    m_settings->setIcon(RoundedIcons::icon(RoundedIcons::SimulationSettings));
     m_settings->setAccessibleName(QStringLiteral("Simulation settings")); m_settings->setToolTip(QStringLiteral("Simulation settings"));
     connect(m_settings, &QToolButton::clicked, this, &Workbench::openSettings); row->addWidget(m_settings);
     auto* logs = new QWidget(this); m_logs = logs; logs->setObjectName(QStringLiteral("simulationRunLog"));
@@ -138,6 +138,8 @@ void Workbench::updateControls()
     m_run->setEnabled(active || !workspace().isEmpty());
     const QString label = target.isEmpty() ? action : action + QStringLiteral(" · ") + target.top;
     m_run->setText(m_run->fontMetrics().elidedText(label, Qt::ElideRight, 208));
+    m_run->setIcon(RoundedIcons::icon(m_controller->preparing() ? RoundedIcons::Cancel
+        : active ? RoundedIcons::StopSimulation : RoundedIcons::RunSimulation));
     m_run->setToolTip(target.isEmpty() ? QStringLiteral("Choose a simulation top in Design")
         : target.top + QStringLiteral(" — ") + target.file + '\n' + m_controller->state());
     m_run->setAccessibleName(target.isEmpty() ? QStringLiteral("Choose a simulation target in Design") : label);

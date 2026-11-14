@@ -53,7 +53,7 @@ public:
         controls->setSpacing(6);
         auto* project = UiControls::railButton(header);
         project->setObjectName(QStringLiteral("projectRailButton"));
-        project->setIcon(RoundedIcons::icon(RoundedIcons::Folder));
+        project->setIcon(RoundedIcons::icon(RoundedIcons::Workspaces));
         project->setIconSize(QSize(RoundedIcons::SidebarSize, RoundedIcons::SidebarSize));
         project->setToolButtonStyle(Qt::ToolButtonIconOnly);
         UiTypography::apply(project, UiTypography::Role::Body);

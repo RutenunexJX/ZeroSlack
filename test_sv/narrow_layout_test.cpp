@@ -922,11 +922,14 @@ private slots:
         auto* navigation=window.findChild<NavigationWidget*>();QVERIFY(navigation);
         auto* navigationPane=owner<NavigationPaneCoordinator>(&window);QVERIFY(navigationPane);
         const int designWidth=width==480?400:width;
-        navigationPane->showDesign();navigationPane->dock()->setFixedWidth(designWidth);
+        navigationPane->showDesign();
+        // Opening the dock releases its fixed endpoint on the next event loop.
+        QTRY_VERIFY(!navigationPane->isAnimating());
+        navigationPane->dock()->setFixedWidth(designWidth);
         auto* design=navigation->findChild<QTreeView*>("navigationDesignTree");QVERIFY(design);
         auto* designModel=qobject_cast<DesignHierarchyModel*>(design->model());QVERIFY(designModel);
         if(populated){
-            QTRY_VERIFY_WITH_TIMEOUT(designModel->rowCount()>=2,10000);
+            QTRY_VERIFY_WITH_TIMEOUT(designModel->report()->rootModules.size()>=2,10000);
             QTRY_VERIFY_WITH_TIMEOUT(navigation->selectDesignInstance("top.instance_with_a_long_name_left",true),10000);
             QVERIFY(!design->currentIndex().data(Qt::ToolTipRole).toString().isEmpty());
             auto* projectModel=window.workspaceManager->getProjectModel();QVERIFY(projectModel);
@@ -937,16 +940,42 @@ private slots:
                 QTest::mouseClick(design->viewport(),Qt::LeftButton,Qt::NoModifier,rect.center());
                 QTest::mouseDClick(design->viewport(),Qt::LeftButton,Qt::NoModifier,rect.center());return true;
             };
+            const auto sourceTop=[&]{const auto snapshot=projectModel->snapshot();
+                return qMakePair(snapshot.activeDesignTopFile,snapshot.activeDesignTopModule);};
+            const auto sourceTopPresented=[&]{
+                if(designModel->applying() || !designModel->projection())return false;
+                const auto expected=sourceTop();
+                for(const auto& row:designModel->projection()->nodes)
+                    if(row.source && qMakePair(row.semantic.definitionFile,row.semantic.moduleType)==expected)return true;
+                return false;
+            };
+            const auto setSourceTop=[&]{
+                return window.navigationManager->requestDesignNodeAction(QString::fromLatin1(ActionIds::NavigationDesignSetTop),
+                    designModel->node(design->currentIndex()));
+            };
+            const auto initialTop=sourceTop();
+            const auto instance=designModel->node(design->currentIndex());
             QVERIFY(activateCurrent());
-            const auto project=designModel->node(design->currentIndex()).rootId;QVERIFY(!project.isEmpty());
-            QTRY_COMPARE(projectModel->snapshot().activeDesignProjectId,project);
+            QTRY_COMPARE(window.tabManager->getCurrentDocument().fileName,instance.definitionFile);
+            QCOMPARE(sourceTop(),initialTop);
+            QTRY_VERIFY(navigation->selectDesignInstance("top",true));
+            QVERIFY(setSourceTop().succeeded);
+            QTRY_COMPARE(sourceTop(),qMakePair(top,QString("top")));
+            QTRY_VERIFY_WITH_TIMEOUT(sourceTopPresented(),10000);
             QTRY_VERIFY(navigation->selectDesignInstance("alternate_root",true));
             QVERIFY(activateCurrent());
-            QTRY_VERIFY(projectModel->snapshot().activeDesignProjectId!=project);
-            QCOMPARE(projectModel->snapshot().activeDesignTopModule,QString("alternate_root"));
+            QTRY_COMPARE(window.tabManager->getCurrentDocument().fileName,workspace+"/alternate_root.sv");
+            QCOMPARE(sourceTop(),qMakePair(top,QString("top")));
+            QVERIFY(setSourceTop().succeeded);
+            QTRY_COMPARE(sourceTop(),qMakePair(workspace+"/alternate_root.sv",QString("alternate_root")));
+            QTRY_VERIFY_WITH_TIMEOUT(sourceTopPresented(),10000);
             QTRY_VERIFY(navigation->selectDesignInstance("top",true));
             QVERIFY(activateCurrent());
-            QTRY_COMPARE(projectModel->snapshot().activeDesignProjectId,project);
+            QTRY_COMPARE(window.tabManager->getCurrentDocument().fileName,top);
+            QCOMPARE(sourceTop(),qMakePair(workspace+"/alternate_root.sv",QString("alternate_root")));
+            QVERIFY(setSourceTop().succeeded);
+            QTRY_COMPARE(sourceTop(),qMakePair(top,QString("top")));
+            QTRY_VERIFY_WITH_TIMEOUT(sourceTopPresented(),10000);
             QTRY_VERIFY(navigation->selectDesignInstance("top.instance_with_a_long_name_left",true));
             if(width==220 && height==160){
                 // The filesystem probe must not leave a deleted editor document
@@ -958,13 +987,16 @@ private slots:
                 QTRY_VERIFY_WITH_TIMEOUT(navigation->selectDesignInstance("alternate_updated",true),10000);
                 QVERIFY(!navigation->selectDesignInstance("alternate_root",false));
                 QVERIFY(QFile::remove(alternate));
-                QTRY_COMPARE_WITH_TIMEOUT(designModel->rowCount(),1,10000);
+                QTRY_COMPARE_WITH_TIMEOUT(designModel->report()->rootModules,QStringList{"top"},10000);
                 QVERIFY(!navigation->selectDesignInstance("alternate_updated",false));
                 QTRY_VERIFY(navigation->selectDesignInstance("top.instance_with_a_long_name_left",true));
                 QVERIFY(window.tabManager->openFileInTab(top));
             }
             design->collapseAll();design->expandAll();
         }
+        navigationPane->showDesign();
+        QTRY_VERIFY(design->isVisibleTo(&window));
+        QVERIFY(navigation->isAncestorOf(design));
 #ifdef ZEROSLACK_ENABLE_ELA
         if(auto* bar=navigationPane->dock()->findChild<ElaNavigationBar*>("navigationElaBar"))bar->setNavigationBarWidth(designWidth);
 #endif

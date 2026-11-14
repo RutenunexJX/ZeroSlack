@@ -39,14 +39,49 @@
 #include <QTextBoundaryFinder>
 #include <QCursor>
 #include <QDynamicPropertyChangeEvent>
+#include <QVariantAnimation>
+#include <QScreen>
+#include <QTimer>
+#include <QShowEvent>
 #include "ElaTabBarMetrics.h"
 
 namespace {
+template<class Base> class WorkAreaMenu final : public Base {
+public:
+    explicit WorkAreaMenu(QWidget* parent) : Base(parent) {}
+protected:
+    void showEvent(QShowEvent* event) override {
+        RoundedIcons::applyMenuIcons(this);
+        Base::showEvent(event);
+        QTimer::singleShot(0,this,[this] {
+            if(!this->isVisible() || !this->screen())return;
+            const QRect available=this->screen()->availableGeometry();
+            const QRect frame=this->frameGeometry();
+            QPoint position=frame.topLeft();
+            if(frame.width()<=available.width())position.setX(qBound(available.left(),position.x(),available.right()-frame.width()+1));
+            if(frame.height()<=available.height())position.setY(qBound(available.top(),position.y(),available.bottom()-frame.height()+1));
+            if(position!=frame.topLeft())this->move(this->pos()+position-frame.topLeft());
+        });
+    }
+};
 template<class Base> class WorkspaceTabBar final : public Base {
 public:
     explicit WorkspaceTabBar(QWidget* parent = nullptr) : Base(parent) {
+        motion=new QVariantAnimation(this);motion->setObjectName("navigationTabTransition");motion->setDuration(150);motion->setStartValue(0.0);motion->setEndValue(1.0);
+        motion->setEasingCurve(QEasingCurve::OutCubic);
+        QObject::connect(motion,&QVariantAnimation::valueChanged,this,[this](const QVariant& value){
+            if(!moving)return;const qreal progress=value.toReal();
+            for(int i=0;i<labelWeights.size();++i)labelWeights[i]=startWeights[i]+((i==this->currentIndex()?1.0:0.0)-startWeights[i])*progress;
+            refreshPresentation(false);
+            const QRectF target=this->tabRect(this->currentIndex()).adjusted(2,2,-2,-2);
+            movingPill=QRectF(startPill.topLeft()+(target.topLeft()-startPill.topLeft())*progress,
+                startPill.size()+(target.size()-startPill.size())*progress);this->update();
+        });
+        QObject::connect(motion,&QVariantAnimation::finished,this,[this]{refreshPresentation();});
+        QObject::connect(&ApplicationThemeManager::instance(),&ApplicationThemeManager::animationsEnabledChanged,
+            this,[this](bool enabled){if(!enabled)refreshPresentation();});
         QObject::connect(this, &QTabBar::currentChanged, this, [this] {
-            if (flatTabs()) refreshPresentation();
+            if(currentLabels())startTransition();else if(flatTabs())refreshPresentation();
         });
         QObject::connect(this, &QTabBar::tabMoved, this, [this] {
             clearClick();
@@ -56,9 +91,9 @@ public:
 protected:
     QSize tabSizeHint(int index) const override {
         if (flatTabs()) {
-            const auto text = showsTitle(index) ? presentationTitle(index) : QString();
-            return QSize(iconWidth(index) + (text.isEmpty() ? 0 : textGap + labelMetrics().horizontalAdvance(text))
-                         + (showsTitle(index) ? buttonExtent(index) : 0), tabHeight());
+            const auto text=presentationTitle(index);
+            return QSize(iconWidth(index)+qRound(labelWeight(index)*((text.isEmpty()?0:textGap+labelMetrics().horizontalAdvance(text))
+                         +buttonExtent(index))),tabHeight());
         }
         auto hint = Base::tabSizeHint(index);
         if (this->property("compactIconTabs").toBool()) hint.setWidth(this->iconSize().width() + 24);
@@ -66,7 +101,7 @@ protected:
     }
     QSize minimumTabSizeHint(int index) const override {
         if (flatTabs()) {
-            if (!showsTitle(index)) return QSize(iconWidth(index), tabHeight());
+            if (labelWeight(index)<=0) return QSize(iconWidth(index), tabHeight());
             const QString text = presentationTitle(index);
             QTextBoundaryFinder boundary(QTextBoundaryFinder::Grapheme, text);
             int end = 0;
@@ -78,7 +113,7 @@ protected:
             const auto metrics = labelMetrics();
             const int textWidth = text.isEmpty() ? 0 : textGap + qMin(metrics.horizontalAdvance(text),
                 metrics.horizontalAdvance(text.left(end) + QChar(0x2026)));
-            return QSize(iconWidth(index) + buttonExtent(index) + textWidth, tabHeight());
+            return QSize(iconWidth(index)+qRound(labelWeight(index)*(buttonExtent(index)+textWidth)),tabHeight());
         }
         if (this->property("compactIconTabs").toBool()) return tabSizeHint(index);
         auto hint = Base::minimumTabSizeHint(index);
@@ -102,6 +137,14 @@ protected:
     }
     void paintEvent(QPaintEvent* event) override {
         if (flatTabs()) { paintNavigation(); return; }
+        if (this->property("editorFileTabs").toBool()) {
+            const auto& theme=InsightVisualStyle::theme();
+            this->setProperty("editorTabSelectedBackground",this->property("workspaceRegionGroup").toBool()
+                ?InsightVisualStyle::workspaceTabSelected(this->property("workspaceRegionFocused").toBool()):theme.tab.tabBackgroundSelected);
+            this->setProperty("editorTabHoverBackground",theme.tab.tabBackgroundHover);
+            this->setProperty("editorTabFocusColor",theme.focus.ring);
+            QPainter background(this); background.fillRect(this->rect(),theme.tab.barBackground);
+        }
         Base::paintEvent(event);
         const QVariant boundary = this->property("temporaryTabBoundary");
         if (!boundary.isValid() || boundary.toInt() < 0) return;
@@ -133,6 +176,8 @@ protected:
         this->update();
     }
     void mouseMoveEvent(QMouseEvent* event) override {
+        if(moving && event->buttons().testFlag(Qt::LeftButton)
+            && (event->globalPosition()-pressPosition).manhattanLength()>QApplication::startDragDistance())refreshPresentation();
         Base::mouseMoveEvent(event);
         if (flatTabs()) { syncTabButtons(); this->update(); }
     }
@@ -159,7 +204,25 @@ protected:
     void tabInserted(int index) override { clearClick(); Base::tabInserted(index); if (flatTabs()) refreshPresentation(); }
     void tabRemoved(int index) override { clearClick(); Base::tabRemoved(index); if (flatTabs()) refreshPresentation(); }
     void tabLayoutChange() override { Base::tabLayoutChange(); if (flatTabs()) syncTabButtons(); }
+    void resizeEvent(QResizeEvent* event) override {Base::resizeEvent(event);if(currentLabels())refreshPresentation();}
 private:
+    QVariantAnimation* motion=nullptr;
+    QVector<qreal> labelWeights,startWeights;
+    QRectF movingPill,startPill;
+    bool moving=false;
+    int lastCurrent=-1;
+    qreal labelWeight(int index) const {
+        if(!currentLabels())return 1;
+        return index>=0 && index<labelWeights.size()?labelWeights[index]:(index==this->currentIndex()?1:0);
+    }
+    void startTransition() {
+        const int target=this->currentIndex();
+        if(!this->isVisible() || !ApplicationThemeManager::instance().animationsEnabled()
+            || labelWeights.size()!=this->count() || lastCurrent<0 || target<0 || lastCurrent==target){refreshPresentation();return;}
+        startPill=moving?movingPill:QRectF(this->tabRect(lastCurrent).adjusted(2,2,-2,-2));
+        motion->stop();startWeights=labelWeights;movingPill=startPill;moving=true;lastCurrent=target;
+        motion->start();
+    }
     static constexpr int textGap = 6;
     bool currentLabels() const { return this->property("currentLabelTabs").toBool(); }
     bool bottomTools() const { return this->property("bottomToolTabs").toBool(); }
@@ -208,7 +271,7 @@ private:
                     button->move(side == QTabBar::LeftSide ? tab.left()+8 : tab.right()-8-size.width()+1,
                                  tab.top()+(tab.height()-size.height())/2);
                 }
-                bool exposed = (!currentLabels() || (index == this->currentIndex() && showCurrentClose()))
+                bool exposed = (!currentLabels() || (!moving && index == this->currentIndex() && showCurrentClose()))
                     && this->isTabVisible(index) && this->rect().contains(button->geometry());
                 for (const auto* scroll : scrollButtons)
                     if (scroll != button && scroll->isVisible() && scroll->geometry().intersects(button->geometry())) exposed = false;
@@ -216,7 +279,11 @@ private:
             }
         }
     }
-    void refreshPresentation() {
+    void refreshPresentation(bool settle=true) {
+        if(settle && motion){
+            motion->stop();moving=false;lastCurrent=this->currentIndex();labelWeights.resize(this->count());
+            for(int i=0;i<labelWeights.size();++i)labelWeights[i]=i==lastCurrent?1:0;
+        }
         if (flatTabs())
             for (auto* scroll : this->template findChildren<QToolButton*>(QString(), Qt::FindDirectChildrenOnly))
                 scroll->setAutoRaise(true);
@@ -247,25 +314,28 @@ private:
             if (scroll->isVisible()) tabsClip -= scroll->geometry();
         painter.setClipRegion(tabsClip);
         const auto& tokens = InsightVisualStyle::theme();
-        const QColor selected = tokens.tab.tabBackgroundSelected;
+        const QColor selected = this->property("workspaceRegionGroup").toBool()
+            ?InsightVisualStyle::workspaceTabSelected(this->property("workspaceRegionFocused").toBool()):tokens.tab.tabBackgroundSelected;
         const QColor hover = tokens.tab.tabBackgroundHover;
         const QColor textColor = tokens.tab.textSelected;
         const QColor focus = tokens.focus.ring;
         const QPoint pointer = this->mapFromGlobal(QCursor::pos());
+        if(moving){painter.setPen(Qt::NoPen);painter.setBrush(selected);painter.drawRoundedRect(movingPill,8,8);}
         for (int i=0; i<this->count(); ++i) {
             if (!this->isTabVisible(i)) continue;
             const QRect rect = this->tabRect(i);
             const QRect pill = rect.adjusted(2,2,-2,-2);
             const bool active = i == this->currentIndex();
-            if (active || (this->underMouse() && rect.contains(pointer))) {
+            if ((!moving && active) || (!active && this->underMouse() && rect.contains(pointer))) {
                 painter.setPen(Qt::NoPen);
                 painter.setBrush(active ? selected : hover);
                 painter.drawRoundedRect(pill, 8, 8);
             }
-            const QString text = showsTitle(i) ? displayText(i,rect.width()) : QString();
+            const QString text = labelWeight(i)>0 ? displayText(i,rect.width()) : QString();
             const QSize icon = navigationIconSize();
-            const int x = showsTitle(i) ? rect.left()+10+buttonExtent(i,QTabBar::LeftSide)
-                : rect.left()+(rect.width()-icon.width()-statusWidth(i))/2;
+            const int centered=rect.left()+(rect.width()-icon.width()-statusWidth(i))/2;
+            const int expanded=rect.left()+10+buttonExtent(i,QTabBar::LeftSide);
+            const int x=qRound(centered+(expanded-centered)*labelWeight(i));
             const QRect iconRect(QPoint(x,rect.top()+(rect.height()-icon.height())/2),icon);
             const auto tabIcon = this->tabIcon(i);
             auto glyph = (tabIcon.isNull() ? RoundedIcons::icon(RoundedIcons::File) : tabIcon).pixmap(
@@ -311,9 +381,11 @@ private:
                 painter.restore();
             }
             if (!text.isEmpty()) {
+                painter.save();painter.setClipRect(rect,Qt::IntersectClip);painter.setOpacity(labelWeight(i));
                 painter.setPen(this->isTabEnabled(i) ? (active ? textColor : tokens.textSecondary)
                     : this->palette().color(QPalette::Disabled,QPalette::Text));
                 ElaTabBarMetrics::drawText(painter,iconRect.right()+1+statusWidth(i)+textGap,QRectF(rect).center().y(),text);
+                painter.restore();
             }
             if (active && keyboardFocus()) {
                 painter.setPen(QPen(focus,1)); painter.setBrush(Qt::NoBrush);
@@ -1028,12 +1100,12 @@ QPlainTextEdit* UiControls::readOnlyText(const QString& value, QWidget* parent) 
 
 QMenu* UiControls::menu(QWidget* parent) {
 #ifdef ZEROSLACK_ENABLE_ELA
-    auto* popup = prepare(new ElaMenu(parent));
+    auto* popup = prepare(new WorkAreaMenu<ElaMenu>(parent));
     popup->setNativeMenuBehavior(true);
     popup->setMenuItemHeight(qMax(28, popup->fontMetrics().height() + 12));
     return popup;
 #else
-    return new QMenu(parent);
+    return new WorkAreaMenu<QMenu>(parent);
 #endif
 }
 QMenu* UiControls::addMenu(QMenu* parent, const QString& title) {

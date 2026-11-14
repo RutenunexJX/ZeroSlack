@@ -5,6 +5,8 @@
 #include "tabmanager.h"
 #include "uidialogs.h"
 #include "webdocumentpage.h"
+#include "tabfileio.h"
+#include "retireddocument.h"
 #include "webeditorcontainer.h"
 #include "pdfdocumentpage.h"
 #include "workspacemanager.h"
@@ -166,25 +168,58 @@ private slots:
             if (data->hasImage()) clipboardImage = qvariant_cast<QImage>(data->imageData());
         }
     }
-    void sharedThemePreservesDocument_data() {
-        QTest::addColumn<bool>("blocks"); QTest::newRow("markdown")<<false; QTest::newRow("blocks")<<true;
+    void retiredBlockDocumentsPreserveFilesRecoveryAndOtherTabs() {
+        const auto workspace = QDir::fromNativeSeparators(file("retired-documents")); QVERIFY(QDir().mkpath(workspace));
+        const auto retired = workspace + "/legacy.zblock", code = workspace + "/retained.sv";
+        const QByteArray original("{\"format\":\"zeroslack.blocks\",\"opaque\":\"preserve attachments and state\"}");
+        QVERIFY(write(retired, original)); QVERIFY(write(code, "module retained; endmodule\n"));
+        WebDocumentSession session(WebDocumentSession::Kind::Markdown); QString issue;
+        QVERIFY(!WebDocumentSession::supportsFile(retired)); QVERIFY(!session.openFile(retired, &issue));
+        QCOMPARE(issue, RetiredDocument::message()); QVERIFY(!session.ready());
+        const QString payload = QString::fromUtf8(QJsonDocument(QJsonObject{{"format", "zeroslack.web-recovery"}, {"version", 1}, {"kind", "blocks"}, {"content", "unsaved native state"}}).toJson());
+        QVERIFY(!session.restoreRecovery(payload, &issue)); QCOMPARE(issue, RetiredDocument::message());
+        QVERIFY(!TabFileIo().writeTextFile(nullptr, retired, QString(), &issue)); QCOMPARE(read(retired), original);
+        for (const char* id : {"file.newBlocks", "file.importMarkdown", "file.exportMarkdown"}) QVERIFY(!findActionById(QString::fromLatin1(id)));
+        MainWindow window; auto* tabs = window.tabManager.get();
+        tabs->setWorkspaceScope({workspace}, workspace);
+        { auto dismiss = answer("OK"); QVERIFY(!tabs->openFileInTab(retired)); }
+        QVERIFY(!tabs->createWebDocumentFile(WebDocumentPage::Kind::Markdown, workspace + "/new.zblock", {}, &issue));
+        QVERIFY(!QFileInfo::exists(workspace + "/new.zblock"));
+        QVERIFY(tabs->webDocuments().isEmpty()); QVERIFY(window.findChildren<WebEditorContainer*>().isEmpty());
+        WorkspaceSessionTabState oldTab, codeTab; oldTab.kind = "blocks"; oldTab.filePath = retired;
+        codeTab.kind = "code"; codeTab.filePath = code; QStringList skipped;
+        QCOMPARE(tabs->restoreWorkspaceSessionTabs(workspace, {oldTab, codeTab}, &skipped), QStringList{code});
+        QCOMPARE(skipped, QStringList{retired}); QCOMPARE(read(retired), original);
+        tabs->setCrashRecoveryService(std::make_unique<CrashRecoveryService>(workspace + "/recovery"));
+        auto* service = tabs->crashRecoveryServiceForTesting();
+        for (const bool untitled : {false, true}) {
+            CrashRecoverySnapshotRequest request; request.document.workspacePath = workspace;
+            if (untitled) request.document.untitledDocumentId = "web:legacy.zblock";
+            else request.document.originalFilePath = retired;
+            request.text = payload; request.documentRevision = 2;
+            const auto written = service->writeSnapshot(request); QVERIFY2(written.succeeded(), qPrintable(written.reason));
+            const auto recoveryBytes = read(written.storagePath);
+            const auto comparison = service->readComparison(workspace, written.recoveryId); QVERIFY(comparison.succeeded());
+            const auto result = tabs->applyCrashRecoveryCandidate(comparison.candidate);
+            QVERIFY(!result.succeeded()); QCOMPARE(result.reason, RetiredDocument::message());
+            QVERIFY(tabs->webDocuments().isEmpty()); QCOMPARE(read(written.storagePath), recoveryBytes);
+            QVERIFY(tabs->closeAllTabs()); tabs->clearCrashRecoveryAfterNormalClose();
+            QCOMPARE(read(written.storagePath), recoveryBytes); QCOMPARE(read(retired), original);
+        }
     }
     void sharedThemePreservesDocument() {
-        QFETCH(bool,blocks);
-        const auto kind=blocks ? WebDocumentPage::Kind::Blocks : WebDocumentPage::Kind::Markdown;
+        const auto kind=WebDocumentPage::Kind::Markdown;
         WebDocumentPage page(kind);
-        const auto input=file(blocks ? "theme-block-source.md" : "theme-markdown.md");
+        const auto input=file("theme-markdown.md");
         QVERIFY(write(input,"# Theme review\n\nReadable document content.\n\n- Notes keep their own type size.\n- The surrounding UI follows the selected theme.\n"));
         QString issue;
-        if (blocks) QVERIFY2(page.importMarkdown(input,&issue),qPrintable(issue));
-        else QVERIFY2(page.openFile(input,&issue),qPrintable(issue));
+        QVERIFY2(page.openFile(input,&issue),qPrintable(issue));
         QVERIFY(ready(page));
-        if (blocks) QVERIFY(page.save(true,file("theme-blocks.zblock")));
         paste(page,"Theme edit remains unsaved."); QTRY_VERIFY(page.dirty());
         QString baseline; quint64 revision=0; QVERIFY(page.captureRecovery(&baseline,&revision));
         for (auto mode:{ThemeMode::Light,ThemeMode::Dark,ThemeMode::CatppuccinLatte,ThemeMode::CatppuccinFrappe,ThemeMode::CatppuccinMacchiato,ThemeMode::CatppuccinMocha}) {
             ApplicationThemeManager::instance().setMode(mode); page.setTheme(isDarkTheme(mode)); QTest::qWait(200);
-            const auto name=QString("shared-theme-%1-%2").arg(blocks ? "blocks" : "markdown").arg(int(mode));
+            const auto name=QString("shared-theme-%1-%2").arg("markdown").arg(int(mode));
             capture(page,name);
             QString content; quint64 current=0; QVERIFY(page.captureRecovery(&content,&current));
             QCOMPARE(content,baseline); QCOMPARE(current,revision); QVERIFY(page.dirty());
@@ -193,11 +228,8 @@ private slots:
         QVERIFY(page.save()); QVERIFY(!page.dirty()); const auto saved=read(page.fileName());
         page.setTheme(true); QTest::qWait(150); QVERIFY(!page.dirty()); QCOMPARE(page.currentRevision(),revision); QCOMPARE(read(page.fileName()),saved);
     }
-    void sharedDocumentWorkerSurvivesOriginalView_data() {
-        QTest::addColumn<QString>("kind"); QTest::newRow("markdown") << QString("markdown"); QTest::newRow("blocks") << QString("blocks");
-    }
     void sharedDocumentWorkerSurvivesOriginalView() {
-        QFETCH(QString, kind);
+        const QString kind = QStringLiteral("markdown");
         QWidget window; auto* layout = new QHBoxLayout(&window);
         const QString runtime = qEnvironmentVariable("ZEROSLACK_WEB_PROOF_RESOURCES"); QVERIFY(!runtime.isEmpty());
         const QString session = QUuid::createUuid().toString();
@@ -209,7 +241,7 @@ private slots:
             connect(web, &WebEditorContainer::initializationFailed, this, [&](const QString& value) { failure = value; });
             connect(web, &WebEditorContainer::messageReceived, this, [&, web](const QJsonObject& value) {
                 const QString type = value.value("type").toString();
-                if (type == "hello") web->postMessage({{"type", "initialize"}, {"session", session}, {"document", "proof"}, {"content", "# Shared\n\nOriginal content\n"}, {"importMarkdown", kind == "blocks"}});
+                if (type == "hello") web->postMessage({{"type", "initialize"}, {"session", session}, {"document", "proof"}, {"content", "# Shared\n\nOriginal content\n"}});
                 else if (type == "ready") initialized.insert(web);
                 else if (type == "changed") revisions[web] = value.value("revision").toInteger();
                 else if (type == "error") { failure = value.value("message").toString(); qWarning() << "Shared editor error" << failure; }
@@ -224,9 +256,9 @@ private slots:
             return view->postMessage({{"type", "command"}, {"session", session}, {"document", "proof"}, {"command", name},
                 {"clipboard", QJsonObject{{"text", text}, {"html", ""}}}});
         };
-        auto snapshot = [&](WebEditorContainer* view, bool native = false) {
+        auto snapshot = [&](WebEditorContainer* view) {
             const QString request = QUuid::createUuid().toString();
-            view->postMessage({{"type", "snapshot"}, {"session", session}, {"document", "proof"}, {"request", request}, {"mode", kind == "blocks" && !native ? "exportMarkdown" : ""}});
+            view->postMessage({{"type", "snapshot"}, {"session", session}, {"document", "proof"}, {"request", request}});
             QElapsedTimer timer; timer.start();
             while (!replies.contains(request) && timer.elapsed() < 30000) QTest::qWait(10);
             return replies.take(request);
@@ -247,23 +279,19 @@ private slots:
         QVERIFY(command(right, "selectAll")); QVERIFY(command(right, "paste", "Saved after closing the original view"));
         value = snapshot(right); QVERIFY2(value.value("type") == "snapshot", qPrintable(QJsonDocument(value).toJson()));
         QVERIFY2(value.value("content").toString().contains("Saved after closing"), qPrintable(QJsonDocument(value).toJson()));
-        value = snapshot(right, true);
-        const QString survivor = "shared-worker-survivor." + (kind == "blocks" ? QString("zblock") : QString("md"));
+        value = snapshot(right);
+        const QString survivor = QStringLiteral("shared-worker-survivor.md");
         QSaveFile saved(file(survivor)); QVERIFY(saved.open(QIODevice::WriteOnly));
         const auto bytes = value.value("content").toString().toUtf8(); QCOMPARE(saved.write(bytes), bytes.size()); QVERIFY(saved.commit());
         QCOMPARE(read(file(survivor)), bytes); QVERIFY2(failure.isEmpty(), qPrintable(failure)); capture(window, "shared-" + kind + "-survivor");
     }
-    void mainWindowSharedSessions_data() {
-        QTest::addColumn<bool>("blocks"); QTest::newRow("markdown") << false; QTest::newRow("blocks") << true;
-    }
     void mainWindowSharedSessions() {
-        QFETCH(bool, blocks);
         MainWindow window; window.resize(1400, 850); window.show(); window.activateWindow();
         auto* tabs = window.tabManager.get(); QVERIFY(tabs);
-        auto* first = tabs->createWebDocument(blocks ? WebDocumentPage::Kind::Blocks : WebDocumentPage::Kind::Markdown);
+        auto* first = tabs->createWebDocument(WebDocumentPage::Kind::Markdown);
         QVERIFY(first); QTRY_VERIFY_WITH_TIMEOUT(first->ready(), 30000); QVERIFY2(!first->dirty(), qPrintable(notice(*first)));
         paste(*first, "Original shared document", true);
-        const QString path = file(blocks ? "shared-native.zblock" : "shared-native.md"); QVERIFY2(first->save(true, path), qPrintable(notice(*first)));
+        const QString path = file("shared-native.md"); QVERIFY2(first->save(true, path), qPrintable(notice(*first)));
         QVERIFY(tabs->duplicateCurrentView()); auto* second = tabs->currentWebDocument(); QVERIFY(second && second != first);
         QTRY_VERIFY_WITH_TIMEOUT(second->ready(), 30000);
         QCOMPARE(first->documentSession(), second->documentSession()); QCOMPARE(first->documentId(), second->documentId());
@@ -285,11 +313,11 @@ private slots:
         second->executeCommand("undo"); QTRY_VERIFY_WITH_TIMEOUT(first->dirty(), 5000);
         QVERIFY2(copiedText(first).contains("Original shared document"), qPrintable(QApplication::clipboard()->text()));
         first->executeCommand("redo"); QTest::qWait(100); QVERIFY(copiedText(second).contains("Shared final paste before save"));
-        const QString relocated = file(blocks ? "shared-save-as.zblock" : "shared-save-as.md");
+        const QString relocated = file("shared-save-as.md");
         QVERIFY(second->save(true, relocated)); QCOMPARE(first->fileName(), second->fileName()); QVERIFY(!first->dirty());
         paste(*second, "Unsaved before shared rename 中文", true); QTRY_VERIFY_WITH_TIMEOUT(second->dirty(), 5000);
         QString checkpoint; quint64 checkpointRevision = 0; QVERIFY(second->captureRecovery(&checkpoint, &checkpointRevision));
-        const QString renamed = file(blocks ? "shared-renamed.zblock" : "shared-renamed.md");
+        const QString renamed = file("shared-renamed.md");
         {
             WorkspacePathMutation mutation; QString issue;
             QVERIFY2(tabs->prepareWorkspacePathMutation(relocated, false, &mutation, &window, &issue, {}, renamed), qPrintable(issue));
@@ -302,39 +330,25 @@ private slots:
         auto* firstGroup = splits->groupForPage(first); QVERIFY(firstGroup); splits->setActiveGroup(firstGroup); firstGroup->setCurrentWidget(first);
         tabs->closeTab(firstGroup->indexOf(first)); QCOMPARE(second->documentSession()->views().size(), 1);
         QVERIFY(second->dirty()); QVERIFY2(second->save(), qPrintable(notice(*second))); QVERIFY(copiedText(second).contains("Survivor after original"));
-        capture(window, blocks ? "mainwindow-shared-blocks" : "mainwindow-shared-markdown"); QVERIFY(tabs->closeAllTabs());
+        capture(window, "mainwindow-shared-markdown"); QVERIFY(tabs->closeAllTabs());
         QVERIFY(tabs->openFileInTab(renamed)); auto* reopened = tabs->currentWebDocument(); QVERIFY(reopened); QTRY_VERIFY_WITH_TIMEOUT(reopened->ready(), 30000);
         QVERIFY(copiedText(reopened).contains("Survivor after original")); QVERIFY(tabs->closeAllTabs()); tabs->clearCrashRecoveryAfterNormalClose();
     }
-    void mainWindowSharedViewState_data() {
-        QTest::addColumn<bool>("blocks"); QTest::newRow("markdown") << false; QTest::newRow("blocks") << true;
-    }
     void mainWindowSharedViewState() {
-        QFETCH(bool, blocks); MainWindow window; window.resize(1280, 820); window.show(); window.activateWindow();
+        MainWindow window; window.resize(1280, 820); window.show(); window.activateWindow();
         auto* tabs = window.tabManager.get(); auto* splits = tabs->editorSplitController();
-        auto* first = tabs->createWebDocument(blocks ? WebDocumentPage::Kind::Blocks : WebDocumentPage::Kind::Markdown);
+        auto* first = tabs->createWebDocument(WebDocumentPage::Kind::Markdown);
         QVERIFY(first); QTRY_VERIFY_WITH_TIMEOUT(first->ready(), 30000);
-        paste(*first, QString::fromUtf8("A😀BC"), true); const QString path = file(blocks ? "positions.zblock" : "positions.md"); QVERIFY(first->save(true, path));
+        paste(*first, QString::fromUtf8("A😀BC"), true); const QString path = file("positions.md"); QVERIFY(first->save(true, path));
         first->executeCommand("focus"); QTest::qWait(100);
-        const auto initial = first->viewState(); QVERIFY(write(file(blocks ? "blocks-selection.json" : "markdown-selection.json"), QJsonDocument(initial).toJson()));
-        QJsonObject point;
-        if (blocks) {
-            for (const auto& entry : initial.value("selection").toArray()) if (entry.toObject().value("type") == QStringLiteral("text")) point = entry.toObject();
-            QVERIFY2(!point.isEmpty(), qPrintable(QString::fromUtf8(QJsonDocument(initial).toJson())));
-        }
+        const auto initial = first->viewState(); QVERIFY(write(file("markdown-selection.json"), QJsonDocument(initial).toJson()));
         paste(*first, QStringLiteral("\n\nscroll paragraph\n\n").repeated(70)); QVERIFY(first->save());
         const auto stateAt = [&](int offset, int top) {
-            if (blocks) {
-                auto value = point; auto from = value.value("from").toObject(); from.insert("index", offset); from.insert("length", 0);
-                value.insert("from", from); value.insert("to", QJsonValue::Null); value.insert("reverse", false);
-                return QJsonObject{{"selection", QJsonArray{value}}, {"top", top}, {"left", 0}};
-            }
             const QJsonObject edge{{"path", QJsonArray{0, "text"}}, {"offset", offset}};
             return QJsonObject{{"selection", QJsonObject{{"anchor", edge}, {"focus", edge}}}, {"top", top}, {"left", 0}};
         };
         const auto offsetOf = [&](WebDocumentPage* page) {
             const auto value = page->viewState().value("selection");
-            if (blocks) { const auto entries = value.toArray(); return entries.isEmpty() ? -1 : entries.first().toObject().value("from").toObject().value("index").toInt(-1); }
             return value.toObject().value("anchor").toObject().value("offset").toInt(-1);
         };
         QVERIFY(tabs->duplicateCurrentView()); auto* second = tabs->currentWebDocument(); QVERIFY(second && second != first); QTRY_VERIFY_WITH_TIMEOUT(second->ready(), 30000);
@@ -355,13 +369,13 @@ private slots:
             QElapsedTimer elapsed; elapsed.start(); while ((QApplication::clipboard()->text().isEmpty() || QApplication::clipboard()->text().startsWith("position sentinel")) && elapsed.elapsed() < 5000) QTest::qWait(10);
             return QApplication::clipboard()->text();
         };
-        const auto combined = content(); QVERIFY(write(file(blocks ? "blocks-combined.txt" : "markdown-combined.txt"), combined.toUtf8()));
+        const auto combined = content(); QVERIFY(write(file("markdown-combined.txt"), combined.toUtf8()));
         QVERIFY2(combined.contains(QString::fromUtf8("R😀A😀BLC")), qPrintable(combined.left(100) + QStringLiteral("\n") + notice(*second)));
         auto revision = second->currentRevision(); first->executeCommand("undo"); first->executeCommand("undo");
         QTRY_VERIFY_WITH_TIMEOUT(second->currentRevision() >= revision + 2, 5000);
         QString undoSnapshot; quint64 undoRevision = 0; QVERIFY(second->captureRecovery(&undoSnapshot, &undoRevision));
-        QVERIFY(write(file(blocks ? "blocks-after-undo.json" : "markdown-after-undo.json"), undoSnapshot.toUtf8()));
-        const auto undone = content(); QVERIFY(write(file(blocks ? "blocks-undone.txt" : "markdown-undone.txt"), undone.toUtf8()));
+        QVERIFY(write(file("markdown-after-undo.json"), undoSnapshot.toUtf8()));
+        const auto undone = content(); QVERIFY(write(file("markdown-undone.txt"), undone.toUtf8()));
         QVERIFY2(undone.startsWith(QString::fromUtf8("😀A😀BC")), qPrintable(undone.left(100) + QStringLiteral("\n") + notice(*second)));
         revision = second->currentRevision(); second->executeCommand("redo"); second->executeCommand("redo");
         QTRY_VERIFY_WITH_TIMEOUT(second->currentRevision() >= revision + 2, 5000); QCOMPARE(content(), combined);
@@ -442,64 +456,6 @@ private slots:
         { auto click = answer("Discard"); QVERIFY(page.confirmClose()); }
         QVERIFY(read(file("close.md")).contains("Final characters"));
     }
-    void blockNativeMultipleSavesImagesAndPortableReopen() {
-        WebDocumentPage page(WebDocumentPage::Kind::Blocks); QVERIFY(page.setInitialContent("")); QVERIFY(ready(page));
-        paste(page, "Native 中文 first"); QVERIFY2(page.save(true, file("native.zblock")), qPrintable(notice(page)));
-        QTest::qWait(80); const auto insertionPoint = page.viewState();
-        QVERIFY(!insertionPoint.value("selection").toArray().isEmpty());
-        const auto first = QJsonDocument::fromJson(read(file("native.zblock"))).object(); QVERIFY(first.value("state").toString().size() > 50);
-        QVERIFY(write(file("native-first.zblock"), read(file("native.zblock"))));
-        page.executeCommand("undo"); QTRY_VERIFY_WITH_TIMEOUT(page.dirty(), 5000); QVERIFY(page.save());
-        QVERIFY(write(file("native-undo.zblock"), read(file("native.zblock"))));
-        page.executeCommand("redo"); QTRY_VERIFY_WITH_TIMEOUT(page.dirty(), 5000); QVERIFY(page.save());
-        QVERIFY(write(file("native-redo.zblock"), read(file("native.zblock"))));
-        QVERIFY(setClipboard(QStringLiteral("block clipboard sentinel"))); page.executeCommand("selectAll"); QTest::qWait(100); page.executeCommand("copy");
-        QTRY_VERIFY_WITH_TIMEOUT(QApplication::clipboard()->text().contains("Native 中文 first"), 5000);
-        QVERIFY(QApplication::clipboard()->mimeData()->html().contains("data-blocksuite-snapshot"));
-        page.restoreViewState(insertionPoint); QTest::qWait(80);
-        QImage image(20, 20, QImage::Format_ARGB32); image.fill(QColor("#12b76a")); QVERIFY(setClipboard(image));
-        page.executeCommand("focus"); page.executeCommand("paste");
-        QVERIFY2(page.save(), qPrintable(notice(page)));
-        const auto second = QJsonDocument::fromJson(read(file("native.zblock"))).object(); QCOMPARE(second.value("documentId"), first.value("documentId")); QCOMPARE(second.value("workspaceId"), first.value("workspaceId"));
-        QVERIFY(second.value("state") != first.value("state")); QCOMPARE(second.value("attachments").toArray().size(), 1);
-        QString error; QVERIFY2(WebDocumentPage::validateBlockPackage(second, &error), qPrintable(error));
-        const auto bytes = read(file("native.zblock")); const auto modified = QFileInfo(file("native.zblock")).lastModified(); QVERIFY(page.save()); QCOMPARE(read(file("native.zblock")), bytes); QCOMPARE(QFileInfo(file("native.zblock")).lastModified(), modified);
-        page.executeCommand("selectAll"); QTest::qWait(100); QVERIFY(setClipboard(QStringLiteral("copy all sentinel"))); page.executeCommand("copy");
-        QTRY_VERIFY_WITH_TIMEOUT(QApplication::clipboard()->text().contains("Native 中文 first"), 5000);
-        WebDocumentPage pasted(WebDocumentPage::Kind::Blocks); QVERIFY(pasted.setInitialContent("")); QVERIFY(ready(pasted));
-        pasted.executeCommand("focus"); pasted.executeCommand("paste"); QVERIFY2(pasted.save(true, file("block-copied.zblock")), qPrintable(notice(pasted)));
-        QCOMPARE(QJsonDocument::fromJson(read(file("block-copied.zblock"))).object().value("attachments").toArray().size(), 1);
-        QVERIFY(QDir().mkpath(file("Blocks 迁移"))); QVERIFY(write(file("Blocks 迁移/native.zblock"), bytes));
-        WebDocumentPage copied(WebDocumentPage::Kind::Blocks, nullptr, {{}, file("fresh block profile")});
-        QVERIFY(copied.openFile(file("Blocks 迁移/native.zblock"))); QVERIFY(ready(copied)); QVERIFY(!copied.dirty());
-        paste(copied, "Second environment"); QVERIFY(copied.save());
-        const auto third = QJsonDocument::fromJson(read(file("Blocks 迁移/native.zblock"))).object(); QCOMPARE(third.value("documentId"), first.value("documentId")); QCOMPARE(third.value("attachments").toArray().size(), 1); QCOMPARE(read(file("native.zblock")), bytes);
-        capture(copied, "block-portable-image");
-    }
-    void blockImportExportUnknownFormatAndMissingAttachment() {
-        const QString markdown = "# Heading\n\nParagraph **bold** and *italic*.\n\n- parent\n  - child\n\n- [x] checked\n\n> Quote\n\n```custom-language\nkeep this language\n```\n\n| Left | Right |\n| --- | --- |\n| A | B |\n";
-        QVERIFY(write(file("conversion.md"), markdown.toUtf8()));
-        WebDocumentPage page(WebDocumentPage::Kind::Blocks); QString error; QVERIFY(page.importMarkdown(file("conversion.md"), &error)); QVERIFY2(ready(page), qPrintable(notice(page)));
-        QVERIFY2(page.save(true, file("converted.zblock")), qPrintable(notice(page))); QCOMPARE(read(file("conversion.md")), markdown.toUtf8());
-        {
-            auto click = answer("OK"); QTimer picker; picker.setInterval(30);
-            connect(&picker, &QTimer::timeout, this, [&] { for (auto* top : QApplication::topLevelWidgets()) if (auto* dialog = qobject_cast<QFileDialog*>(top); dialog && dialog->isVisible() && !dialog->property("documentTestSelected").toBool()) {
-                dialog->setProperty("documentTestSelected", true); dialog->setDirectory(root); dialog->selectFile("exported.md");
-                QTimer::singleShot(200, dialog, [dialog] { if (auto* name = dialog->findChild<QLineEdit*>("fileNameEdit")) name->setText("exported.md"); qInfo() << "Export selected files" << dialog->selectedFiles(); QMetaObject::invokeMethod(dialog, "accept"); });
-            } }); picker.start();
-            QTimer watchdog; watchdog.setSingleShot(true); watchdog.setInterval(15000);
-            connect(&watchdog, &QTimer::timeout, this, [&] { for (auto* top : QApplication::topLevelWidgets()) if (auto* dialog = qobject_cast<QDialog*>(top); dialog && dialog->isVisible()) { dialog->grab().save(file("export-dialog-timeout.png")); dialog->reject(); } }); watchdog.start();
-            QVERIFY2(page.exportMarkdown(), qPrintable(notice(page)));
-        }
-        QVERIFY(read(file("exported.md")).contains("custom-language")); QVERIFY(read(file("exported.md")).contains("Heading")); QCOMPARE(read(file("conversion.md")), markdown.toUtf8());
-        WebDocumentPage exported(WebDocumentPage::Kind::Markdown); QVERIFY(exported.openFile(file("exported.md"))); QVERIFY(ready(exported)); QVERIFY(exported.save());
-        auto package = QJsonDocument::fromJson(read(file("native.zblock"))).object(); QVERIFY(!package.isEmpty());
-        package["version"] = 999; WebDocumentPage unknown(WebDocumentPage::Kind::Blocks); QVERIFY(!unknown.setInitialContent(QString::fromUtf8(QJsonDocument(package).toJson()), &error)); QVERIFY(error.contains("unknown format"));
-        package["version"] = 1; package["attachments"] = QJsonArray();
-        WebDocumentPage missing(WebDocumentPage::Kind::Blocks); QVERIFY(missing.setInitialContent(QString::fromUtf8(QJsonDocument(package).toJson()))); missing.show();
-        QTRY_VERIFY_WITH_TIMEOUT(notice(missing).contains("attachment", Qt::CaseInsensitive), 30000); QVERIFY(!missing.ready()); QVERIFY(!missing.save(true, file("missing-attachment.zblock"))); QVERIFY(!QFileInfo::exists(file("missing-attachment.zblock")));
-        capture(page, "blocks-converted-table-nesting");
-    }
     void failedRuntimeStaleMessagesAndClosedCallbacks() {
         WebDocumentPage absent(WebDocumentPage::Kind::Markdown, nullptr, {file("missing-runtime"), file("missing-runtime-profile")});
         QVERIFY(absent.setInitialContent("Keep me")); absent.show(); QTRY_VERIFY_WITH_TIMEOUT(notice(absent).contains("resource", Qt::CaseInsensitive), 5000); QVERIFY(!absent.save(true, file("absent.md"))); QVERIFY(absent.dirty());
@@ -509,7 +465,7 @@ private slots:
         emit web->messageReceived({{"type", "snapshot"}, {"session", "stale"}, {"document", page->documentId()}, {"request", "obsolete"}, {"revision", 999}, {"content", "overwrite"}});
         QVERIFY(page->save(true, file("guard.md"))); QCOMPARE(read(file("guard.md")), QByteArray("Guard"));
         QPointer<WebEditorContainer> guarded(web); page.reset(); QVERIFY(guarded.isNull()); QTest::qWait(100);
-        auto loading = std::make_unique<WebDocumentPage>(WebDocumentPage::Kind::Blocks); QVERIFY(loading->setInitialContent("")); loading->show(); QTest::qWait(1); loading.reset(); QTest::qWait(250);
+        auto loading = std::make_unique<WebDocumentPage>(WebDocumentPage::Kind::Markdown); QVERIFY(loading->setInitialContent("")); loading->show(); QTest::qWait(1); loading.reset(); QTest::qWait(250);
     }
     void unavailableInstalledRuntimePreservesDocument() {
         const QByteArray previous = qgetenv("WEBVIEW2_BROWSER_EXECUTABLE_FOLDER");
@@ -529,13 +485,14 @@ private slots:
         QVERIFY(window.findChildren<WebEditorContainer*>().isEmpty());
         QVERIFY(write(file("routing.sv"), "module routing; endmodule\n")); QVERIFY(tabs->openFileInTab(file("routing.sv"))); auto* code = tabs->getCurrentEditor(); QVERIFY(code);
         QVERIFY(tabs->openFileInTab(file("close.md"))); auto* markdown = tabs->currentWebDocument(); QVERIFY(markdown); QTRY_VERIFY_WITH_TIMEOUT(markdown->ready(), 30000); QVERIFY(!tabs->getCurrentEditor());
-        QVERIFY(tabs->openFileInTab(file("native.zblock"))); auto* blocks = tabs->currentWebDocument(); QVERIFY(blocks); QTRY_VERIFY_WITH_TIMEOUT(blocks->ready(), 30000);
+        QVERIFY(write(file("routing-second.md"), "Second document\n"));
+        QVERIFY(tabs->openFileInTab(file("routing-second.md"))); auto* second = tabs->currentWebDocument(); QVERIFY(second); QTRY_VERIFY_WITH_TIMEOUT(second->ready(), 30000);
         QElapsedTimer switches; switches.start();
-        for (int i = 0; i < 20; ++i) { QVERIFY(tabs->openFileInTab(markdown->fileName())); QVERIFY(tabs->openFileInTab(blocks->fileName())); QCoreApplication::processEvents(); }
+        for (int i = 0; i < 20; ++i) { QVERIFY(tabs->openFileInTab(markdown->fileName())); QVERIFY(tabs->openFileInTab(second->fileName())); QCoreApplication::processEvents(); }
         qInfo() << "Forty warm document switches ms" << switches.elapsed();
         QVERIFY(tabs->splitCurrentView(EditorSplitDirection::Right)); QCOMPARE(tabs->webDocuments().size(), 3);
-        auto* splitBlocks = tabs->currentWebDocument(); QVERIFY(splitBlocks != blocks); QCOMPARE(splitBlocks->documentSession(), blocks->documentSession());
-        QTRY_VERIFY_WITH_TIMEOUT(splitBlocks->ready(), 30000); QCOMPARE(tabs->splitCount(), 2);
+        auto* splitSecond = tabs->currentWebDocument(); QVERIFY(splitSecond != second); QCOMPARE(splitSecond->documentSession(), second->documentSession());
+        QTRY_VERIFY_WITH_TIMEOUT(splitSecond->ready(), 30000); QCOMPARE(tabs->splitCount(), 2);
         QVERIFY(tabs->mergeCurrentSplit()); QCOMPARE(tabs->splitCount(), 1);
         QVERIFY(!tabs->saveEditorView(code, true, markdown->fileName()));
         const auto markdownBytes = read(markdown->fileName());
@@ -551,24 +508,20 @@ private slots:
         QVERIFY(write(file("layout.sv"), "module layout; endmodule\n"));
         QVERIFY(write(file("layout-guide.md"), "# Heading\n\nA long first paragraph must wrap within the visible viewport, including its final Coordinator text.\n\n```cpp\nconst int value = 42;\n```\n"));
         QVERIFY(write(file("layout-image.md"), "Second background document\n"));
-        {
-            WebDocumentPage seed(WebDocumentPage::Kind::Blocks);
-            QVERIFY(seed.setInitialContent("")); QTRY_VERIFY_WITH_TIMEOUT(seed.ready(), 30000);
-            QVERIFY(seed.save(true, file("layout-photo.zblock")));
-            QVERIFY(write(file("layout-blocks.zblock"), read(file("layout-photo.zblock"))));
-        }
+        QVERIFY(write(file("layout-photo.md"), "Photo notes\n"));
+        QVERIFY(write(file("layout-notes.md"), "Additional notes\n"));
         MainWindow window; window.resize(1048, 600); window.show(); window.activateWindow();
         auto* tabs = window.tabManager.get(); QVERIFY(tabs);
-        for (const auto& name : {"layout.sv", "layout-guide.md", "layout-image.md", "layout-photo.zblock", "layout-blocks.zblock"})
+        for (const auto& name : {"layout.sv", "layout-guide.md", "layout-image.md", "layout-photo.md", "layout-notes.md"})
             QVERIFY(tabs->openFileInTab(file(name)));
         const auto pages = tabs->webDocuments(); QCOMPARE(pages.size(), 4);
         for (auto* page : pages) QTRY_VERIFY_WITH_TIMEOUT(page->ready(), 30000);
-        for (const auto& name : {"layout-guide.md", "layout-photo.zblock", "layout-image.md", "layout-blocks.zblock"}) {
+        for (const auto& name : {"layout-guide.md", "layout-photo.md", "layout-image.md", "layout-notes.md"}) {
             QVERIFY(tabs->openFileInTab(file(name))); QTest::qWait(100);
             QVERIFY2(viewportMatches(tabs->currentWebDocument(), "first-show"), name);
         }
         auto* navigation = window.findChild<NavigationPaneCoordinator*>(); QVERIFY(navigation);
-        for (const auto& name : {"layout-guide.md", "layout-blocks.zblock"}) {
+        for (const auto& name : {"layout-guide.md", "layout-notes.md"}) {
             QVERIFY(tabs->openFileInTab(file(name))); QTest::qWait(100);
             auto* page = tabs->currentWebDocument(); QVERIFY(page);
             auto* web = page->findChild<WebEditorContainer*>(); QVERIFY(web);
@@ -633,12 +586,8 @@ private slots:
         }
         QVERIFY(tabs->closeAllTabs()); tabs->clearCrashRecoveryAfterNormalClose();
     }
-    void mainWindowLayoutRestoresMixedViews_data() {
-        QTest::addColumn<bool>("blocks"); QTest::newRow("markdown") << false; QTest::newRow("blocks") << true;
-    }
     void mainWindowLayoutRestoresMixedViews() {
-        QFETCH(bool, blocks);
-        const QString workspace = file(blocks ? "layout-blocks" : "layout-markdown");
+        const QString workspace = file("layout-markdown");
         QVERIFY(QDir().mkpath(workspace));
         const QString codePath = workspace + "/top.sv", pdfPath = workspace + "/read.pdf";
         QVERIFY(write(codePath, "module top;\n  logic signal;\nendmodule\n"));
@@ -654,12 +603,12 @@ private slots:
         auto* coordinator = window.findChild<WorkspaceSessionCoordinator*>(); QVERIFY(coordinator);
         QVERIFY(tabs->openFileInRegion(codePath, "right")); auto* code = tabs->getCurrentEditor(); QVERIFY(code);
         auto cursor = code->textCursor(); cursor.setPosition(3); cursor.setPosition(10, QTextCursor::KeepAnchor); code->setTextCursor(cursor);
-        QString issue; const QString webPath = workspace + (blocks ? "/notes.zblock" : "/notes.md");
-        auto* first = tabs->createWebDocumentFile(blocks ? WebDocumentPage::Kind::Blocks : WebDocumentPage::Kind::Markdown, webPath, "left", &issue);
+        QString issue; const QString webPath = workspace + ("/notes.md");
+        auto* first = tabs->createWebDocumentFile(WebDocumentPage::Kind::Markdown, webPath, "left", &issue);
         QVERIFY2(first, qPrintable(issue));
         QString content; for (int i = 0; i < 50; ++i) content += QStringLiteral("Saved paragraph %1 中文\n\n").arg(i);
         paste(*first, content, true); QTRY_VERIFY_WITH_TIMEOUT(first->dirty(), 5000); QVERIFY(first->save());
-        QVERIFY(write(file(blocks ? "layout-blocks-initial.zblock" : "layout-markdown-initial.md"), read(webPath)));
+        QVERIFY(write(file("layout-markdown-initial.md"), read(webPath)));
         QVERIFY(tabs->duplicateCurrentView()); auto* second = tabs->currentWebDocument(); QVERIFY(second && second != first);
         QTRY_VERIFY_WITH_TIMEOUT(second->ready(), 30000); QVERIFY(splits->movePage(second, splits->regionGroup("main")));
         auto firstState = first->viewState(); firstState.insert("top", 120); first->restoreViewState(firstState);
@@ -670,12 +619,12 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(pdf->viewState().value("scale").toDouble(), 125.0, 10000);
         if (auto* tool = splits->pageById("tool:simulationLog")) QVERIFY(splits->movePage(tool, splits->regionGroup("right"), 0));
         QVERIFY(splits->activatePage(second)); QTest::qWait(150);
-        capture(window, blocks ? "layout-blocks-before-save" : "layout-markdown-before-save");
+        capture(window, "layout-markdown-before-save");
         QVERIFY(coordinator->saveSession(false));
         WorkspaceSessionStateService service;
         const auto saved = service.load(workspace); QVERIFY(saved.loaded); QCOMPARE(saved.state.tabs.size(), 4);
         QVERIFY(!saved.state.ui.pageLayout.isEmpty());
-        QVERIFY(write(file(blocks ? "layout-blocks.json" : "layout-markdown.json"), QJsonDocument(saved.state.ui.pageLayout).toJson()));
+        QVERIFY(write(file("layout-markdown.json"), QJsonDocument(saved.state.ui.pageLayout).toJson()));
         QVERIFY(tabs->closeAllTabs());
         QVERIFY(coordinator->restoreSession());
         QCOMPARE(tabs->workspaceSessionTabs(workspace).size(), saved.state.tabs.size());
@@ -695,7 +644,7 @@ private slots:
                 QTRY_COMPARE_WITH_TIMEOUT(restoredPdf->viewState().value("scale").toDouble(), 125.0, 10000);
                 QTRY_VERIFY_WITH_TIMEOUT(viewportMatches(restoredPdf, "restored-pdf"), 5000);
                 QTRY_VERIFY_WITH_TIMEOUT(restoredPdf->hasRenderedPage(2), 15000);
-                capture(window, blocks ? "layout-blocks-pdf-render" : "layout-markdown-pdf-render");
+                capture(window, "layout-markdown-pdf-render");
             } else if (auto* restoredCode = qobject_cast<MyCodeEditor*>(page)) {
                 QCOMPARE(restoredCode->textCursor().position(), 10); QCOMPARE(restoredCode->textCursor().anchor(), 3);
             }
@@ -703,9 +652,9 @@ private slots:
         QCOMPARE(restoredWeb.size(), 2); QCOMPARE(restoredWeb[0]->documentSession(), restoredWeb[1]->documentSession());
         const QString active = saved.state.ui.pageLayout.value("activePage").toString();
         QCOMPARE(splits->pageId(splits->activeGroup()->currentWidget()), active);
-        capture(window, blocks ? "layout-blocks-wide" : "layout-markdown-wide");
+        capture(window, "layout-markdown-wide");
         const int wideWidth = window.width(); window.resize(available.width() * 2 / 3, available.height() * 3 / 4); QTest::qWait(150);
-        QVERIFY(window.width() < wideWidth); capture(window, blocks ? "layout-blocks-narrow" : "layout-markdown-narrow");
+        QVERIFY(window.width() < wideWidth); capture(window, "layout-markdown-narrow");
         if (auto* more = window.findChild<QToolButton*>("bottomPanelMore"); more && more->isVisible()) {
             auto* menu = more->menu(); QVERIFY(menu);
             menu->popup(more->mapToGlobal(more->rect().bottomLeft())); QTRY_VERIFY(menu->isVisible());
@@ -722,13 +671,6 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(restoredWeb[1]->dirty(), 5000); restoredWeb[1]->executeCommand("undo");
         QVERIFY(restoredWeb[1]->save());
         const QByteArray beforeSwitch = read(webPath);
-        QString beforeSwitchText;
-        if (blocks) {
-            QVERIFY(splits->activatePage(restoredWeb[0])); QVERIFY(setClipboard("before switch sentinel"));
-            restoredWeb[0]->executeCommand("selectAll"); QTest::qWait(100); restoredWeb[0]->executeCommand("copy");
-            QTRY_VERIFY_WITH_TIMEOUT(QApplication::clipboard()->text().contains("Saved paragraph 0"), 5000);
-            beforeSwitchText = QApplication::clipboard()->text();
-        }
         paste(*restoredWeb[0], "Keep unsaved across workspace switch", true);
         QTRY_VERIFY_WITH_TIMEOUT(restoredWeb[1]->dirty(), 5000);
         const QString stableGroup = splits->groupId(splits->groupForPage(restoredWeb[0]));
@@ -741,12 +683,7 @@ private slots:
         QVERIFY(restoredWeb[0]->dirty()); QVERIFY(restoredWeb[1]->dirty());
         QCOMPARE(tabs->workspaceSessionTabs(workspace).size(), 4);
         restoredWeb[1]->executeCommand("undo"); QVERIFY(restoredWeb[1]->save());
-        if (blocks) {
-            QVERIFY(splits->activatePage(restoredWeb[1])); QVERIFY(setClipboard("after switch sentinel"));
-            restoredWeb[1]->executeCommand("selectAll"); QTest::qWait(100); restoredWeb[1]->executeCommand("copy");
-            QTRY_COMPARE_WITH_TIMEOUT(QApplication::clipboard()->text(), beforeSwitchText, 5000);
-            QVERIFY(WebDocumentPage::validateBlockPackage(QJsonDocument::fromJson(read(webPath)).object(), &issue));
-        } else QCOMPARE(read(webPath), beforeSwitch);
+        QCOMPARE(read(webPath), beforeSwitch);
         QVERIFY(coordinator->saveSession(false));
         const auto beforeReopen = service.load(workspace); QVERIFY(beforeReopen.loaded);
         QVERIFY(window.close()); windowOwner.reset();
@@ -770,7 +707,7 @@ private slots:
                 QTRY_VERIFY_WITH_TIMEOUT(reading->hasRenderedPage(2), 15000);
             }
         }
-        capture(reopened, blocks ? "layout-blocks-reopened" : "layout-markdown-reopened");
+        capture(reopened, "layout-markdown-reopened");
         QVERIFY(reopenedTabs->closeAllTabs()); reopenedTabs->clearCrashRecoveryAfterNormalClose();
     }
     void mainWindowPdfReadingRangesAndLifecycle() {
@@ -874,14 +811,10 @@ private slots:
         QVERIFY(tabs->openFileInTab(renamed)); QVERIFY(tabs->closeAllTabs()); QTest::qWait(100); QVERIFY(tabs->pdfDocuments().isEmpty());
         phase("complete");
     }
-    void mainWindowUntitledActions_data() {
-        QTest::addColumn<bool>("blocks"); QTest::newRow("markdown") << false; QTest::newRow("blocks") << true;
-    }
     void mainWindowUntitledActions() {
-        QFETCH(bool,blocks);
         MainWindow window; window.resize(1200,800); window.show(); window.activateWindow();
         auto* tabs=window.tabManager.get(); auto* splits=tabs->editorSplitController();
-        auto* action=window.findChild<QAction*>(blocks ? "leftDocument.blocks" : "leftDocument.markdown"); QVERIFY(action);
+        auto* action=window.findChild<QAction*>("leftDocument.markdown"); QVERIFY(action);
         const auto before=QDir(root).entryList(QDir::Files);
         action->trigger(); auto* first=tabs->currentWebDocument(); QVERIFY(first);
         QVERIFY(first->fileName().isEmpty()); QVERIFY(!QApplication::activeModalWidget());
@@ -901,7 +834,7 @@ private slots:
         });
         picker.start(); QVERIFY(!first->save()); QVERIFY(cancelled); QVERIFY(first->fileName().isEmpty()); QVERIFY(first->dirty());
         { auto cancel=answer("Cancel"); QVERIFY(!first->confirmClose()); }
-        const auto path=file(blocks ? "untitled-first.zblock" : "untitled-first.md");
+        const auto path=file("untitled-first.md");
         disconnect(&picker,nullptr,&window,nullptr); bool selected=false;
         connect(&picker,&QTimer::timeout,&window,[&] {
             if(auto* dialog=qobject_cast<QFileDialog*>(QApplication::activeModalWidget())) {
@@ -926,14 +859,14 @@ private slots:
     void mainWindowCreateDocumentsWithoutOverwrite() {
         MainWindow window; window.resize(1200, 800); window.show(); window.activateWindow();
         auto* tabs = window.tabManager.get(); auto* splits = tabs->editorSplitController(); QString issue;
-        for (const bool blocks : {false, true}) {
-            const auto kind = blocks ? WebDocumentPage::Kind::Blocks : WebDocumentPage::Kind::Markdown;
-            const QString path = file(blocks ? "new-left.zblock" : "new-left.md");
+        {
+            const auto kind = WebDocumentPage::Kind::Markdown;
+            const QString path = file("new-left.md");
             auto* page = tabs->createWebDocumentFile(kind, path, QStringLiteral("left"), &issue); QVERIFY2(page, qPrintable(issue)); QVERIFY(page->ready()); QVERIFY(!page->dirty());
             QCOMPARE(splits->groupForPage(page), splits->regionGroup(QStringLiteral("left"))); QVERIFY(QFileInfo::exists(path));
-            const auto bytes = read(path); if (blocks) QVERIFY(WebDocumentPage::validateBlockPackage(QJsonDocument::fromJson(bytes).object(), &issue));
+            const auto bytes = read(path);
             const auto count = tabs->webDocuments().size(); QVERIFY(!tabs->createWebDocumentFile(kind, path, QStringLiteral("left"), &issue)); QCOMPARE(tabs->webDocuments().size(), count); QCOMPARE(read(path), bytes);
-            const QString missingParent = file(blocks ? "absent/new.zblock" : "absent/new.md");
+            const QString missingParent = file("absent/new.md");
             QVERIFY(!tabs->createWebDocumentFile(kind, missingParent, QStringLiteral("left"), &issue)); QVERIFY(!QFileInfo::exists(missingParent)); QCOMPARE(tabs->webDocuments().size(), count);
             QVERIFY(splits->movePage(page, splits->regionGroup(QStringLiteral("main"))));
             QVERIFY(tabs->openFileInRegion(path, QStringLiteral("left"))); QCOMPARE(tabs->currentWebDocument(), page); QCOMPARE(tabs->webDocuments().size(), count);
