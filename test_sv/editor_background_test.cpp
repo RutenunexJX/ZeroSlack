@@ -1,6 +1,8 @@
 #include "editorappearance.h"
 #include "editorappearancesettings.h"
+#include "editorbackground.h"
 #include "mycodeeditor.h"
+#include "documentblockmodel.h"
 #include "settingscenterpanel.h"
 #include "settingscenterservice.h"
 #include "testuistyle.h"
@@ -9,6 +11,7 @@
 #include <QComboBox>
 #include <QDir>
 #include <QImage>
+#include <QPainter>
 #include <QLineEdit>
 #include <QPlainTextDocumentLayout>
 #include <QScrollBar>
@@ -50,7 +53,95 @@ private slots:
     void backgroundChangesPreserveEditingAndOtherViews();
     void customImageFallbackAndDarkTheme();
     void semanticTextMatchesQtPaint();
+    void resizeKeepsCaretOnItsTextLine_data();
+    void resizeKeepsCaretOnItsTextLine();
+    void wheelInputHasNoTrailingMotion_data();
+    void wheelInputHasNoTrailingMotion();
+    void backgroundPaintCoversFractionalPixelEdges();
 };
+
+void EditorBackgroundTest::backgroundPaintCoversFractionalPixelEdges()
+{
+    EditorBackground background;
+    const QRgb sentinel=qRgb(255,0,255);
+    for(const auto* preset:{"Resting","Peekaboo","Balancing"}){
+    background.setOptions(preset,{},55);
+    for(qreal dpr:{1.0,1.25,1.5,1.75,2.0})for(int offset:{0,1})for(int width=1200;width<1220;++width){
+        const QSize logical(width,703+(width%3));
+        QImage image(QSize(qCeil((logical.width()+2*offset)*dpr),qCeil((logical.height()+2*offset)*dpr)),QImage::Format_RGB32);
+        image.setDevicePixelRatio(dpr);image.fill(sentinel);
+        {QPainter painter(&image);painter.translate(offset,offset);background.paint(painter,QRect(QPoint(),logical),QRect(QPoint(),logical),dpr,QColor(246,248,251));}
+        int remaining=0,black=0;QPoint first;
+        for(int y=qCeil(offset*dpr);y<qFloor((logical.height()+offset)*dpr);++y){const auto* row=reinterpret_cast<const QRgb*>(image.constScanLine(y));
+            for(int x=qCeil(offset*dpr);x<qFloor((logical.width()+offset)*dpr);++x){
+                if(row[x]==sentinel){if(!remaining)first=QPoint(x,y);++remaining;}
+                if(qRed(row[x])<5 && qGreen(row[x])<5 && qBlue(row[x])<5)++black;}}
+        if(remaining || black){saveReview(image,QString("uncovered-%1-%2-%3-%4").arg(preset).arg(dpr).arg(width).arg(offset));qInfo()<<"uncovered background"<<preset<<dpr<<logical<<offset<<first<<remaining<<black;}
+        QVERIFY2(!remaining,"Opaque viewport background left pixels unpainted at the wallpaper margin");
+        QVERIFY2(!black,"Light background acquired black pixels while painting its scaled edge");
+    }
+    }
+}
+
+void EditorBackgroundTest::resizeKeepsCaretOnItsTextLine_data()
+{
+    QTest::addColumn<bool>("associated");
+    QTest::addColumn<QString>("background");
+    for(bool associated:{false,true})for(const auto& background:{"None","Resting"})
+        QTest::newRow(qPrintable(QString("%1-%2").arg(associated?"block":"plain",background)))<<associated<<QString(background);
+}
+
+void EditorBackgroundTest::resizeKeepsCaretOnItsTextLine()
+{
+    QFETCH(bool,associated);QFETCH(QString,background);
+    MyCodeEditor editor;
+    const QString source="`timescale 1ns / 1ps\n"+QString("// resize review\n").repeated(150);
+    editor.setPlainText(source);editor.setEditorBackground(background,{},55);
+    if(associated){EditorAssociatedBlock note;note.type="text";note.text="Preserved note";note.autoHeight=false;note.height=160;
+        QTextCursor anchor(editor.document()->findBlockByNumber(3));QVERIFY(!editor.blockModel()->insert(note,anchor).isEmpty());}
+    editor.resize(1300,900);editor.show();editor.activateWindow();editor.setFocus();
+    editor.moveCursor(QTextCursor::Start);editor.moveCursor(QTextCursor::EndOfBlock);
+    const int position=editor.textCursor().position();
+    for(const QSize size:{QSize(900,680),QSize(1450,900),QSize(760,580),QSize(1300,900)}){
+        editor.resize(size);QTest::qWait(25);
+        const auto caret=editor.cursorRect();
+        qInfo()<<"resize caret"<<associated<<background<<size<<caret<<"line"<<editor.document()->begin().layout()->boundingRect()<<"dpr"<<editor.devicePixelRatioF();
+        QVERIFY(caret.height()>0);QVERIFY(caret.height()<=editor.fontMetrics().height()*2);
+        const auto frame=capture(editor);saveReview(frame,QString("resize-%1-%2-%3").arg(associated).arg(background).arg(size.width()));
+        const int x=qBound(0,caret.center().x(),frame.width()-1);int run=0,longest=0;
+        for(int y=caret.bottom()+3;y<frame.height();++y){const auto pixel=frame.pixelColor(x,y);
+            run=pixel.lightness()<45?run+1:0;longest=qMax(longest,run);}
+        QVERIFY2(longest<editor.fontMetrics().height()*2,"A dark vertical stroke extends below the caret line");
+        QCOMPARE(editor.textCursor().position(),position);QCOMPARE(editor.toPlainText(),source);
+    }
+}
+
+void EditorBackgroundTest::wheelInputHasNoTrailingMotion_data()
+{
+    QTest::addColumn<bool>("associated");
+    QTest::newRow("plain")<<false;QTest::newRow("block")<<true;
+}
+
+void EditorBackgroundTest::wheelInputHasNoTrailingMotion()
+{
+    QFETCH(bool,associated);
+    MyCodeEditor editor;editor.resize(1000,700);
+    editor.setPlainText(QString("logic scroll_review;\n").repeated(250));editor.setEditorBackground("Resting",{},55);
+    if(associated){EditorAssociatedBlock note;note.type="text";note.text="Scroll note";
+        QVERIFY(!editor.blockModel()->insert(note,editor.textCursor()).isEmpty());}
+    editor.show();QTest::qWait(30);auto* bar=editor.verticalScrollBar();bar->setValue(bar->maximum()/2);
+    QElapsedTimer clock;clock.start();QJsonArray values;QList<bool> immediate;
+    const auto connection=connect(bar,&QScrollBar::valueChanged,&editor,[&](int value){values.append(QJsonObject{{"ms",clock.elapsed()},{"value",value}});});
+    for(int angle:{-120,-120,-120,120}){
+        const int before=bar->value();const QPoint point(800,500);
+        QWheelEvent wheel(point,editor.viewport()->mapToGlobal(point),{},QPoint(0,angle),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);
+        QApplication::sendEvent(editor.viewport(),&wheel);immediate<<((bar->value()-before)*(angle<0?1:-1)>0);QTest::qWait(20);
+    }
+    const int stopped=bar->value();QTest::qWait(220);disconnect(connection);
+    qInfo().noquote()<<QJsonDocument(QJsonObject{{"associated",associated},{"dpr",editor.devicePixelRatioF()},{"stoppedValue",stopped},{"settledValue",bar->value()},{"values",values}}).toJson(QJsonDocument::Compact);
+    for(bool response:immediate)QVERIFY2(response,"Wheel input must change the scroll position in the requested direction immediately");
+    QCOMPARE(bar->value(),stopped);
+}
 
 void EditorBackgroundTest::presetsAndSettingsPersist()
 {

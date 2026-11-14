@@ -139,13 +139,23 @@ protected:
         if (flatTabs()) { paintNavigation(); return; }
         if (this->property("editorFileTabs").toBool()) {
             const auto& theme=InsightVisualStyle::theme();
-            this->setProperty("editorTabSelectedBackground",this->property("workspaceRegionGroup").toBool()
-                ?InsightVisualStyle::workspaceTabSelected(this->property("workspaceRegionFocused").toBool()):theme.tab.tabBackgroundSelected);
-            this->setProperty("editorTabHoverBackground",theme.tab.tabBackgroundHover);
+            const bool workspace=this->property("workspaceRegionGroup").toBool();
+            const auto region=InsightVisualStyle::workspaceRegionColors(this->property("workspaceRegionId").toString());
+            this->setProperty("editorTabSelectedBackground",workspace
+                ?(this->property("workspaceRegionFocused").toBool()?region.selectedFocused:region.selected):theme.tab.tabBackgroundSelected);
+            this->setProperty("editorTabHoverBackground",workspace?region.hover:theme.tab.tabBackgroundHover);
             this->setProperty("editorTabFocusColor",theme.focus.ring);
-            QPainter background(this); background.fillRect(this->rect(),theme.tab.barBackground);
+            QPainter background(this); background.fillRect(this->rect(),workspace?region.surface:theme.tab.barBackground);
         }
         Base::paintEvent(event);
+        if(this->property("workspaceRegionGroup").toBool() && this->currentIndex()>=0){
+            const auto region=InsightVisualStyle::workspaceRegionColors(this->property("workspaceRegionId").toString());
+            const QRect tab=this->tabRect(this->currentIndex());
+            const bool south=this->shape()==QTabBar::RoundedSouth || this->shape()==QTabBar::TriangularSouth;
+            QPainter painter(this);
+            painter.fillRect(QRect(tab.left()+8,south?tab.top():tab.bottom()-4,tab.width()-16,5),
+                this->property("workspaceRegionFocused").toBool()?region.selectedFocused:region.selected);
+        }
         const QVariant boundary = this->property("temporaryTabBoundary");
         if (!boundary.isValid() || boundary.toInt() < 0) return;
         const QRect tab = this->tabRect(boundary.toInt());
@@ -314,9 +324,12 @@ private:
             if (scroll->isVisible()) tabsClip -= scroll->geometry();
         painter.setClipRegion(tabsClip);
         const auto& tokens = InsightVisualStyle::theme();
-        const QColor selected = this->property("workspaceRegionGroup").toBool()
-            ?InsightVisualStyle::workspaceTabSelected(this->property("workspaceRegionFocused").toBool()):tokens.tab.tabBackgroundSelected;
-        const QColor hover = tokens.tab.tabBackgroundHover;
+        const bool workspace=this->property("workspaceRegionGroup").toBool();
+        const auto region=InsightVisualStyle::workspaceRegionColors(this->property("workspaceRegionId").toString());
+        if(workspace)painter.fillRect(this->rect(),region.surface);
+        const QColor selected = workspace
+            ?(this->property("workspaceRegionFocused").toBool()?region.selectedFocused:region.selected):tokens.tab.tabBackgroundSelected;
+        const QColor hover = workspace?region.hover:tokens.tab.tabBackgroundHover;
         const QColor textColor = tokens.tab.textSelected;
         const QColor focus = tokens.focus.ring;
         const QPoint pointer = this->mapFromGlobal(QCursor::pos());
@@ -330,6 +343,11 @@ private:
                 painter.setPen(Qt::NoPen);
                 painter.setBrush(active ? selected : hover);
                 painter.drawRoundedRect(pill, 8, 8);
+                if(active && workspace){
+                    const bool south=this->shape()==QTabBar::RoundedSouth || this->shape()==QTabBar::TriangularSouth;
+                    const QRect join(pill.left()+6,south?rect.top():pill.bottom()-5,pill.width()-12,8);
+                    painter.drawRect(join);
+                }
             }
             const QString text = labelWeight(i)>0 ? displayText(i,rect.width()) : QString();
             const QSize icon = navigationIconSize();
@@ -974,7 +992,7 @@ void UiControls::enableSmoothScrolling(QAbstractScrollArea* area) {
                 else area->setVerticalScrollBar(bar);
             }
             bar->setIsAnimation(false);
-            bar->setSmoothWheelEnabled(true);
+            bar->setSmoothWheelEnabled(!area->property("codeEditorSurface").toBool());
             bar->setWheelAnimationDuration(160);
         }
     }

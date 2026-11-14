@@ -27,6 +27,82 @@ class EditorBlockTest : public QObject {
         return model()->insert(fixed, cursor);
     }
 private slots:
+    void associatedBlocksFollowDocumentScroll_data() {
+        QTest::addColumn<QString>("input");
+        for(const auto& input:{"wheel","thumb","page"})QTest::newRow(input)<<QString::fromLatin1(input);
+    }
+    void associatedBlocksFollowDocumentScroll() {
+        QFETCH(QString,input);
+        QStringList lines;for(int i=0;i<250;++i)lines<<QString("logic scroll_anchor_%1;").arg(i);
+        const auto source=lines.join('\n');editor->setPlainText(source);editor->resize(900,740);
+        QStringList ids;QList<QTextCursor> anchors;
+        for(int line:{2,7}){
+            QTextCursor anchor(editor->document()->findBlockByNumber(line));anchors<<anchor;
+            EditorAssociatedBlock block;block.type=line==2?"text":"wave";
+            block.text=line==2?"Unsaved block input":WaveBlockContent::initialProject();
+            block.autoHeight=false;block.height=150;ids<<model()->insert(block,anchor);
+            QVERIFY(!ids.last().isEmpty());
+        }
+        auto* bar=editor->verticalScrollBar();QTRY_VERIFY(bar->maximum()>editor->height());
+        bar->setValue(0);
+        const auto shellFor=[&](const QString& id)->QWidget* {
+            for(auto* shell:editor->findChildren<QWidget*>("editorBlockShell"))
+                if(shell->property("blockId").toString()==id)return shell;
+            return nullptr;
+        };
+        QList<QWidget*> shells,grips;QList<int> offsets,gripOffsets;
+        for(int i=0;i<ids.size();++i){
+            QWidget* shell=nullptr;QTRY_VERIFY((shell=shellFor(ids[i])) && shell->isVisible());shells<<shell;
+            QWidget* grip=nullptr;for(auto* candidate:editor->findChildren<QWidget*>("editorBlockDragHandle"))
+                if(candidate->property("blockId").toString()==ids[i])grip=candidate;
+            QVERIFY(grip);grips<<grip;
+            offsets<<shell->y()-editor->cursorRect(anchors[i]).y();
+            gripOffsets<<grip->mapTo(editor.get(),QPoint()).y()-shell->mapTo(editor.get(),QPoint()).y();
+        }
+        auto* text=shells[0]->findChild<QTextEdit*>("editorBlockText");QVERIFY(text);
+        editor->selectAssociatedBlock(ids[0],true);QTest::keyClicks(text," pending");
+        auto selection=text->textCursor();selection.movePosition(QTextCursor::PreviousWord,QTextCursor::KeepAnchor);text->setTextCursor(selection);
+        const auto textState=text->toPlainText();const QPointer<QWidget> wave=shells[1]->findChild<QWidget*>("WaveEditor");QVERIFY(wave);
+        const auto before=model()->serialize();const auto beforeAnchor=editor->cursorRect(anchors[0]).y();
+        const auto capture=[&](const QString& phase){
+            QJsonArray items;
+            for(int i=0;i<ids.size();++i)items.append(QJsonObject{{"id",ids[i]},
+                {"anchorY",editor->cursorRect(anchors[i]).y()},{"shellY",shells[i]->y()},
+                {"gripY",grips[i]->mapTo(editor.get(),QPoint()).y()}});
+            const QJsonObject sample{{"input",input},{"phase",phase},{"scroll",bar->value()},
+                {"dpr",editor->devicePixelRatioF()},{"blocks",items}};
+            qInfo().noquote()<<QJsonDocument(sample).toJson(QJsonDocument::Compact);
+        };
+        capture("before");
+        if(input=="wheel"){
+            const QPoint point(editor->viewport()->width()-25,80);
+            QWheelEvent wheel(point,editor->viewport()->mapToGlobal(point),{},QPoint(0,-120),
+                Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);
+            QApplication::sendEvent(editor->viewport(),&wheel);
+        }else if(input=="thumb"){
+            QStyleOptionSlider option;option.initFrom(bar);option.rect=bar->rect();option.orientation=Qt::Vertical;
+            option.minimum=bar->minimum();option.maximum=bar->maximum();option.pageStep=bar->pageStep();
+            option.sliderPosition=bar->sliderPosition();option.sliderValue=bar->value();
+            const auto start=bar->style()->subControlRect(QStyle::CC_ScrollBar,&option,QStyle::SC_ScrollBarSlider,bar).center();
+            const auto end=start+QPoint(0,18);QTest::mousePress(bar,Qt::LeftButton,Qt::NoModifier,start);
+            QMouseEvent move(QEvent::MouseMove,end,bar->mapToGlobal(end),Qt::NoButton,Qt::LeftButton,Qt::NoModifier);
+            QApplication::sendEvent(bar,&move);QTest::mouseRelease(bar,Qt::LeftButton,Qt::NoModifier,end);
+        }else QTest::keyClick(bar,Qt::Key_PageDown);
+        QTRY_VERIFY(bar->value()>0);QTest::qWait(200);capture("after");
+        QVERIFY(editor->cursorRect(anchors[0]).y()<beforeAnchor);
+        for(int i=0;i<ids.size();++i){
+            QTRY_COMPARE(shells[i]->y()-editor->cursorRect(anchors[i]).y(),offsets[i]);
+            QCOMPARE(grips[i]->mapTo(editor.get(),QPoint()).y()-shells[i]->mapTo(editor.get(),QPoint()).y(),gripOffsets[i]);
+        }
+        bar->setValue(bar->maximum());QTest::qWait(30);
+        for(auto* shell:shells)QVERIFY(!shell->isVisible() || !shell->geometry().intersects(editor->viewport()->rect()));
+        if(input=="wheel")QVERIFY(text->hasFocus());
+        bar->setValue(0);
+        for(int i=0;i<ids.size();++i){QTRY_VERIFY(shells[i]->isVisible());QTRY_COMPARE(shells[i]->y()-editor->cursorRect(anchors[i]).y(),offsets[i]);}
+        QCOMPARE(text->toPlainText(),textState);QCOMPARE(shells[1]->findChild<QWidget*>("WaveEditor"),wave.data());
+        QCOMPARE(text->textCursor().position(),selection.position());QCOMPARE(text->textCursor().anchor(),selection.anchor());
+        QCOMPARE(model()->serialize(),before);QCOMPARE(editor->toPlainText(),source);capture("returned");
+    }
     void referenceDisplayKeepsOneIdentityAndEmbeddedMetrics() {
         EditorAssociatedBlock reference;reference.type="reference";reference.uri="https://example.invalid/reference";
         reference.caption="Specification";reference.height=230;reference.width=650;

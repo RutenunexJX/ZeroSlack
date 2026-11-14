@@ -273,7 +273,19 @@ void EditorBlockHost::updateVisible() {
         if (!model->find(it.key()) || model->find(it.key())->detached) {
             if (focused) editor->setFocus();
             auto* frame = it->frame; delete it->grip; it = views.erase(it); frame->deleteLater();
-        } else {if(!keep.contains(it.key())){it->frame->hide();it->grip->hide();} ++it;}
+        } else {
+            if(!keep.contains(it.key())){
+                if(focused){
+                    // Clipping an editing child preserves its focus and selection;
+                    // hiding it would transfer focus and finish the text session.
+                    it->frame->setGeometry(editor->state->projection.associatedBlockRect(editor,it.key()).toAlignedRect());
+                    const int top=it->grip->parentWidget()->mapFromGlobal(it->frame->mapToGlobal(QPoint())).y();
+                    it->grip->move(2,top+(it->frame->height()<=36?4:30));
+                }else it->frame->hide();
+                it->grip->hide();
+            }
+            ++it;
+        }
     }
     updating = false; refreshControls();
     editor->state->gutter.handleUpdateRequest(editor, editor->viewport()->rect(), 0);

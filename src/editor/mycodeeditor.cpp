@@ -392,11 +392,12 @@ MyCodeEditor::MyCodeEditor(QWidget *parent)
     // Avoid clearing it again or repainting the parent surface underneath it.
     viewport()->setAttribute(Qt::WA_OpaquePaintEvent);
     viewport()->setAutoFillBackground(false);
+    // Install the final scrollbars before state/hosts subscribe to them.
+    UiControls::enableSmoothScrolling(this);
     state->attachToEditor(this);
     bindTemplateModel();
     slashSearch = std::make_unique<EditorSlashController>(this, &state->modes);
     blockHost = std::make_unique<EditorBlockHost>(this);
-    UiControls::enableSmoothScrolling(this);
     state->diagnosticOverview=new EditorDiagnosticOverview(this,state.get());
 }
 

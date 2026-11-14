@@ -41,6 +41,20 @@ QString floatingBackgroundRule(const QString& typeName, const QString& objectNam
         .arg(objectSelector(typeName, objectName));
 }
 
+QString workspaceRegionStyleSheet(ThemeMode mode)
+{
+    QString result;
+    for(const auto& region:{"main","left","right","bottom","floating"}){
+        const auto colors=InsightVisualStyle::workspaceRegionColors(QString::fromLatin1(region),mode);
+        result += QStringLiteral(
+            "QWidget[workspaceRegionSurface=%1] { background: %2; }"
+            "QStackedWidget[workspaceRegionId=%1] { background: %2; border: 1px solid %3; padding: 2px; }"
+            "QStackedWidget[workspaceRegionId=%1][workspaceRegionFocused=true] { border-color: %4; }")
+            .arg(QString::fromLatin1(region),colors.surface.name(),colors.border.name(),colors.borderFocused.name());
+    }
+    return result;
+}
+
 constexpr const char* kThemeHelperProperty =
     "_zeroslackInsightThemeHelper";
 constexpr const char* kThemeHelperConnectedProperty =
@@ -875,13 +889,22 @@ QColor InsightVisualStyle::subtleBorder(const QColor& surface, const QColor& for
 {
     return mix(surface, foreground, surface.lightnessF() > 0.5 ? 0.10 : 0.12);
 }
-QColor InsightVisualStyle::workspaceRegionSurface(bool primary)
+WorkspaceRegionColors InsightVisualStyle::workspaceRegionColors(const QString& region, ThemeMode mode)
 {
-    const auto& t=theme();return primary?t.canvasBackground:mix(t.panelBackground,t.textPrimary,0.045);
+    const auto& t=theme(mode);
+    const bool dark=isDarkTheme(mode);
+    QColor surface=dark?color("#24272b"):color("#f6f5f2");
+    if(region=="left")surface=dark?color("#39352f"):color("#e2d9c9");
+    else if(region=="right")surface=dark?color("#293d49"):color("#d1dfe7");
+    else if(region=="bottom")surface=dark?color("#191e22"):color("#c9ccc9");
+    else if(region=="floating")surface=dark?color("#38313f"):color("#ded9e4");
+    if(mode!=ThemeMode::Light && mode!=ThemeMode::Dark)surface=mix(surface,t.panelBackground,0.25);
+    return {surface,mix(surface,t.panelBackground,0.45),mix(surface,t.panelBackground,0.75),
+        mix(surface,t.textPrimary,0.08),mix(surface,t.textPrimary,0.28),mix(surface,t.textPrimary,0.60)};
 }
-QColor InsightVisualStyle::workspaceTabSelected(bool focused)
+WorkspaceRegionColors InsightVisualStyle::workspaceRegionColors(const QString& region)
 {
-    const auto& t=theme();return mix(t.panelBackground,t.textPrimary,focused?0.14:0.095);
+    return workspaceRegionColors(region,ApplicationThemeManager::instance().mode());
 }
 
 QString InsightVisualStyle::panelStyleSheet(const QString& objectName)
@@ -1156,13 +1179,7 @@ QString InsightVisualStyle::applicationStyleSheet(ThemeMode mode)
         .arg(t.hover.name(), t.itemView.selectedBackground.name(), t.accent.name(),
              mix(t.dock.background, t.textPrimary, 0.12).name());
     const QColor navigationBase = mix(t.panelBackground, t.textPrimary, 0.025);
-    result += QStringLiteral(
-        "QWidget[workspaceRegionSurface=main] { background: %1; }"
-        "QWidget[workspaceRegionSurface=auxiliary] { background: %2; }"
-        "QTabWidget[workspaceRegionGroup=true]::pane { background: transparent; border: 1px solid %3; }"
-        "QTabWidget[workspaceRegionGroup=true][workspaceRegionFocused=true]::pane { border-color: %4; }"
-        "QTabBar[workspaceRegionGroup=true] { background: transparent; }")
-        .arg(workspaceRegionSurface(true).name(),workspaceRegionSurface(false).name(),t.border.name(),t.borderStrong.name());
+    result += workspaceRegionStyleSheet(mode);
     const QColor navigationHover = mix(navigationBase, t.textPrimary, 0.09);
     const QColor navigationSelected = mix(navigationBase, t.accent, 0.20);
     result += QStringLiteral(
@@ -1246,6 +1263,7 @@ QString InsightVisualStyle::chromeStyleSheet(ThemeMode mode, bool styleMenus)
              t.button.textDisabled.name(), t.itemView.selectedBackground.name(), t.toolbarBackground.name(),
              t.borderStrong.name(), t.canvasBackground.name(), mix(t.dock.background, t.textPrimary, 0.12).name(),
              t.hover.name(), t.accent.name(), t.textSecondary.name());
+    result += workspaceRegionStyleSheet(mode);
     if (styleMenus) result += QStringLiteral(
         "QMenu { background: %1; color: %2; border: 1px solid %3; padding: 5px; }"
         "QMenu::item { padding: 7px 28px 7px 14px; border-radius: 4px; }"

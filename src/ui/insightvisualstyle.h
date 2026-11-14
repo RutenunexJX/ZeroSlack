@@ -254,6 +254,15 @@ struct InsightTheme {
     InsightEditorSemanticTokens editorSemantic;
 };
 
+struct WorkspaceRegionColors {
+    QColor surface;
+    QColor selected;
+    QColor selectedFocused;
+    QColor hover;
+    QColor border;
+    QColor borderFocused;
+};
+
 class InsightVisualStyle
 {
 public:
@@ -262,8 +271,8 @@ public:
     static QJsonObject webThemeTokens();
     static QJsonObject webThemeTokens(bool dark);
     static QColor subtleBorder(const QColor& surface, const QColor& foreground);
-    static QColor workspaceRegionSurface(bool primary);
-    static QColor workspaceTabSelected(bool focused);
+    static WorkspaceRegionColors workspaceRegionColors(const QString& region, ThemeMode mode);
+    static WorkspaceRegionColors workspaceRegionColors(const QString& region);
 
     static QColor roleColor(InsightVisualRole role);
     static QColor roleColor(InsightVisualRole role, ThemeMode mode);

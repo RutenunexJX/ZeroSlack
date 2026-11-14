@@ -1048,17 +1048,20 @@ void EditorSplitController::refreshGroupSurfaces()
         widget->style()->unpolish(widget);widget->style()->polish(widget);widget->update();
     };
     for(auto it=regionHosts.cbegin();it!=regionHosts.cend();++it){
-        const auto role=it.key()=="main"?QStringLiteral("main"):QStringLiteral("auxiliary");
+        const auto role=it.key();
         surface(it.value().host,role);surface(it.value().tabStrip,role);
     }
     for(auto it=groupRegions.cbegin();it!=groupRegions.cend();++it){
         auto* group=it.key();if(!group)continue;
         const auto region=isFloatingGroup(group)?QStringLiteral("floating"):it.value();
-        const auto role=region=="main"?QStringLiteral("main"):QStringLiteral("auxiliary");
-        surface(group,role);
-        for(auto* stack:group->findChildren<QStackedWidget*>(QString(),Qt::FindDirectChildrenOnly))surface(stack,role);
-        for(QWidget* widget:QList<QWidget*>{group,group->tabBar()}){
-            const bool changed=widget->property("workspaceRegionFocused").toBool()!=(group==activeGroup()) || !widget->property("workspaceRegionGroup").toBool();
+        surface(group,region);surface(group->tabBar(),region);
+        QList<QWidget*> chrome{group,group->tabBar()};
+        for(auto* stack:group->findChildren<QStackedWidget*>(QString(),Qt::FindDirectChildrenOnly)){
+            surface(stack,region);chrome.append(stack);
+        }
+        for(QWidget* widget:chrome){
+            const bool changed=widget->property("workspaceRegionFocused").toBool()!=(group==activeGroup())
+                || widget->property("workspaceRegionId").toString()!=region || !widget->property("workspaceRegionGroup").toBool();
             widget->setProperty("workspaceRegionId",region);widget->setProperty("workspaceRegionGroup",true);
             widget->setProperty("workspaceRegionFocused",group==activeGroup());
             if(changed){widget->style()->unpolish(widget);widget->style()->polish(widget);}widget->update();

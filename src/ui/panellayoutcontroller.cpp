@@ -1210,9 +1210,10 @@ void PanelLayoutController::updateDrawerStyle()
         return;
     applyingDrawerStyle = true;
     const InsightTheme& theme = InsightVisualStyle::theme();
-    const QColor background = theme.surface.panel;
+    const auto region = InsightVisualStyle::workspaceRegionColors(QStringLiteral("bottom"));
+    const QColor background = region.surface;
     const QColor text = theme.textPrimary;
-    const QColor border = InsightVisualStyle::subtleBorder(background, text);
+    const QColor border = region.border;
     const QColor hover = theme.button.backgroundHover;
     const QColor active = theme.itemView.selectedBackground;
     const QColor accent = theme.focus.ring;
