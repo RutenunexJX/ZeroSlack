@@ -203,6 +203,7 @@
         "dpr": 1,
         "cases": [
           "initTestCase()",
+          "titlebarFollowsMainRegion()",
           "commonFlowLayoutHandlesVisibilityStretchAndResize()",
           "mainWindowGeometry()",
           "mainWindowEditorTabStyle(light)",
@@ -268,6 +269,7 @@
         "dpr": 1.5,
         "cases": [
           "initTestCase()",
+          "titlebarFollowsMainRegion()",
           "commonFlowLayoutHandlesVisibilityStretchAndResize()",
           "mainWindowGeometry()",
           "mainWindowEditorTabStyle(light)",
@@ -333,6 +335,7 @@
         "dpr": 2,
         "cases": [
           "initTestCase()",
+          "titlebarFollowsMainRegion()",
           "commonFlowLayoutHandlesVisibilityStretchAndResize()",
           "mainWindowGeometry()",
           "mainWindowEditorTabStyle(light)",
@@ -5186,7 +5189,7 @@
         "compact_layout_test_1.5",
         "compact_layout_test_2"
       ],
-      "coverageOrigin": "Original 36 Qt cases preserved; five direct extent/projection cases added under D-G1-SCOPE-PROPOSAL.md and direct human authorization call_1b33a4501b8f4a9398b77d291a248990."
+      "coverageOrigin": "Original 36 Qt cases preserved; five direct extent/projection cases added under D-G1-SCOPE-PROPOSAL.md and direct human authorization call_1b33a4501b8f4a9398b77d291a248990. Added titlebarFollowsMainRegion() from the accepted TOPBAR-GROUPS-ALIGN change; all 41 existing cases remain required."
     },
     {
       "id": "narrow-layout",
