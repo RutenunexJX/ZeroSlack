@@ -9,6 +9,8 @@
 #include <QScopeGuard>
 #include "insightvisualstyle.h"
 #include "mainwindow.h"
+#include "linkedcontextcontroller.h"
+#include "navigationpanecoordinator.h"
 #include "contextdockhost.h"
 #include "editorsplitcontroller.h"
 #include "liveinsightscontextview.h"
@@ -142,6 +144,53 @@ bool recordAudit(QWidget* root, const Counts& counts, const QString& phase={}) {
 class CompactLayoutTest : public QObject {
     Q_OBJECT
 private slots:
+    void titlebarFollowsMainRegion() {
+        QTemporaryDir dir;QVERIFY(dir.isValid());QFile source(dir.filePath("top.sv"));QVERIFY(source.open(QIODevice::WriteOnly));
+        source.write("module top; endmodule\n");source.close();
+        MainWindow window;window.resize(1500,900);window.show();
+        auto* registry=window.tabManager->editorSplitController();registry->setActiveGroup(registry->initialGroup());
+        QVERIFY(window.tabManager->openFileInTab(source.fileName()));
+        auto* anchor=registry->regionHost("main");QVERIFY(anchor);
+        auto* modes=window.findChild<QWidget*>("editorViewModes");auto* title=window.findChild<QWidget*>("workspaceTitleBar");
+        auto* controller=window.findChild<LinkedContextController*>();auto* pane=window.findChild<NavigationPaneCoordinator*>();
+        QVERIFY(modes);QVERIFY(title);QVERIFY(controller);QVERIFY(pane);
+        const auto aligned=[&]{return anchor->isVisible() && modes->isVisible() && globalRect(modes).left()==globalRect(anchor).left();};
+        QTRY_VERIFY(aligned());
+        pane->setExpanded(true,false);window.resizeDocks({pane->dock()},{380},Qt::Horizontal);QTRY_VERIFY(aligned());
+        pane->setExpanded(false,false);QTRY_VERIFY(aligned());
+        pane->setExpanded(true,false);QTRY_VERIFY(aligned());
+        const auto layout=window.saveState();window.resizeDocks({pane->dock()},{220},Qt::Horizontal);QTRY_VERIFY(aligned());
+        QVERIFY(window.restoreState(layout));QTRY_VERIFY(aligned());
+        auto* secondary=registry->createSplit(registry->initialGroup(),EditorSplitDirection::Right);QVERIFY(secondary);
+        registry->setActiveGroup(secondary);window.tabManager->createNewTab();QTRY_VERIFY(aligned());
+        QVERIFY(globalRect(secondary).left()>globalRect(anchor).left());
+        QVERIFY(globalRect(modes).left()!=globalRect(secondary).left());
+        QVERIFY(registry->mergeGroup(secondary,registry->initialGroup()));QTRY_VERIFY(aligned());
+        for(int mode:{0,1,2,1}) {
+            auto* button=modes->findChild<QToolButton*>("editorViewMode_"+QString::number(mode));QVERIFY(button);
+            QVERIFY(button->isEnabled());
+            button->click();QTRY_COMPARE(int(controller->mode()),mode);QTRY_VERIFY(aligned());QVERIFY(button->isChecked());
+        }
+        window.showMaximized();QTRY_VERIFY(aligned());window.showNormal();QTRY_VERIFY(aligned());
+        auto* simulation=window.findChild<QWidget*>("simdockHost");auto* workspaces=window.findChild<QWidget*>("workspaceIconStrip");
+        auto* timer=window.findChild<QWidget*>("editingTimeWidget");auto* more=window.findChild<QToolButton*>("titlebarMore");
+        QVERIFY(simulation);QVERIFY(workspaces);QVERIFY(timer);QVERIFY(more);
+        auto* run=simulation->findChild<QAbstractButton*>("startSimulation");auto* settings=simulation->findChild<QAbstractButton*>("openSettings");
+        auto* open=workspaces->findChild<QAbstractButton*>("openWorkspaceButton");QVERIFY(run);QVERIFY(settings);QVERIFY(open);
+        pane->setExpanded(true,false);window.resize(760,650);QTRY_VERIFY(aligned());QTRY_VERIFY(more->isVisible());
+        QVERIFY(globalRect(modes).intersected(globalRect(more)).isEmpty());
+        more->menu()->popup(more->mapToGlobal(QPoint(0,more->height())));QTRY_VERIFY(more->menu()->isVisible());
+        QVERIFY(run->isVisible());QVERIFY(settings->isVisible());QVERIFY(open->isVisible());QVERIFY(timer->isVisible());
+        QVERIFY(!simulation->isAncestorOf(timer));QVERIFY(!workspaces->isAncestorOf(timer));
+        more->menu()->close();window.resize(1700,900);QTRY_VERIFY(aligned());
+        QTRY_VERIFY(simulation->isVisible());QTRY_VERIFY(workspaces->isVisible());QTRY_VERIFY(timer->isVisible());
+        for(auto* group:{simulation,workspaces,timer}) {
+            QVERIFY(globalRect(title).contains(globalRect(group)));
+            QVERIFY(globalRect(modes).intersected(globalRect(group)).isEmpty());
+        }
+        QVERIFY(globalRect(simulation).intersected(globalRect(workspaces)).isEmpty());
+        QVERIFY(globalRect(workspaces).intersected(globalRect(timer)).isEmpty());
+    }
     void commonFlowLayoutHandlesVisibilityStretchAndResize() {
         QWidget host;
         auto* flow = new CompactFlowLayout(6);

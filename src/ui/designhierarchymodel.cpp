@@ -66,7 +66,7 @@ QVariant DesignHierarchyModel::data(const QModelIndex& index, int role) const
     const auto& value=m_projection->nodes[position];
     const auto& node=value.semantic;
     QString name=value.name;
-    if(m_search && !node.instancePath.isEmpty())name=node.instancePath;
+    if(m_search && !value.fileDefinition && !node.instancePath.isEmpty())name=node.instancePath;
     const bool simulation=value.simulation || (!m_simulation.second.isEmpty() && m_simulation.second==node.moduleType
         && EditorFileIdentity::same(m_simulation.first,node.definitionFile));
     switch (role) {
@@ -89,7 +89,7 @@ QVariant DesignHierarchyModel::data(const QModelIndex& index, int role) const
         }
         return RoundedIcons::icon(value.source ? RoundedIcons::SourceTop
             : value.simulation ? RoundedIcons::SimulationTop
-            : node.isTop ? RoundedIcons::Module : RoundedIcons::Instance);
+            : node.isTop || value.fileDefinition ? RoundedIcons::Module : RoundedIcons::Instance);
     }
     case Qt::ToolTipRole: case Qt::AccessibleDescriptionRole:
         return node.instancePath + '\n' + value.file + (node.definitionLine>0?':'+QString::number(node.definitionLine):QString())
@@ -207,7 +207,8 @@ void DesignHierarchyModel::setSearchResults(std::shared_ptr<const DesignHierarch
 }
 QModelIndex DesignHierarchyModel::indexForId(const QString& input, bool reveal)
 {
-    const QString id=m_projection->nodeById.contains(input)?input:m_projection->firstPresentationBySemanticId.value(input,input);
+    const QString canonical=m_projection->presentationAliases.value(input,input);
+    const QString id=m_projection->nodeById.contains(canonical)?canonical:m_projection->firstPresentationBySemanticId.value(canonical,canonical);
     if (auto* row = m_rows.value(id)) return indexFor(row);
     const int position = m_projection->nodeById.value(id, -1);
     if (!reveal || position < 0) return {};

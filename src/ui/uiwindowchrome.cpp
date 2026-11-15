@@ -63,7 +63,7 @@ void UiWindowChrome::ensureWindowBoundary(QWidget* window)
 #endif
 
 UiWindowTitleBar UiWindowChrome::createTitleBar(QMainWindow* host, QWidget* workspacePicker,
-                                             QWidget* accessory)
+                                             QWidget* accessory, bool externalLayout)
 {
     UiWindowTitleBar result;
     QAbstractButton* minimize = nullptr;
@@ -74,9 +74,9 @@ UiWindowTitleBar UiWindowChrome::createTitleBar(QMainWindow* host, QWidget* work
         | ElaAppBarType::MinimizeButtonHint | ElaAppBarType::MaximizeButtonHint
         | ElaAppBarType::CloseButtonHint);
     result.widget = bar;
-    if (workspacePicker)
+    if (workspacePicker && !externalLayout)
         bar->setCustomWidget(ElaAppBarType::LeftArea, workspacePicker);
-    if (accessory)
+    if (accessory && !externalLayout)
         bar->setCustomWidget(ElaAppBarType::RightArea, accessory);
     result.label = bar->titleLabel();
     if (workspacePicker) {
@@ -159,6 +159,9 @@ UiWindowTitleBar UiWindowChrome::createTitleBar(QMainWindow* host, QWidget* work
     if (!workspacePicker)
         QObject::connect(host, &QWidget::windowTitleChanged, result.label, &QLabel::setText);
 #endif
+    result.minimize = minimize;
+    result.close = close;
+    if (externalLayout) result.widget->layout()->setEnabled(false);
     result.widget->setObjectName(QStringLiteral("workspaceTitleBar"));
     result.widget->setAutoFillBackground(true);
     result.label->setObjectName(QStringLiteral("workspaceFilePath"));

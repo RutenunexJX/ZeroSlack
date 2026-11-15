@@ -156,8 +156,8 @@ void NavigationWidget::restoreDesignViewState(const QJsonObject& state)
     designExpandedIds.clear();
     for (const auto& item : state.value("expanded").toArray()) {
         const auto id = item.toString(); const auto index = designModel->indexForId(id);
-        if (!index.isValid()) continue;
-        designExpandedIds.insert(id); designTreeWidget->expand(index);
+        if (!index.isValid() || !designModel->hasChildren(index)) continue;
+        designExpandedIds.insert(index.data(Qt::UserRole).toString()); designTreeWidget->expand(index);
     }
     auto selected = designModel->indexForId(state.value("selected").toString());
     if (!selected.isValid())

@@ -8,12 +8,14 @@ struct DesignTreeRow {
     QString id, parentId, name, type, file, status;
     DesignHierarchyNode semantic;
     bool category = false, source = false, simulation = false, unresolved = false;
+    bool fileDefinition = false;
 };
 struct ZEROSLACK_API DesignTreeProjection {
     QList<DesignTreeRow> nodes;
     QHash<QString, int> nodeById;
     QHash<QString, QList<int>> childrenById;
     QHash<QString, QString> firstPresentationBySemanticId;
+    QHash<QString, QString> presentationAliases;
     QByteArray structureFingerprint;
     void append(DesignTreeRow row);
     static std::shared_ptr<DesignTreeProjection> hierarchy(const DesignHierarchyReport& report);

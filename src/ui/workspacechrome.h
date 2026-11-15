@@ -6,6 +6,7 @@
 #include "windowsnapchrome.h"
 #include "navigationpanecoordinator.h"
 #include "workspaceswitcher.h"
+#include "compactlayout.h"
 #include <QDockWidget>
 #include "roundedicons.h"
 #include "uitypography.h"
@@ -28,8 +29,9 @@ class WorkspaceChrome final : public QObject {
 public:
     WorkspaceChrome(QMainWindow* host, NavigationPaneCoordinator* navigationPane,
                     std::function<void()> settings, WorkspaceSwitcher* workspaces = nullptr,
-                    QWidget* accessory = nullptr)
-        : QObject(host), window(host), titleAccessory(accessory) {
+                    QWidget* accessory = nullptr, QWidget* modes = nullptr,
+                    std::function<QWidget*()> editorRegion = {})
+        : QObject(host), window(host), modeGroup(modes), editorRegion(std::move(editorRegion)) {
         QDockWidget* navigation = navigationPane
             ? navigationPane->dock() : nullptr;
         host->setWindowFlag(Qt::FramelessWindowHint);
@@ -90,10 +92,38 @@ public:
                     });
         }
         workspaceStrip = workspaces ? workspaces->createStrip(host) : nullptr;
-        const auto titleBar = UiWindowChrome::createTitleBar(host, workspaceStrip, titleAccessory);
+        const auto titleBar = UiWindowChrome::createTitleBar(host, workspaceStrip, nullptr, true);
         title = titleBar.widget;
         titleLabel = titleBar.label;
         maximizeButton = titleBar.maximize;
+        windowButtons = {titleBar.minimize, titleBar.maximize, titleBar.close};
+        if (workspaceStrip) {
+            auto* workspaceRow = qobject_cast<QHBoxLayout*>(workspaceStrip->layout());
+            workspaceRow->insertWidget(0, titleBar.sidebar);
+            // Keep a useful tab viewport; additional workspaces use its existing scroll buttons.
+            if (auto* tabs=workspaceStrip->findChild<QTabBar*>(QStringLiteral("workspaceIconTabs")))
+                tabs->setMaximumWidth(220);
+        }
+        if (modeGroup) {
+            modeGroup->setParent(title);
+            modeGroup->show();
+            markGroup(modeGroup);
+        }
+        if (accessory) {
+            auto* row=qobject_cast<QHBoxLayout*>(accessory->layout());
+            if (workspaceStrip) row->insertWidget(1, workspaceStrip);
+            for (int i=0;i<row->count();++i) if(auto* group=row->itemAt(i)->widget()) {
+                group->setProperty("titlebarInteractiveGroup",true);
+                if (group==workspaceStrip || group->findChild<QAbstractButton*>(QStringLiteral("startSimulation")))
+                    markGroup(group);
+            }
+            titleAccessory=new CompactOverflowToolbar(row,QStringLiteral("titlebar"),title);
+            auto* groups=qobject_cast<QHBoxLayout*>(titleAccessory->layout());
+            groups->setSpacing(12);
+            groups->addStretch(1);
+            titleAccessory->show();
+            accessory->deleteLater();
+        }
         updateMaximizeIcon();
         host->setContentsMargins(4, title->height() + 4, 4, 4);
         updateTitleTheme();
@@ -119,14 +149,17 @@ public:
 protected:
     bool eventFilter(QObject* target, QEvent* event) override {
         auto* widget = qobject_cast<QWidget*>(target);
-        if (!widget || widget->window() != window) return false;
+        // QWidget closes the native window after QMainWindow's layout is destroyed.
+        if (!widget || widget->window() != window || !qobject_cast<QMainWindow*>(window)) return false;
         if (target == window && event->type() == QEvent::WindowStateChange)
             updateMaximizeIcon();
-        if (target == window && event->type() == QEvent::Resize) {
-            updateTitleGeometry();
+        if (event->type()==QEvent::Resize || event->type()==QEvent::Move
+            || event->type()==QEvent::Show || event->type()==QEvent::Hide
+            || event->type()==QEvent::ParentChange || event->type()==QEvent::LayoutRequest) {
+            auto* anchor=alignmentAnchor();
+            if (widget==window || widget==titleAccessory || widget==workspaceStrip
+                || widget==anchor || (anchor && widget->isAncestorOf(anchor))) scheduleTitleGeometry();
         }
-        if (target == titleAccessory && event->type() == QEvent::LayoutRequest)
-            updateTitleGeometry();
         if (target == window && event->type() == QEvent::PaletteChange) {
             if (settingsButton)
                 settingsButton->setIcon(RoundedIcons::icon(RoundedIcons::Settings));
@@ -136,8 +169,8 @@ protected:
             && (event->type() == QEvent::ZOrderChange || event->type() == QEvent::Show)
             && title->isVisible()) title->raise();
         if (widget != window && widget != title && !title->isAncestorOf(widget)) return false;
-        if (workspaceStrip && (widget == workspaceStrip || workspaceStrip->isAncestorOf(widget))) return false;
-        if (titleAccessory && (widget == titleAccessory || titleAccessory->isAncestorOf(widget))) return false;
+        for (auto* at=widget;at && at!=title;at=at->parentWidget())
+            if (at->property("titlebarInteractiveGroup").toBool() || qobject_cast<QAbstractButton*>(at)) return false;
         if (event->type() == QEvent::MouseButtonPress || event->type() == QEvent::MouseButtonDblClick) {
             auto* mouse = static_cast<QMouseEvent*>(event);
             if (mouse->button() != Qt::LeftButton || !window->windowHandle()) return false;
@@ -160,12 +193,39 @@ protected:
         return false;
     }
 private:
+    static void markGroup(QWidget* group) {
+        group->setProperty("titlebarGroup",true);
+        group->setProperty("titlebarInteractiveGroup",true);
+        group->setAttribute(Qt::WA_StyledBackground);
+    }
+    QWidget* alignmentAnchor() const {
+        auto* anchor=editorRegion ? editorRegion() : nullptr;
+        return anchor && anchor->window()==window && anchor->isVisible() ? anchor : window->centralWidget();
+    }
+    void scheduleTitleGeometry() {
+        if (geometryPending) return;
+        geometryPending=true;
+        QTimer::singleShot(0,this,[this] {geometryPending=false;updateTitleGeometry();});
+    }
     void updateTitleGeometry() {
         title->setGeometry(4, 4, window->width() - 8, title->height());
-        if (workspaceStrip)
-            workspaceStrip->setMaximumWidth(qMax(96, window->width() - 240
-                - (titleLabel ? titleLabel->sizeHint().width() : 0)
-                - (titleAccessory ? titleAccessory->sizeHint().width() : 0)));
+        int right=title->width();
+        for (auto it=windowButtons.crbegin();it!=windowButtons.crend();++it) if(auto* button=*it) {
+            right-=button->width();
+            button->setGeometry(right,(title->height()-button->height())/2,button->width(),button->height());
+        }
+        auto* anchor=alignmentAnchor();
+        const int left=anchor ? anchor->mapTo(window,QPoint()).x()-title->x() : 0;
+        const int modesWidth=modeGroup ? modeGroup->sizeHint().width() : 0;
+        if (modeGroup) modeGroup->setGeometry(left,0,modesWidth,title->height());
+        if (titleLabel) {
+            titleLabel->setVisible(left>titleLabel->sizeHint().width()+16);
+            titleLabel->setGeometry(8,0,qMax(0,left-20),title->height());
+        }
+        if (titleAccessory) {
+            const int x=left+modesWidth+12;
+            titleAccessory->setGeometry(x,0,qMax(0,right-x-12),title->height());
+        }
     }
     void updateMaximizeIcon() {
         if (title && title->property("zeroslackElaControl").toBool()) return;
@@ -176,7 +236,7 @@ private:
         if (title->property("zeroslackElaControl").toBool()) {
             title->setPalette(QApplication::palette());
             title->setStyleSheet(QStringLiteral("QWidget#workspaceTitleBar { background-color: %1; }")
-                .arg(QApplication::palette().color(QPalette::Window).name()));
+                .arg(QApplication::palette().color(QPalette::Window).name())+groupStyle());
             return;
         }
         const QPalette palette = window->palette();
@@ -189,7 +249,14 @@ private:
         title->setStyleSheet(QStringLiteral(
             "QFrame#workspaceTitleBar { background-color: %1; }"
             "QFrame#workspaceTitleBar QToolButton:hover, QFrame#workspaceTitleBar QToolButton[nativeHovered=true] { background: %2; }")
-            .arg(base.name(), hover.name()));
+            .arg(base.name(), hover.name())+groupStyle());
+    }
+    QString groupStyle() const {
+        const auto base=QApplication::palette().color(QPalette::Window);
+        const auto ink=QApplication::palette().color(QPalette::WindowText);
+        const auto tint=QColor::fromRgbF(base.redF()*.96+ink.redF()*.04,
+            base.greenF()*.96+ink.greenF()*.04,base.blueF()*.96+ink.blueF()*.04);
+        return QStringLiteral("QWidget[titlebarGroup=true] { background-color:%1; border:0; border-radius:6px; }").arg(tint.name());
     }
     void registerActions(QMenu* menu) {
         for (auto* action : menu->actions()) {
@@ -202,6 +269,10 @@ private:
     QPointer<QLabel> titleLabel;
     QWidget* workspaceStrip = nullptr;
     QPointer<QWidget> titleAccessory;
+    QPointer<QWidget> modeGroup;
+    QList<QAbstractButton*> windowButtons;
+    std::function<QWidget*()> editorRegion;
+    bool geometryPending=false;
     QPointer<QToolButton> settingsButton;
     QToolButton* maximizeButton = nullptr;
 };

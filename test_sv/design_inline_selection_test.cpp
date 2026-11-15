@@ -97,6 +97,81 @@ void capture(QWidget& widget, const QString& name) {
 class DesignInlineSelectionTest : public QObject {
     Q_OBJECT
 private slots:
+    void singleDefinitionFilePresentation() {
+        QTemporaryDir dir;QVERIFY(dir.isValid());
+        const auto top=dir.filePath("top.sv"), child=dir.filePath("child.sv"), single=dir.filePath("single.sv"),
+            multi=dir.filePath("multiple.sv"), pkg=dir.filePath("types.sv"), a=dir.filePath("a.sv"), b=dir.filePath("b.sv");
+        QHash<QString,QString> contents{{top,"module top; child u(); endmodule\nmodule helper; endmodule"},
+            {child,"module child; endmodule"},{single,"\n\n\n\nmodule standalone; endmodule"},
+            {multi,"module first; endmodule\nmodule second; endmodule"},{pkg,"package types; endpackage"},
+            {a,"module duplicate; endmodule"},{b,"module duplicate; endmodule"}};
+        ProjectSnapshot project;project.workspaceRoot=dir.path();
+        for(auto it=contents.cbegin();it!=contents.cend();++it){QVERIFY(put(it.key(),it.value().toUtf8()));
+            project.allFiles<<it.key();project.systemVerilogFiles<<it.key();}
+        const auto root=module("top",top),leaf=module("child",child);
+        QList<SemanticSymbolRecord> symbols{root,leaf,module("helper",top),module("first",multi),module("second",multi),
+            module("duplicate",a),module("duplicate",b),instance("u",root,"child",leaf.stableKey),
+            SemanticFixtureRecordBuilder("standalone",SymbolTaxonomy::DeclarationKind::Module).withFile(single).withLine(5).record()};
+        SemanticIndex semantic;
+        semantic.setSnapshot(std::make_shared<SemanticIndexSnapshot>(SemanticIndexSnapshot::fromSymbolRecords(symbols,{}, {},contents)));
+        const auto token=semantic.snapshotToken();const auto report=HierarchyService(token).automaticDesignHierarchy();
+        const auto projection=DesignTreeProjection::build(report,token,project,{top,"top"},{top,"top"},{});
+        const auto fileId=[](const QString& section,const QString& file){return "section/"+section+"/file/"+file.toCaseFolded();};
+        NavigationWidget widget;widget.setWorkspaceRoot(dir.path());widget.resize(600,700);widget.show();widget.setActiveTab(NavigationWidget::DesignTab);
+        widget.updateDesignHierarchy(report,projection);auto* view=tree(widget);auto* model=qobject_cast<DesignHierarchyModel*>(view->model());
+        QVERIFY(model);QTRY_VERIFY(!model->applying());
+        const auto one=model->indexForId(fileId("Unreferenced",single));QVERIFY(one.isValid());QVERIFY(!model->hasChildren(one));
+        QCOMPARE(model->node(one).moduleType,QString("standalone"));QCOMPARE(model->node(one).definitionLine,5);
+        QVERIFY(one.data().toString().contains("standalone"));QVERIFY(one.data().toString().contains("single.sv"));
+        const auto many=model->indexForId(fileId("Unreferenced",multi));QVERIFY(model->hasChildren(many));model->fetchMore(many);QCOMPARE(model->rowCount(many),2);
+        QCOMPARE(model->node(model->index(0,0,many)).definitionFile,multi);
+        const auto package=model->indexForId(fileId("Unreferenced",pkg));QVERIFY(package.isValid());QVERIFY(!model->hasChildren(package));QVERIFY(model->node(package).id.isEmpty());
+        for(const auto& section:{QString("Sources/supporting"),QString("Simulation/supporting")}) {
+            const auto extra=model->indexForId(fileId(section,top));QVERIFY(extra.isValid());QVERIFY(!model->hasChildren(extra));QCOMPARE(model->node(extra).moduleType,QString("helper"));
+        }
+        const auto source=model->indexForId("section/Sources");model->fetchMore(source);
+        const auto actualRoot=model->index(0,0,source);QVERIFY(model->hasChildren(actualRoot));model->fetchMore(actualRoot);
+        QCOMPARE(model->rowCount(actualRoot),1);QCOMPARE(model->node(model->index(0,0,actualRoot)).instanceName,QString("u"));
+        const auto first=model->indexForId(fileId("Unreferenced",a)),second=model->indexForId(fileId("Unreferenced",b));
+        QVERIFY(first.isValid());QVERIFY(second.isValid());QVERIFY(model->node(first).definitionId!=model->node(second).definitionId);
+        QCOMPARE(model->node(first).definitionFile,a);QCOMPARE(model->node(second).definitionFile,b);
+        QSignalSpy navigate(&widget,&NavigationWidget::designNodeDoubleClicked),context(&widget,&NavigationWidget::designNodeContextMenuRequested);
+        const auto legacy=fileId("Unreferenced",single)+"/definition/"+model->node(one).definitionId;
+        QCOMPARE(model->indexForId(legacy),one);
+        widget.restoreDesignViewState({{"version",1},{"selected",legacy},{"expanded",QJsonArray{"section/Unreferenced",fileId("Unreferenced",single)}}});
+        QCOMPARE(view->currentIndex(),one);QVERIFY(!widget.designViewState()["expanded"].toArray().contains(fileId("Unreferenced",single)));
+        clickName(view,one);QCOMPARE(navigate.count(),0);activateName(view,one);QCOMPARE(navigate.count(),1);
+        QCOMPARE(qvariant_cast<DesignHierarchyNode>(navigate.takeFirst().first()).definitionLine,5);
+        emit view->customContextMenuRequested(view->visualRect(one).center());QCOMPARE(context.count(),1);
+        QCOMPARE(qvariant_cast<DesignHierarchyNode>(context.takeFirst().first()).definitionFile,single);
+        for(const auto& query:{QString("standalone"),QString("single.sv")}) {
+            search(widget)->setText(query);QTRY_VERIFY(view->model()!=model);QTRY_COMPARE(view->model()->rowCount(),1);
+            auto* found=qobject_cast<DesignHierarchyModel*>(view->model());QCOMPARE(found->node(found->index(0,0)).definitionFile,single);
+            search(widget)->clear();QTRY_COMPARE(view->model(),model);
+        }
+        const auto pending=DesignTreeProjection::build(report,token,project,{}, {},{});
+        QVERIFY(pending->nodes[pending->nodeById.value(fileId("Pending",single))].fileDefinition);
+        auto brokenContents=contents;brokenContents[single]="module standalone(";
+        semantic.setSnapshot(std::make_shared<SemanticIndexSnapshot>(SemanticIndexSnapshot::fromSymbolRecords(symbols,{}, {},brokenContents)));
+        const auto broken=DesignTreeProjection::build(report,semantic.snapshotToken(),project,{}, {},{});
+        QCOMPARE(broken->childrenById.value(fileId("Pending",single)).size(),1);
+        auto missing=report;missing.nodes.erase(std::remove_if(missing.nodes.begin(),missing.nodes.end(),[](const auto& node){return node.moduleType=="second";}),missing.nodes.end());
+        const auto incomplete=DesignTreeProjection::build(missing,token,project,{}, {},{});
+        QCOMPARE(incomplete->childrenById.value(fileId("Pending",multi)).size(),1);
+        QCOMPARE(model->report()->nodes.size(),report.nodes.size());
+        auto expandedContents=contents;expandedContents[single]+="\nmodule another; endmodule";
+        auto expandedSymbols=symbols;expandedSymbols.append(module("another",single));
+        semantic.setSnapshot(std::make_shared<SemanticIndexSnapshot>(SemanticIndexSnapshot::fromSymbolRecords(expandedSymbols,{}, {},expandedContents)));
+        const auto expandedReport=HierarchyService(semantic.snapshotToken()).automaticDesignHierarchy();
+        const auto expandedProjection=DesignTreeProjection::build(expandedReport,semantic.snapshotToken(),project,{top,"top"},{top,"top"},{});
+        widget.updateDesignHierarchy(expandedReport,expandedProjection);QTRY_VERIFY(!model->applying());
+        const auto expandedFile=model->indexForId(fileId("Unreferenced",single));QVERIFY(model->hasChildren(expandedFile));
+        view->expand(expandedFile);const auto oldChild=model->indexForId(legacy);QVERIFY(oldChild.isValid());
+        view->setCurrentIndex(oldChild);widget.restoreDesignViewState(widget.designViewState());
+        widget.updateDesignHierarchy(report,projection);QTRY_VERIFY(!model->applying());
+        QTRY_COMPARE(view->currentIndex(),model->indexForId(fileId("Unreferenced",single)));
+        QCOMPARE(model->node(view->currentIndex()).definitionLine,5);QVERIFY(!model->hasChildren(view->currentIndex()));
+    }
     void sourceTopPersistenceAndProjection() {
         QTemporaryDir dir;QVERIFY(dir.isValid());
         const auto top=dir.filePath("top.sv"), tb=dir.filePath("tb.sv"), leaf=dir.filePath("leaf.sv"),
@@ -118,7 +193,7 @@ private slots:
         DesignHierarchyModel model;model.setReport(hierarchy,projection);QTRY_VERIFY(!model.applying());QCOMPARE(model.rowCount(),4);
         QCOMPARE(model.report()->nodes.size(),hierarchy.nodes.size());
         const auto hasFile=[&](const QString& section,const QString& file){for(const auto& row:projection->nodes)
-            if(row.parentId=="section/"+section && row.file==file && row.semantic.id.isEmpty())return true;return false;};
+            if(row.parentId=="section/"+section && row.file==file && row.id.contains("/file/"))return true;return false;};
         QVERIFY(hasFile("Headers",header));QVERIFY(hasFile("Sources/supporting",pkg));QVERIFY(hasFile("Simulation/supporting",pkg));
         QVERIFY(!hasFile("Sources",top));QVERIFY(!hasFile("Sources",leaf));QVERIFY(!hasFile("Simulation",tb));
         QVERIFY(!hasFile("Sources/supporting",top));QVERIFY(!hasFile("Sources/supporting",leaf));

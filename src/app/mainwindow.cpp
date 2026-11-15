@@ -294,10 +294,10 @@ MainWindow::MainWindow(QWidget *parent)
     inputFeedback->setObjectName(QStringLiteral("templateInputStatus"));
     inputFeedback->setMaximumWidth(340);
     inputFeedback->hide();
-    titleStatusLayout->addWidget(inputFeedback);
     titleStatusLayout->addWidget(simulationWorkspace.get());
-    if(linkedContextController)titleStatusLayout->addWidget(linkedContextController->createModeButtons(titleStatus));
     titleStatusLayout->addWidget(new EditingTimeWidget(editingTimeService.get(), titleStatus));
+    titleStatusLayout->addWidget(inputFeedback);
+    auto* titleModes = linkedContextController ? linkedContextController->createModeButtons(this) : nullptr;
     editorCoordinator->setTemplateInputFeedbackHandler([inputFeedback](const QString& feedback) {
         inputFeedback->setText(inputFeedback->fontMetrics().elidedText(feedback.simplified(), Qt::ElideRight, 340));
         inputFeedback->setToolTip(feedback);
@@ -308,7 +308,10 @@ MainWindow::MainWindow(QWidget *parent)
             settingsDialog->close();
         else
             showSettingsCenter();
-    }, workspaceSwitcher.get(), titleStatus);
+    }, workspaceSwitcher.get(), titleStatus, titleModes,
+        [registry=QPointer<EditorSplitController>(tabManager->editorSplitController())] {
+            return registry ? registry->regionHost(QStringLiteral("main")) : nullptr;
+        });
     connect(navigationPane->dock(), &QDockWidget::visibilityChanged,
             this, [this](bool visible) {
                 if (visible)

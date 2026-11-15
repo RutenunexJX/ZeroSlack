@@ -6,12 +6,15 @@ class QWidget;
 class QLabel;
 class QToolButton;
 class QMainWindow;
+class QAbstractButton;
 
 struct UiWindowTitleBar {
     QWidget* widget = nullptr;
     QLabel* label = nullptr;
     QToolButton* sidebar = nullptr;
     QToolButton* maximize = nullptr;
+    QAbstractButton* minimize = nullptr;
+    QAbstractButton* close = nullptr;
 };
 
 namespace UiWindowChrome {
@@ -19,5 +22,5 @@ namespace UiWindowChrome {
 ZEROSLACK_API void ensureWindowBoundary(QWidget* window);
 // The host retains frame geometry, native hit testing and document close policy.
 ZEROSLACK_API UiWindowTitleBar createTitleBar(QMainWindow* host, QWidget* workspacePicker = nullptr,
-                                           QWidget* accessory = nullptr);
+                                           QWidget* accessory = nullptr, bool externalLayout = false);
 }

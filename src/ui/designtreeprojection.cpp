@@ -75,6 +75,8 @@ std::shared_ptr<DesignTreeProjection> DesignTreeProjection::build(const DesignHi
     QSet<QString> used, shown;
     QHash<QString,QList<DesignHierarchyNode>> definitionsByFile;
     QHash<QString,QSet<QString>> identitiesByFile;
+    QHash<QString,SemanticFileDependencyFacts> factsByFile;
+    for (auto it=facts.cbegin();it!=facts.cend();++it) factsByFile.insert(key(it.key()),it.value());
     for(const auto& node:report.nodes) {
         const auto file=key(node.definitionFile), identity=node.definitionId.isEmpty()?node.moduleType:node.definitionId;
         if(file.isEmpty() || identity.isEmpty() || identitiesByFile[file].contains(identity))continue;
@@ -85,13 +87,32 @@ std::shared_ptr<DesignTreeProjection> DesignTreeProjection::build(const DesignHi
         if(result->nodeById.contains(id))return;
         DesignTreeRow row; row.id=id;row.parentId=section;row.file=file;
         row.name=QDir(project.workspaceRoot).relativeFilePath(file);row.status=status;
-        result->append(row);shown.insert(key(file));
-        // Definitions remain selectable even in dependency and unused files.
+        QList<DesignHierarchyNode> visibleDefinitions;
+        QSet<QString> definitionNames;
         for(const auto& node:definitionsByFile.value(key(file))) {
             const auto identity=node.definitionId.isEmpty()?node.moduleType:node.definitionId;
-            if(covered.contains(identity))continue;
+            definitionNames.insert(node.moduleType);
+            if(!covered.contains(identity))visibleDefinitions.append(node);
+        }
+        const auto fact=factsByFile.constFind(key(file));
+        const bool complete=fact!=factsByFile.cend() && !fact->parseError
+            && (fact->moduleDeclarations-definitionNames).isEmpty();
+        if (visibleDefinitions.size()==1 && complete) {
+            const auto& node=visibleDefinitions.first();
+            if (!node.definitionId.isEmpty() && !node.unresolved
+                && !node.status.contains("incomplete",Qt::CaseInsensitive)) {
+                // Retain the file row's identity and alias the former definition child.
+                row.semantic=node;row.fileDefinition=true;row.type=row.name;row.name=node.moduleType;
+                if (!node.status.isEmpty()) row.status+='\n'+node.status;
+                result->presentationAliases.insert(id+"/definition/"+node.definitionId,id);
+                result->append(row);shown.insert(key(file));return;
+            }
+        }
+        result->append(row);shown.insert(key(file));
+        for(const auto& node:visibleDefinitions) {
+            const auto identity=node.definitionId.isEmpty()?node.moduleType:node.definitionId;
             auto entry=instance(node,id+"/definition/"+identity,id);
-            entry.name=node.moduleType;entry.type.clear();result->append(entry);
+            entry.name=node.moduleType;entry.type.clear();entry.fileDefinition=true;result->append(entry);
         }
     };
     const auto addContext=[&](const QString& section,const QPair<QString,QString>& target,bool src) {
