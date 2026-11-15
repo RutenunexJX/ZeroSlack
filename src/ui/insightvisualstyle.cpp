@@ -895,14 +895,11 @@ WorkspaceRegionColors InsightVisualStyle::workspaceRegionColors(const QString& r
 {
     const auto& t=theme(mode);
     const bool dark=isDarkTheme(mode);
-    QColor surface=dark?color("#24272b"):color("#f6f5f2");
-    if(region=="left")surface=dark?color("#39352f"):color("#e2d9c9");
-    else if(region=="right")surface=dark?color("#293d49"):color("#d1dfe7");
-    else if(region=="bottom")surface=dark?color("#191e22"):color("#c9ccc9");
-    else if(region=="floating")surface=dark?color("#38313f"):color("#ded9e4");
-    if(mode!=ThemeMode::Light && mode!=ThemeMode::Dark)surface=mix(surface,t.panelBackground,0.25);
+    const int neutral=qGray(t.appBackground.rgb());
+    QColor surface(neutral,neutral,neutral);
+    if(region!="main")surface=mix(surface,QColor(Qt::black),dark?0.12:0.035);
     return {surface,mix(surface,t.textPrimary,0.07),mix(surface,t.textPrimary,0.11),
-        mix(surface,t.textPrimary,0.045),mix(surface,t.textPrimary,0.14),mix(surface,t.textPrimary,0.45)};
+        mix(surface,t.textPrimary,0.045),mix(surface,t.textPrimary,0.10),mix(surface,t.textPrimary,0.45)};
 }
 WorkspaceRegionColors InsightVisualStyle::workspaceRegionColors(const QString& region)
 {

@@ -148,14 +148,6 @@ protected:
             QPainter background(this); background.fillRect(this->rect(),workspace?region.surface:theme.tab.barBackground);
         }
         Base::paintEvent(event);
-        if(this->property("workspaceRegionGroup").toBool() && this->currentIndex()>=0){
-            const auto region=InsightVisualStyle::workspaceRegionColors(this->property("workspaceRegionId").toString());
-            const QRect tab=this->tabRect(this->currentIndex());
-            const bool south=this->shape()==QTabBar::RoundedSouth || this->shape()==QTabBar::TriangularSouth;
-            QPainter painter(this);
-            painter.fillRect(QRect(tab.left()+8,south?tab.top():tab.bottom()-4,tab.width()-16,5),
-                this->property("workspaceRegionFocused").toBool()?region.selectedFocused:region.selected);
-        }
         const QVariant boundary = this->property("temporaryTabBoundary");
         if (!boundary.isValid() || boundary.toInt() < 0) return;
         const QRect tab = this->tabRect(boundary.toInt());
@@ -347,6 +339,10 @@ private:
                     const bool south=this->shape()==QTabBar::RoundedSouth || this->shape()==QTabBar::TriangularSouth;
                     const QRect join(pill.left()+6,south?rect.top():pill.bottom()-5,pill.width()-12,8);
                     painter.drawRect(join);
+                    if(this->property("workspaceRegionFocused").toBool()) {
+                        painter.setPen(QPen(focus,2,Qt::SolidLine,Qt::RoundCap));
+                        painter.drawLine(pill.left()+3,pill.top()+8,pill.left()+3,pill.bottom()-8);
+                    }
                 }
             }
             const QString text = labelWeight(i)>0 ? displayText(i,rect.width()) : QString();
@@ -1149,6 +1145,12 @@ void UiControls::refreshRole(QWidget* widget) {
             colors.backgroundHover = colors.backgroundChecked.lighter(108);
             colors.backgroundPressed = colors.backgroundChecked.darker(110);
             colors.text = colors.textChecked;
+        } else if(widget->property("compactFilter").toBool()) {
+            const auto surface=InsightVisualStyle::workspaceRegionColors(QStringLiteral("bottom"));
+            colors.background=surface.surface;
+            colors.backgroundHover=surface.hover;
+            colors.backgroundPressed=surface.selectedFocused;
+            colors.text=theme.textPrimary;
         }
         button->setBorderRadius(6);
         button->setLightDefaultColor(colors.background);

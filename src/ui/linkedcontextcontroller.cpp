@@ -221,10 +221,12 @@ struct LinkedContextController::Private {
         }
     }
     void refreshDrawerStyles() {
-        const auto theme=InsightVisualStyle::theme();
-        for(const auto& drawer:drawers)if(drawer.host)drawer.host->setStyleSheet(
-            QString("QFrame#expandedDrawer_%1 { background:%2; border:1px solid %3; border-radius:5px; }")
-                .arg(drawer.region,theme.surface.raised.name(),theme.border.name()));
+        for(const auto& drawer:drawers)if(drawer.host) {
+            const auto colors=InsightVisualStyle::workspaceRegionColors(drawer.region);
+            drawer.host->setStyleSheet(
+                QString("QFrame#expandedDrawer_%1 { background:%2; border:1px solid %3; border-radius:5px; }")
+                    .arg(drawer.region,colors.surface.name(),colors.border.name()));
+        }
     }
     void createDrawers() {
         auto* registry=tabs->editorSplitController();
@@ -232,9 +234,6 @@ struct LinkedContextController::Private {
             auto* original=registry->regionHost(region);if(!original)continue;
             auto* host=new QFrame(page);host->setObjectName("expandedDrawer_"+region);host->setFrameShape(QFrame::StyledPanel);
             host->setAttribute(Qt::WA_StyledBackground);host->setMinimumSize(0,0);
-            const auto theme=InsightVisualStyle::theme();
-            host->setStyleSheet(QString("QFrame#expandedDrawer_%1 { background:%2; border:1px solid %3; border-radius:5px; }")
-                .arg(region,theme.surface.raised.name(),theme.border.name()));
             auto* button=UiControls::toolButton(page);button->setObjectName("expandedDrawerButton_"+region);
             button->setIcon(RoundedIcons::icon(region=="left"?RoundedIcons::LeftDrawer:region=="bottom"?RoundedIcons::BottomDrawer:RoundedIcons::RightDrawer));
             button->setCheckable(true);button->setAutoRaise(true);button->setIconSize({18,18});
@@ -268,6 +267,7 @@ struct LinkedContextController::Private {
             if(!active || region=="main")return false;
             showDrawer(region);return true;
         });
+        refreshDrawerStyles();
         arrangeDrawers();
     }
     void restoreDrawers() {

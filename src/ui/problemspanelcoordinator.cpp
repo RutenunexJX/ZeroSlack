@@ -70,6 +70,7 @@ ProblemsPanelCoordinator::ProblemsPanelCoordinator(QWidget* parent) : QObject(pa
     problemsScopeCombo->addItem(QStringLiteral("All Files"), 2);
     problemsScopeCombo->setToolTip(QStringLiteral("Problem scope"));
     problemsScopeCombo->setAccessibleName(QStringLiteral("Problem scope"));
+    problemsScopeCombo->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
     toolbar->addWidget(problemsScopeCombo);
     severityButtons = new QButtonGroup(this);
     severityButtons->setExclusive(true);
@@ -78,6 +79,9 @@ ProblemsPanelCoordinator::ProblemsPanelCoordinator(QWidget* parent) : QObject(pa
         button->setObjectName(QStringLiteral("problems%1Button").arg(severityNames[i]));
         button->setCheckable(true);
         button->setChecked(i == 0);
+        button->setProperty("compactFilter",true);
+        button->setSizePolicy(QSizePolicy::Maximum,QSizePolicy::Fixed);
+        UiControls::refreshRole(button);
         severityButtons->addButton(button, i);
         toolbar->addWidget(button);
     }
@@ -86,7 +90,9 @@ ProblemsPanelCoordinator::ProblemsPanelCoordinator(QWidget* parent) : QObject(pa
     diagnosticStateLabel->setObjectName(QStringLiteral("diagnosticStateLabel"));
     UiTypography::apply(diagnosticStateLabel, UiTypography::Role::Metadata);
     toolbar->addWidget(diagnosticStateLabel);
-    layout->addWidget(new CompactOverflowToolbar(toolbar, QStringLiteral("problems"), panel));
+    auto* filters=new CompactOverflowToolbar(toolbar, QStringLiteral("problems"), panel);
+    qobject_cast<QHBoxLayout*>(filters->layout())->addStretch(1);
+    layout->addWidget(filters);
 
     contentStack = new QStackedWidget(panel);
     contentStack->setObjectName(QStringLiteral("problemsContent"));
