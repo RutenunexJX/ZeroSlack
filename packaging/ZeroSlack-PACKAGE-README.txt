@@ -1,3 +1,5 @@
+Release 0.35.15 updates stale reviewed-source identities and the retired linked-preview regex inventory. Source-policy checks and all 246 execution-policy contracts pass with the original mutation checks retained. Embedded component versions remain unchanged.
+
 Release 0.35.14 fixes editor clicks moving the viewport toward the start while leaving the cursor at the clicked source position. Clicks, double-clicks and selection dragging preserve the viewport with embedded blocks, Clean mode and folded code. Diagnostic navigation and cross-block keyboard navigation retain their behavior. Embedded components remain unchanged.
 
 Release 0.35.13 lets the source editor scroll while the pointer is over an embedded block preview, including text, code, references, images and Wave. Code, blocks and gutter markers move together. Edit mode and standalone pages retain their controls; folded views retain row-based scrolling and active block views preserve fine pixel deltas. Embedded components remain unchanged.
