@@ -509,6 +509,26 @@ QRect EditorViewProjection::cursorRect(
     return QRect(qRound(x), qRound(y), editor->cursorWidth(), qRound(height));
 }
 
+void EditorViewProjection::setTextCursor(
+    MyCodeEditor* editor, const QTextCursor& cursor) const
+{
+    if (!active()) {
+        editor->QPlainTextEdit::setTextCursor(cursor);
+        return;
+    }
+    auto* bar = editor->verticalScrollBar();
+    const int offset = bar->value();
+    {
+        // Qt reveals the cursor in native document rows. The projection owns
+        // this scrollbar's coordinates, so only its reveal may move the view.
+        const QSignalBlocker guard(bar);
+        editor->QPlainTextEdit::setTextCursor(cursor);
+        configureVerticalScrollBar(editor);
+        bar->setValue(offset);
+    }
+    ensureCursorVisible(editor, false);
+}
+
 void EditorViewProjection::ensureCursorVisible(
     MyCodeEditor* editor,
     bool center) const

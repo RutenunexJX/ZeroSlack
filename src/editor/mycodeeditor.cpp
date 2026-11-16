@@ -751,10 +751,8 @@ void MyCodeEditor::setTextCursor(const QTextCursor& cursor)
 {
     state->folding.revealLine(this, cursor.blockNumber());
     auto edit = beginSynchronousEditTransaction();
-    QPlainTextEdit::setTextCursor(cursor);
     state->projection.ensure(this, state->folding.collapsedLineRanges());
-    if (state->projection.active())
-        state->projection.ensureCursorVisible(this, false);
+    state->projection.setTextCursor(this, cursor);
 }
 
 void MyCodeEditor::centerCursor()
@@ -2177,7 +2175,7 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
                 auto target = current;
                 target.setPosition(currentBlock.position() + layout->lineAt(next).xToCursor(line.cursorToX(current.positionInBlock())),
                     event->modifiers().testFlag(Qt::ShiftModifier) ? QTextCursor::KeepAnchor : QTextCursor::MoveAnchor);
-                QPlainTextEdit::setTextCursor(target); state->projection.ensureCursorVisible(this,false); viewport()->update(); event->accept(); return;
+                state->projection.setTextCursor(this, target); viewport()->update(); event->accept(); return;
             }
         }
         const int row = state->projection.visibleRowForSourceLine(
@@ -2208,8 +2206,7 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
                 target.setPosition(current.anchor());
                 target.setPosition(position, QTextCursor::KeepAnchor);
             }
-            QPlainTextEdit::setTextCursor(target);
-            state->projection.ensureCursorVisible(this, false);
+            state->projection.setTextCursor(this, target);
             viewport()->update();
             event->accept();
             return;
@@ -2261,7 +2258,7 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
                 } else {
                     corrected.setPosition(correctedPosition);
                 }
-                QPlainTextEdit::setTextCursor(corrected);
+                state->projection.setTextCursor(this, corrected);
             }
         }
         state->projection.ensureCursorVisible(this, false);
@@ -2443,9 +2440,8 @@ void MyCodeEditor::dropEvent(QDropEvent* event)
         QTextCursor cursor = cursorForPosition(
             event->position().toPoint());
         cursor.insertText(event->mimeData()->text());
-        QPlainTextEdit::setTextCursor(cursor);
         state->projection.ensure(this, state->folding.collapsedLineRanges());
-        state->projection.ensureCursorVisible(this, false);
+        state->projection.setTextCursor(this, cursor);
         event->acceptProposedAction();
         viewport()->update();
         return;
@@ -2500,7 +2496,7 @@ void MyCodeEditor::mousePressEvent(QMouseEvent *event)
                 ? nextBlock.position()
                 : qMax(block.position(), document()->characterCount() - 1);
             lineCursor.setPosition(lineEnd, QTextCursor::KeepAnchor);
-            QPlainTextEdit::setTextCursor(lineCursor);
+            state->projection.setTextCursor(this, lineCursor);
         }
         viewport()->update();
         event->accept();
@@ -2517,7 +2513,7 @@ void MyCodeEditor::mousePressEvent(QMouseEvent *event)
             target.setPosition(textCursor().anchor());
             target.setPosition(position, QTextCursor::KeepAnchor);
         }
-        QPlainTextEdit::setTextCursor(target);
+        state->projection.setTextCursor(this, target);
         viewport()->update();
         event->accept();
         return;
@@ -2544,7 +2540,7 @@ void MyCodeEditor::mouseDoubleClickEvent(QMouseEvent *event)
         && event->button() == Qt::LeftButton) {
         QTextCursor target = cursorForPosition(event->position().toPoint());
         target.select(QTextCursor::WordUnderCursor);
-        QPlainTextEdit::setTextCursor(target);
+        state->projection.setTextCursor(this, target);
         state->selections.activateCurrentSymbolReferences(this);
         viewport()->update();
         event->accept();
@@ -2583,7 +2579,7 @@ void MyCodeEditor::mouseMoveEvent(QMouseEvent *event)
         const int position = target.position();
         target.setPosition(textCursor().anchor());
         target.setPosition(position, QTextCursor::KeepAnchor);
-        QPlainTextEdit::setTextCursor(target);
+        state->projection.setTextCursor(this, target);
         viewport()->update();
         event->accept();
         return;

@@ -59,6 +59,85 @@ class EditorBlockTest : public QObject {
         return result;
     }
 private slots:
+    void mouseCursorPreservesViewport_data() {
+        QTest::addColumn<QString>("projection");
+        QTest::addColumn<QString>("gesture");
+        for (const auto* projection : {"plain", "folded", "block", "collapsed", "clean", "detached"})
+            for (const auto* gesture : {"click", "shift", "double", "drag"})
+                QTest::newRow(qPrintable(QString(projection) + '-' + gesture))
+                    << QString(projection) << QString(gesture);
+    }
+    void mouseCursorPreservesViewport() {
+        QFETCH(QString, projection);
+        QFETCH(QString, gesture);
+        QStringList lines{"module m;", "initial begin", "  a = 1;", "  b = 2;", "end", "endmodule"};
+        for (int i = 0; i < 400; ++i) lines << QString("logic click_target_%1;").arg(i);
+        const auto source = lines.join('\n');
+        editor->setPlainText(source);
+        editor->setLineWrapMode(QPlainTextEdit::NoWrap);
+        if (projection != "plain" && projection != "folded") {
+            EditorAssociatedBlock block;
+            block.type = "text"; block.text = "Retained block input";
+            block.autoHeight = false; block.height = 120;
+            block.collapsed = projection == "collapsed";
+            block.detached = projection == "detached";
+            QVERIFY(!model()->insert(block, QTextCursor(editor->document()->findBlockByNumber(10))).isEmpty());
+            if (projection == "clean") editor->setAssociatedBlocksVisible(false);
+        }
+        if (projection == "folded") {
+            QTRY_VERIFY(!editor->syntaxDocument()->hasPendingEdits());
+            QVERIFY(editor->toggleFoldAtLineForTest(1));
+        }
+        settleGutter();
+        editor->document()->setModified(false); model()->markSaved();
+        const auto stored = model()->serialize();
+        auto* bar = editor->verticalScrollBar();
+        QTRY_VERIFY(bar->maximum() > 150);
+        bar->setValue(bar->maximum() / 2);
+        QCoreApplication::processEvents(); editor->viewport()->repaint();
+        const int scroll = bar->value();
+        const auto pointAt = [&](int y, int column) {
+            auto cursor = editor->cursorForPosition(QPoint(0, y));
+            cursor.setPosition(cursor.block().position() + column);
+            return editor->cursorRect(cursor).center();
+        };
+        const QPoint start = pointAt(170, 2), end = pointAt(235, 10);
+        const auto target = editor->cursorForPosition(gesture == "drag" ? end : start);
+        const auto anchor = gesture == "drag" ? editor->cursorForPosition(start).position() : editor->textCursor().anchor();
+        const auto geometry = editor->cursorRect(target);
+        QVERIFY(target.blockNumber() > 80);
+        QList<int> changes;
+        const auto connection = connect(bar, &QScrollBar::valueChanged, editor.get(), [&changes](int value) { changes << value; });
+        if (gesture == "double") {
+            QTest::mouseDClick(editor->viewport(), Qt::LeftButton, Qt::NoModifier, start);
+        } else if (gesture == "drag") {
+            QTest::mousePress(editor->viewport(), Qt::LeftButton, Qt::NoModifier, start);
+            QMouseEvent move(QEvent::MouseMove, end, editor->viewport()->mapToGlobal(end),
+                             Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+            QApplication::sendEvent(editor->viewport(), &move);
+            QTest::mouseRelease(editor->viewport(), Qt::LeftButton, Qt::NoModifier, end);
+        } else {
+            QTest::mouseClick(editor->viewport(), Qt::LeftButton,
+                             gesture == "shift" ? Qt::ShiftModifier : Qt::NoModifier, start);
+        }
+        QCoreApplication::processEvents();
+        disconnect(connection);
+        qInfo() << "mouse viewport" << projection << gesture << scroll << bar->value()
+                << "target line" << target.blockNumber() << "cursor line" << editor->textCursor().blockNumber()
+                << "scroll changes" << changes;
+        QCOMPARE(bar->value(), scroll);
+        QCOMPARE(editor->cursorRect(target), geometry);
+        if (gesture == "double") {
+            auto word = target; word.select(QTextCursor::WordUnderCursor);
+            QCOMPARE(editor->textCursor().selectedText(), word.selectedText());
+        } else {
+            QCOMPARE(editor->textCursor().position(), target.position());
+            if (gesture == "shift" || gesture == "drag") QCOMPARE(editor->textCursor().anchor(), anchor);
+        }
+        QCOMPARE(editor->toPlainText(), source);
+        QCOMPARE(model()->serialize(), stored);
+        QVERIFY(!editor->document()->isModified()); QVERIFY(!model()->dirty());
+    }
     void previewWheelMatchesSource_data() {
         QTest::addColumn<QString>("type");QTest::addColumn<bool>("blank");
         for(const auto& type:{"text","code","reference","image","wave"})

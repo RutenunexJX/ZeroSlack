@@ -61,6 +61,7 @@ public:
                                   const QPoint& position) const;
     QRect cursorRect(MyCodeEditor* editor,
                      const QTextCursor& cursor) const;
+    void setTextCursor(MyCodeEditor* editor, const QTextCursor& cursor) const;
     void ensureCursorVisible(MyCodeEditor* editor, bool center) const;
     void paint(MyCodeEditor* editor, QPaintEvent* event);
     void prepareVisibleGeometry(MyCodeEditor* editor) { if (associated.active()) associated.measureVisible(editor); }
