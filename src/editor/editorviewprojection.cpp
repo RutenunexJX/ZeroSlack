@@ -9,6 +9,7 @@
 #include <QPalette>
 #include <QScrollBar>
 #include <QSignalBlocker>
+#include <QScopeGuard>
 #include <QTextBlockFormat>
 #include <QTextDocument>
 #include <QTextFormat>
@@ -519,8 +520,17 @@ void EditorViewProjection::setTextCursor(
     auto* bar = editor->verticalScrollBar();
     const int offset = bar->value();
     {
-        // Qt reveals the cursor in native document rows. The projection owns
-        // this scrollbar's coordinates, so only its reveal may move the view.
+        // Native cursor reveal also scrolls viewport children directly and emits
+        // updateRequest with native coordinates, even when bar signals are blocked.
+        // Suspend that blit until the projection's scrollbar has been restored.
+        auto* viewport = editor->viewport();
+        const bool updatesEnabled = viewport->updatesEnabled();
+        const auto restoreUpdates = qScopeGuard([viewport, updatesEnabled] {
+            if (updatesEnabled)
+                viewport->setUpdatesEnabled(true);
+        });
+        if (updatesEnabled)
+            viewport->setUpdatesEnabled(false);
         const QSignalBlocker guard(bar);
         editor->QPlainTextEdit::setTextCursor(cursor);
         configureVerticalScrollBar(editor);

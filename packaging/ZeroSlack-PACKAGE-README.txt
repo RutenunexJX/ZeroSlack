@@ -1,3 +1,5 @@
+Release 0.35.16 fixes editor clicks clearing syntax highlighting or moving embedded blocks to the wrong position. Cursor placement preserves projected painting in folded code, Clean mode and real Tickx Wave blocks. Embedded component versions remain unchanged.
+
 Release 0.35.15 updates stale reviewed-source identities and the retired linked-preview regex inventory. Source-policy checks and all 246 execution-policy contracts pass with the original mutation checks retained. Embedded component versions remain unchanged.
 
 Release 0.35.14 fixes editor clicks moving the viewport toward the start while leaving the cursor at the clicked source position. Clicks, double-clicks and selection dragging preserve the viewport with embedded blocks, Clean mode and folded code. Diagnostic navigation and cross-block keyboard navigation retain their behavior. Embedded components remain unchanged.
@@ -18,7 +20,7 @@ Release 0.35.5 persists validated semantic workspace results, filters Design hie
 
 Release 0.35.4 restores nested module diagrams and reorganizes Design roots, unifies dock tabs and sidebar icons, reduces the welcome page to recent workspaces, and improves Settings contrast. Inline blocks support shared editing, appearance settings, drag-out pages and gutter reattachment; Pinloom references validate capabilities before opening. Functional acceptance is retained with release-specific build and package checks. Suite SDK/Runtime remains 1.0.2, native xIPs 2.16.2 and the independent asset adapter 2.14.2.
 
-ZeroSlack v0.35.15 Windows package
+ZeroSlack v0.35.16 Windows package
 
 Release 0.35.3 aligns tab contents and smaller close marks, removes welcome animation resources, moves Run and simulation settings into the title row with the top selected in Design, creates untitled Markdown/block documents until first save, restores module block diagrams, removes redundant panel collapse controls, and gives floating windows visible borders. Scoped GUI and real Questa evidence is retained; the known baseline native drag-release failure remains recorded. Suite SDK/Runtime remains 1.0.2, native xIPs 2.16.2 and the independent asset adapter 2.14.2.
 

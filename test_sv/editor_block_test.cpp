@@ -59,6 +59,97 @@ class EditorBlockTest : public QObject {
         return result;
     }
 private slots:
+    void mouseCursorPreservesPresentation_data() {
+        QTest::addColumn<QString>("kind");
+        QTest::addColumn<QString>("check");
+        for (const auto* kind : {"plain", "folded", "text", "wave", "collapsed", "clean"})
+            for (const auto* check : {"blocks", "highlights"})
+                QTest::newRow(qPrintable(QString(kind) + '-' + check)) << QString(kind) << QString(check);
+    }
+    void mouseCursorPreservesPresentation() {
+        QFETCH(QString, kind); QFETCH(QString, check);
+        QStringList lines{"module m;", "initial begin", "  a = 1;", "  b = 2;", "end"};
+        for (int i = 0; i < 400; ++i) lines << QString("logic click_signal_%1;").arg(i);
+        lines << "endmodule";
+        const auto source = lines.join('\n');
+        editor->resize(950, 850); editor->setLineWrapMode(QPlainTextEdit::NoWrap);
+        editor->setPlainText(source);
+        QString id;
+        const bool hasBlock = kind != "plain" && kind != "folded";
+        if (hasBlock) {
+            EditorAssociatedBlock block;
+            block.type = kind == "wave" ? "wave" : "text";
+            block.text = kind == "wave" ? WaveBlockContent::initialProject() : "Retained note";
+            if (kind == "wave") {
+                QString issue;
+                QVERIFY2(WaveBlockContent::validate(block.text.toUtf8(), &issue), qPrintable(issue));
+            }
+            block.height = 120; block.autoHeight = false; block.collapsed = kind == "collapsed";
+            id = model()->insert(block, QTextCursor(editor->document()->findBlockByNumber(104)));
+            QVERIFY(!id.isEmpty());
+            if (kind == "clean") editor->setAssociatedBlocksVisible(false);
+        }
+        if (kind == "folded") {
+            QTRY_VERIFY(!editor->syntaxDocument()->hasPendingEdits());
+            QVERIFY(editor->toggleFoldAtLineForTest(1));
+        }
+        settleGutter();
+        auto* bar = editor->verticalScrollBar();
+        QTextCursor top(editor->document()->findBlockByNumber(100));
+        bar->setValue(hasBlock ? bar->value() + editor->cursorRect(top).top() - 60
+                               : editor->visibleRowForSourceLine(98));
+        QTest::qWait(30);
+        QList<SemanticDecoration> decorations;
+        for (auto block = editor->document()->begin(); block.isValid(); block = block.next()) {
+            const auto name = block.text().section(' ', 1, 1).chopped(1);
+            if (!name.startsWith("click_signal_")) continue;
+            SemanticDecoration decoration;
+            decoration.role = SemanticDecorationRole::ActualSignal; decoration.text = name;
+            decoration.startPosition = block.position() + 6; decoration.length = name.size();
+            decorations.append(decoration);
+        }
+        editor->setSemanticDecorations(decorations);
+        QCoreApplication::processEvents(); editor->viewport()->repaint();
+        const auto semanticRanges = [&] {
+            QList<QPair<int, int>> ranges;
+            for (const auto& selection : editor->extraSelections())
+                if (selection.format.intProperty(QTextFormat::UserProperty + 3) == 1003)
+                    ranges.append({selection.cursor.selectionStart(), selection.cursor.selectionEnd()});
+            std::sort(ranges.begin(), ranges.end()); return ranges;
+        };
+        const auto highlighted = semanticRanges(); QVERIFY(!highlighted.isEmpty());
+        QWidget* shell = nullptr;
+        if (hasBlock && kind != "clean") {
+            for (auto* candidate : editor->findChildren<QWidget*>("editorBlockShell"))
+                if (candidate->property("blockId").toString() == id) shell = candidate;
+            QVERIFY(shell); QVERIFY(shell->isVisible());
+            QVERIFY(shell->geometry().intersects(editor->viewport()->rect()));
+            if (kind == "wave") QVERIFY(shell->findChild<QWidget*>("WaveEditor"));
+        }
+        const QRect shellRect = shell ? shell->geometry() : QRect();
+        editor->document()->setModified(false); model()->markSaved();
+        const auto stored = model()->serialize(); const int scroll = bar->value();
+        for (int line : {101, 103, 105, 102, 108, 100}) {
+            QTextCursor target(editor->document()->findBlockByNumber(line));
+            target.setPosition(target.position() + 8);
+            const auto point = editor->cursorRect(target).center();
+            QVERIFY(editor->viewport()->rect().contains(point));
+            QTest::mouseClick(editor->viewport(), Qt::LeftButton, Qt::NoModifier, point);
+            QCoreApplication::processEvents();
+            qInfo() << "presentation" << kind << check << "line" << line
+                    << "scroll" << scroll << bar->value()
+                    << "shell" << shellRect << (shell ? shell->geometry() : QRect())
+                    << "highlights" << highlighted.size() << semanticRanges().size();
+            QCOMPARE(bar->value(), scroll);
+            QCOMPARE(editor->textCursor().position(), target.position());
+            if (check == "blocks" && shell) {
+                QVERIFY(shell->isVisible()); QCOMPARE(shell->geometry(), shellRect);
+            }
+            if (check == "highlights") QCOMPARE(semanticRanges(), highlighted);
+            QCOMPARE(editor->toPlainText(), source); QCOMPARE(model()->serialize(), stored);
+            QVERIFY(!editor->document()->isModified()); QVERIFY(!model()->dirty());
+        }
+    }
     void mouseCursorPreservesViewport_data() {
         QTest::addColumn<QString>("projection");
         QTest::addColumn<QString>("gesture");
