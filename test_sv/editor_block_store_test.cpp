@@ -56,6 +56,11 @@ public:
         return result;
     }
 };
+class WheelReceiverCounter final : public QObject {
+public:
+    int count=0;
+    bool eventFilter(QObject*,QEvent* event) override { if(event->type()==QEvent::Wheel)++count;return false; }
+};
 }
 class EditorBlockStoreTest : public QObject {
     Q_OBJECT
@@ -79,6 +84,74 @@ class EditorBlockStoreTest : public QObject {
         };
     }
 private slots:
+    void previewWheelFollowsOwnerAndContentMount_data() {
+        QTest::addColumn<QString>("type");
+        QTest::newRow("text")<<QString("text");QTest::newRow("wave")<<QString("wave");
+    }
+    void previewWheelFollowsOwnerAndContentMount() {
+        QFETCH(QString,type);
+        const auto codeText=QString("logic owner;\n").repeated(180);QVERIFY(write(source,codeText.toUtf8()));
+        QWidget host;std::unique_ptr<QTabWidget> owned(UiControls::editorTabWidget());auto& tabs=*owned;
+        TabManager manager(&tabs);auto* split=manager.editorSplitController();split->setHost(&host);
+        manager.unsavedDocumentManagerForTesting()->setDecisionProvider([](const auto&,QWidget*){return UnsavedDocumentBatchDecision::DiscardAll;});
+        host.resize(1200,720);host.show();QVERIFY(manager.openFileInTab(source));
+        auto* left=manager.getCurrentEditor();auto* owner=manager.sharedDocumentForEditor(left);auto* blocks=left->blockModel();
+        EditorAssociatedBlock block;block.type=type;block.height=260;block.autoHeight=false;
+        block.text=type=="wave"?WaveBlockContent::initialProject():QString("Scroll inside Edit\n").repeated(150);
+        const auto id=blocks->insert(block,QTextCursor(left->document()->findBlockByNumber(2)));QVERIFY(!id.isEmpty());
+        const auto other=directory->filePath("other.sv");QVERIFY(write(other,codeText.toUtf8()));QVERIFY(manager.openFileInTab(other));
+        auto* right=manager.getCurrentEditor();auto* receiving=split->createSplit(&tabs,EditorSplitDirection::Right);QVERIFY(receiving);
+        QVERIFY(split->movePage(right,receiving));tabs.setCurrentWidget(left);right->setFocus();
+        auto* rightBlocks=right->blockModel();const auto rightId=rightBlocks->insert("text",QTextCursor(right->document()->findBlockByNumber(2)),"Right preview");
+        const auto contentFor=[](MyCodeEditor* code,const QString& requested)->EditorBlockContent*{
+            for(auto* frame:code->findChildren<QWidget*>("editorBlockShell"))if(frame->property("blockId")==requested)
+                return dynamic_cast<EditorBlockContent*>(frame->findChild<QWidget*>("editorBlockContent"));
+            return nullptr;
+        };
+        EditorBlockContent* content=nullptr;EditorBlockContent* rightContent=nullptr;
+        QTRY_VERIFY((content=contentFor(left,id)) && content->isVisible());QTRY_VERIFY((rightContent=contentFor(right,rightId)) && rightContent->isVisible());
+        const QPointer<EditorBlockContent> retained=content;
+        QWidget* target=type=="wave"?content->findChild<QWidget*>("waveEditorCanvas"):content->textEditor()->viewport();QVERIFY(target && target->isVisible());
+        WheelReceiverCounter counter;target->installEventFilter(&counter);
+        const auto wheel=[](QWidget* hit){const auto point=hit->rect().center();QWheelEvent event(point,hit->mapToGlobal(point),{},QPoint(0,-120),
+            Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);QApplication::sendEvent(hit,&event);};
+        auto* leftBar=left->verticalScrollBar();auto* rightBar=right->verticalScrollBar();leftBar->setValue(0);rightBar->setValue(0);
+        blocks->markSaved();rightBlocks->markSaved();const auto original=blocks->serialize();const auto originalRight=rightBlocks->serialize();
+        right->setFocus();const QPointer<QWidget> focused=QApplication::focusWidget();const int rightPosition=rightBar->value();
+        wheel(target);QVERIFY(leftBar->value()>0);QCOMPARE(rightBar->value(),rightPosition);QCOMPARE(counter.count,0);QCOMPARE(QApplication::focusWidget(),focused.data());
+        QCOMPARE(blocks->serialize(),original);QCOMPARE(rightBlocks->serialize(),originalRight);QVERIFY(!blocks->dirty());QVERIFY(!rightBlocks->dirty());
+        leftBar->setValue(0);wheel(rightContent->textEditor()->viewport());QVERIFY(rightBar->value()>rightPosition);QCOMPARE(leftBar->value(),0);
+        left->selectAssociatedBlock(id);auto* shell=content->parentWidget();auto* toggle=shell->findChild<QToolButton*>("blockEditToggle");QVERIFY(toggle);
+        QTRY_VERIFY(toggle->isVisible());QTest::mouseClick(toggle,Qt::LeftButton);QVERIFY(content->isEditing());
+        const int editPosition=leftBar->value();counter.count=0;const int inner=content->textEditor()?content->textEditor()->verticalScrollBar()->value():0;
+        wheel(target);QCOMPARE(counter.count,1);QCOMPARE(leftBar->value(),editPosition);
+        if(content->textEditor())QVERIFY(content->textEditor()->verticalScrollBar()->value()>inner);
+        QTest::mouseClick(toggle,Qt::LeftButton);QVERIFY(!content->isEditing());leftBar->setValue(0);counter.count=0;
+        wheel(target);QVERIFY(leftBar->value()>0);QCOMPARE(counter.count,0);
+        auto collapsed=*blocks->find(id);collapsed.collapsed=true;QVERIFY(blocks->update(collapsed));QTRY_VERIFY(!content->isVisible());
+        collapsed.collapsed=false;QVERIFY(blocks->update(collapsed));leftBar->setValue(0);QTRY_VERIFY(content->isVisible());counter.count=0;
+        wheel(target);QVERIFY(leftBar->value()>0);QCOMPARE(counter.count,0);
+        // Detaching retains the real child; neither its tab nor floating host routes back to source.
+        auto* page=manager.detachAssociatedBlock(owner,id);QVERIFY(page);QVERIFY(retained);QVERIFY(page->isAncestorOf(content));
+        for(bool floating:{false,true}){
+            if(floating){auto* group=split->floatPage(page,host.mapToGlobal(QPoint(100,100)));QVERIFY(group);group->window()->resize(600,400);group->window()->show();}
+            QTRY_VERIFY(target->isVisible());const int leftBefore=leftBar->value(),rightBefore=rightBar->value();counter.count=0;
+            if(content->textEditor())content->textEditor()->verticalScrollBar()->setValue(0);
+            wheel(target);QCOMPARE(counter.count,1);QCOMPARE(leftBar->value(),leftBefore);QCOMPARE(rightBar->value(),rightBefore);
+            if(content->textEditor())QVERIFY(content->textEditor()->verticalScrollBar()->value()>0);
+        }
+        // Cross-file reattachment must change the routing owner without rebuilding content.
+        const auto captured=DocumentBlockTransfer::capture(owner,id);auto* destination=manager.sharedDocumentForEditor(right);QString issue;
+        QCOMPARE(DocumentBlockTransfer::apply(captured,destination,QTextCursor(right->document()->findBlockByNumber(2)),DocumentBlockTransfer::Mode::Move,{},&issue),id);
+        QTRY_VERIFY(retained && right->isAncestorOf(retained));QVERIFY(!left->isAncestorOf(retained));rightBar->setValue(0);leftBar->setValue(0);
+        QTRY_VERIFY(target->isVisible());counter.count=0;wheel(target);QVERIFY(rightBar->value()>0);QCOMPARE(leftBar->value(),0);QCOMPARE(counter.count,0);
+        QCOMPARE(left->toPlainText(),codeText);QCOMPARE(right->toPlainText(),codeText);
+        QCOMPARE(rightBlocks->find(id)->text,block.text);QCOMPARE(originalRight["blocks"].toArray().size(),1);QCOMPARE(original["blocks"].toArray().size(),1);
+        // Closing the owning source releases filters; the other editor still routes its own content.
+        QPointer<MyCodeEditor> oldLeft=left;manager.closeTab(tabs.indexOf(left));QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);
+        QVERIFY(!oldLeft);rightBar->setValue(0);wheel(target);QVERIFY(rightBar->value()>0);QCOMPARE(counter.count,0);
+        qInfo()<<"PREVIEW_WHEEL_MOUNT"<<type<<"DPR"<<host.devicePixelRatioF()<<"split/edit/tab/floating/cross-file/destroy passed";
+    }
     void semanticReferencesKeepBindingsAndIndependentRelations() {
         const QString code="module top;\nassign ready = valid;\nendmodule\n";
         editor->setPlainText(code);QVERIFY(write(source,code.toUtf8()));

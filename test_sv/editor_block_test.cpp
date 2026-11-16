@@ -17,6 +17,23 @@
 #include <QtTest>
 #include <QtWidgets>
 
+namespace {
+class WheelDeliveryObserver final : public QObject {
+public:
+    QWidget* viewport = nullptr;
+    QList<QVariantList> deliveries;
+    bool eventFilter(QObject* receiver,QEvent* event) override {
+        if(receiver==viewport && event->type()==QEvent::Wheel){
+            const auto* wheel=static_cast<QWheelEvent*>(event);
+            deliveries.append({wheel->pixelDelta(),wheel->angleDelta(),int(wheel->buttons()),
+                int(wheel->modifiers()),int(wheel->phase()),wheel->inverted(),int(wheel->source()),
+                QVariant::fromValue(qulonglong(wheel->timestamp())),wheel->globalPosition(),wheel->position()});
+        }
+        return false;
+    }
+};
+}
+
 class EditorBlockTest : public QObject {
     Q_OBJECT
     QTemporaryDir settings;
@@ -42,6 +59,177 @@ class EditorBlockTest : public QObject {
         return result;
     }
 private slots:
+    void previewWheelMatchesSource_data() {
+        QTest::addColumn<QString>("type");QTest::addColumn<bool>("blank");
+        for(const auto& type:{"text","code","reference","image","wave"})
+            for(bool blank:{false,true})QTest::newRow(qPrintable(QString(type)+(blank?"-blank":"-content")))<<QString(type)<<blank;
+    }
+    void previewWheelMatchesSource() {
+        QFETCH(QString,type);QFETCH(bool,blank);
+        editor->resize(950,720);editor->setLineWrapMode(QPlainTextEdit::NoWrap);
+        const auto source=(QString("logic ")+QString(180,'x')+";\n").repeated(160);
+        editor->setPlainText(source);
+        EditorAssociatedBlock block;block.type=type;block.autoHeight=false;block.height=260;
+        block.text=type=="wave"?WaveBlockContent::initialProject():QString("Block preview content\n").repeated(80);
+        if(type=="reference")block.uri="https://example.invalid/"+QString("reference/").repeated(70);
+        QTemporaryDir assets;QVERIFY(assets.isValid());
+        if(type=="image"){
+            QImage image(300,120,QImage::Format_RGB32);image.fill(Qt::blue);
+            const auto file=assets.filePath("image.png");QVERIFY(image.save(file));QString error;
+            block.asset=DocumentBlockStore::get(model())->importImage(file,&error);QVERIFY2(!block.asset.isEmpty(),qPrintable(error));
+        }
+        const auto id=model()->insert(block,QTextCursor(editor->document()->findBlockByNumber(20)));QVERIFY(!id.isEmpty());
+        QWidget* shell=nullptr;
+        const auto locate=[&]{for(auto* frame:editor->findChildren<QWidget*>("editorBlockShell"))if(frame->property("blockId")==id)shell=frame;return shell;};
+        editor->goToLineNumber(21);QTRY_VERIFY(locate());
+        auto* bar=editor->verticalScrollBar();
+        const auto top=editor->blockGeometry(20).top;bar->setValue(bar->value()+qRound(top)-100);
+        QTRY_VERIFY(shell->isVisible() && shell->y()>0);QCoreApplication::processEvents();
+        auto* content=dynamic_cast<EditorBlockContent*>(shell->findChild<QWidget*>("editorBlockContent"));QVERIFY(content && !content->isEditing());
+        QWidget* area=content;
+        if(type=="text" || type=="code")area=content->textEditor()->viewport();
+        if(type=="reference"){
+            auto* text=content->findChild<QTextEdit*>("editorBlockReferenceText");QVERIFY(text);
+            QTRY_VERIFY(text->isVisible() && !text->toPlainText().isEmpty());area=text->viewport();
+        }
+        if(type=="image"){QTRY_VERIFY(!content->imagePreview()->sourcePixmap().isNull());area=content->imagePreview();}
+        if(type=="wave"){
+            auto* native=content->findChild<QWidget*>("WaveEditor");QVERIFY(native);
+            area=native->findChild<QWidget*>("waveEditorCanvas");QVERIFY(area && area->isVisible());
+        }
+        const QPoint global=blank?shell->mapToGlobal(QPoint(shell->width()-3,shell->height()/2))
+            :area->mapToGlobal(area->rect().center());
+        auto* hit=editor->viewport()->childAt(editor->viewport()->mapFromGlobal(global));QVERIFY(hit);
+        QVERIFY(shell==hit || shell->isAncestorOf(hit));
+        if(!blank)QVERIFY(hit==area || area->isAncestorOf(hit));
+        const auto sourceState=editor->textCursor();const auto selected=shell->property("blockSelected");
+        model()->markSaved();editor->document()->setModified(false);const auto stored=model()->serialize();
+        const int start=bar->value(),horizontal=editor->horizontalScrollBar()->maximum()/2;
+        const int anchorOffset=shell->y()-qRound(editor->blockGeometry(20).top);
+        const auto innerBars=content->findChildren<QScrollBar*>();QList<int> innerValues;for(auto* inner:innerBars)innerValues<<inner->value();
+        WheelDeliveryObserver observer;observer.viewport=editor->viewport();qApp->installEventFilter(&observer);
+        QSignalSpy zoom(editor.get(),&MyCodeEditor::fontZoomRequested);
+        struct Input{QPoint pixel,angle;Qt::KeyboardModifiers modifiers;Qt::ScrollPhase phase;bool inverted;};
+        const QList<Input> inputs={{{},{0,-120},Qt::NoModifier,Qt::NoScrollPhase,false},
+            {{},{0,120},Qt::NoModifier,Qt::NoScrollPhase,false},{{0,-1},{},Qt::NoModifier,Qt::ScrollUpdate,false},
+            {{0,-7},{0,-120},Qt::NoModifier,Qt::ScrollUpdate,true},{{0,3},{},Qt::NoModifier,Qt::ScrollMomentum,false},
+            {{},{},Qt::NoModifier,Qt::ScrollBegin,false},{{},{},Qt::NoModifier,Qt::ScrollEnd,false},
+            {{},{0,-120},Qt::ControlModifier,Qt::NoScrollPhase,false},{{0,-2},{},Qt::ControlModifier,Qt::ScrollUpdate,false},
+            {{},{0,-120},Qt::ShiftModifier,Qt::NoScrollPhase,false},{{-5,0},{},Qt::ShiftModifier,Qt::ScrollUpdate,false},
+            {{},{-120,0},Qt::NoModifier,Qt::NoScrollPhase,false},
+            {{},{0,120},Qt::ControlModifier|Qt::ShiftModifier,Qt::NoScrollPhase,false}};
+        for(const auto& input:inputs){
+            const auto dispatch=[&](QWidget* receiver){
+                QWheelEvent wheel(receiver->mapFromGlobal(QPointF(global)),global,input.pixel,input.angle,
+                    Qt::NoButton,input.modifiers,input.phase,input.inverted,Qt::MouseEventSynthesizedBySystem);
+                wheel.setTimestamp(123456);QApplication::sendEvent(receiver,&wheel);return wheel.isAccepted();
+            };
+            bar->setValue(start);editor->horizontalScrollBar()->setValue(horizontal);observer.deliveries.clear();zoom.clear();
+            QVERIFY(dispatch(editor->viewport()));QCOMPARE(observer.deliveries.size(),1);
+            const auto expected=observer.deliveries.first();const int expectedY=bar->value(),expectedX=editor->horizontalScrollBar()->value(),expectedZoom=zoom.size();
+            bar->setValue(start);editor->horizontalScrollBar()->setValue(horizontal);QCoreApplication::processEvents();observer.deliveries.clear();zoom.clear();
+            QVERIFY(dispatch(hit));QCOMPARE(observer.deliveries.size(),1);QCOMPARE(observer.deliveries.first(),expected);
+            QCOMPARE(bar->value(),expectedY);QCOMPARE(editor->horizontalScrollBar()->value(),expectedX);QCOMPARE(zoom.size(),expectedZoom);
+            QCoreApplication::processEvents();QCOMPARE(shell->y()-qRound(editor->blockGeometry(20).top),anchorOffset);
+            for(int i=0;i<innerBars.size();++i)QCOMPARE(innerBars[i]->value(),innerValues[i]);
+            QCOMPARE(content->isEditing(),false);QCOMPARE(shell->property("blockSelected"),selected);
+        }
+        // At either boundary the routed event must still be consumed exactly once.
+        for(bool bottom:{false,true}){
+            bar->setValue(bottom?bar->maximum():bar->minimum());const int boundary=bar->value();observer.deliveries.clear();
+            QWheelEvent wheel(hit->mapFromGlobal(global),global,{},QPoint(0,bottom?-120:120),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);
+            QApplication::sendEvent(hit,&wheel);QVERIFY(wheel.isAccepted());QCOMPARE(observer.deliveries.size(),1);QCOMPARE(bar->value(),boundary);
+        }
+        QCOMPARE(model()->serialize(),stored);QVERIFY(!model()->dirty());QVERIFY(!editor->document()->isModified());QCOMPARE(editor->toPlainText(),source);
+        QCOMPARE(editor->textCursor().position(),sourceState.position());QCOMPARE(editor->textCursor().anchor(),sourceState.anchor());
+        qInfo().noquote()<<"PREVIEW_WHEEL"<<type<<"blank"<<blank<<"receiver"<<hit->metaObject()->className()<<hit->objectName()<<"DPR"<<editor->devicePixelRatioF()<<"matchedInputs"<<inputs.size();
+    }
+    void projectedPixelWheelKeepsFineDeltas() {
+        editor->setPlainText(QString("logic item;\n").repeated(200));insert();settleGutter();
+        auto* bar=editor->verticalScrollBar();bar->setValue(300);const int start=bar->value();
+        for(int delta:{-1,-2,-3,1,2,3}){
+            const int before=bar->value();QWheelEvent wheel(QPointF(20,20),editor->viewport()->mapToGlobal(QPoint(20,20)),
+                QPoint(0,delta),QPoint(0,delta<0?-120:120),Qt::NoButton,Qt::NoModifier,Qt::ScrollUpdate,false);
+            QApplication::sendEvent(editor->viewport(),&wheel);QCOMPARE(bar->value()-before,-delta);
+        }
+        QCOMPARE(bar->value(),start);
+    }
+    void foldedPixelWheelKeepsRowUnits_data() {
+        QTest::addColumn<QString>("inactive");
+        for(const auto* kind:{"no-block","all-detached","removed-reference"})QTest::newRow(kind)<<QString(kind);
+    }
+    void foldedPixelWheelKeepsRowUnits() {
+        QFETCH(QString,inactive);
+        const auto source=QString("module m;\ninitial begin\n  a = 1;\n  b = 2;\nend\nendmodule\n")+QString("// tail\n").repeated(200);
+        editor->setPlainText(source);editor->document()->setModified(false);
+        if(inactive!="no-block"){
+            EditorAssociatedBlock block;block.type=inactive=="all-detached"?"text":"reference";block.text="Retained association";
+            block.detached=inactive=="all-detached";
+            if(block.type=="reference"){
+                block.uri="https://example.invalid/wheel-units";
+                block.reference={{"version",1},{"sourceKind","legacy"},{"display","embedded"},
+                    {"anchorId","wheel-anchor"},{"linkId","wheel-link"},{"targetHash",QString(64,'a')}};
+            }
+            const auto id=model()->insert(block,QTextCursor(editor->document()->findBlockByNumber(20)));QVERIFY(!id.isEmpty());
+            if(block.type=="reference"){QVERIFY(model()->remove(id));QVERIFY(model()->find(id)->removedReference());}
+            QCOMPARE(model()->items().size(),1);
+        }
+        QTRY_VERIFY(!editor->syntaxDocument()->hasPendingEdits());QVERIFY(editor->toggleFoldAtLineForTest(1));settleGutter();
+        QVERIFY(editor->viewProjectionActive());QVERIFY(!editor->sourceLineVisible(2));
+        auto* bar=editor->verticalScrollBar();QCOMPARE(bar->singleStep(),1);QVERIFY(bar->maximum()>80);
+        model()->markSaved();const auto stored=model()->serialize();
+        struct Input{int pixel,angle,rows;};
+        const QList<Input> inputs={{-7,0,3},{7,0,-3},{-1,0,3},{-1,0,3},{1,0,-3},
+            {-7,-120,3},{7,120,-3},{-1,-240,6},{1,240,-6},{0,-120,3},{0,120,-3}};
+        for(const auto& input:inputs){
+            bar->setValue(40);const auto top=editor->blockGeometry(40).top;const auto rowHeight=editor->blockGeometry(40).height;
+            QWheelEvent wheel(QPointF(20,20),editor->viewport()->mapToGlobal(QPoint(20,20)),QPoint(0,input.pixel),QPoint(0,input.angle),
+                Qt::NoButton,Qt::NoModifier,Qt::ScrollUpdate,false);
+            QApplication::sendEvent(editor->viewport(),&wheel);
+            qInfo()<<"FOLDED_WHEEL_UNITS"<<inactive<<"pixel"<<input.pixel<<"angle"<<input.angle<<"actualRows"<<bar->value()-40<<"expectedRows"<<input.rows;
+            QVERIFY(wheel.isAccepted());QCOMPARE(bar->value()-40,input.rows);
+            QVERIFY(qAbs(editor->blockGeometry(40).top-top+input.rows*rowHeight)<1.0);
+        }
+        QCOMPARE(model()->serialize(),stored);QVERIFY(!model()->dirty());QVERIFY(!editor->document()->isModified());QCOMPARE(editor->toPlainText(),source);
+    }
+    void pixelWheelFollowsProjectionTransitions_data() {
+        QTest::addColumn<QString>("change");
+        for(const auto* kind:{"remove-undo","detach-reattach","reference-remove-undo"})QTest::newRow(kind)<<QString(kind);
+    }
+    void pixelWheelFollowsProjectionTransitions() {
+        QFETCH(QString,change);
+        const auto source=QString("module m;\ninitial begin\n  a = 1;\n  b = 2;\nend\nendmodule\n")+QString("// tail\n").repeated(200);
+        editor->setPlainText(source);editor->document()->setModified(false);
+        QTRY_VERIFY(!editor->syntaxDocument()->hasPendingEdits());QVERIFY(editor->toggleFoldAtLineForTest(1));settleGutter();
+        const QTextCursor anchor(editor->document()->findBlockByNumber(20));
+        EditorAssociatedBlock block;block.type=change=="reference-remove-undo"?"reference":"text";block.text="Wheel units";
+        if(block.type=="reference"){
+            block.uri="https://example.invalid/wheel-units";
+            block.reference={{"version",1},{"sourceKind","legacy"},{"display","embedded"},
+                {"anchorId","wheel-anchor"},{"linkId","wheel-link"},{"targetHash",QString(64,'a')}};
+        }
+        const auto id=model()->insert(block,anchor);QVERIFY(!id.isEmpty());auto* bar=editor->verticalScrollBar();
+        for(int phase=0;phase<5;++phase){
+            const bool pixelUnits=phase%2==0;
+            if(phase>0){
+                if(change=="detach-reattach"){
+                    if(pixelUnits)QVERIFY(model()->reattach(id,anchor));
+                    else{auto detached=*model()->find(id);detached.detached=true;QVERIFY(model()->update(detached));}
+                }else if(pixelUnits)QVERIFY(model()->undoAssociation(false));
+                else QVERIFY(model()->remove(id));
+            }
+            settleGutter();QVERIFY(editor->viewProjectionActive());QVERIFY(!editor->sourceLineVisible(2));
+            if(pixelUnits)QVERIFY(bar->singleStep()>1);else QCOMPARE(bar->singleStep(),1);
+            bar->setValue(pixelUnits?300:40);const int before=bar->value();model()->markSaved();const auto stored=model()->serialize();
+            const int delta=pixelUnits?-1:-7;const int expected=pixelUnits?1:3;
+            QWheelEvent wheel(QPointF(20,20),editor->viewport()->mapToGlobal(QPoint(20,20)),QPoint(0,delta),{},
+                Qt::NoButton,Qt::NoModifier,Qt::ScrollUpdate,false);
+            QApplication::sendEvent(editor->viewport(),&wheel);
+            qInfo()<<"WHEEL_PROJECTION_TRANSITION"<<change<<"phase"<<phase<<"pixelUnits"<<pixelUnits<<"actual"<<bar->value()-before<<"expected"<<expected;
+            QVERIFY(wheel.isAccepted());QCOMPARE(bar->value()-before,expected);QCOMPARE(model()->serialize(),stored);QVERIFY(!model()->dirty());
+        }
+        QCOMPARE(editor->toPlainText(),source);QVERIFY(!editor->document()->isModified());
+    }
     void blocksKeepGutterWidthAndSourceColumn() {
         auto* gutter=editor->findChild<QWidget*>("editorLineNumberGutter");QVERIFY(gutter);
         settleGutter();const int width=gutter->width(),viewportX=editor->viewport()->x();

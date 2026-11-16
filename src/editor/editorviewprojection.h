@@ -38,6 +38,7 @@ public:
                 const QList<QPair<int, int>>& collapsedRanges);
 
     bool active() const;
+    bool usesPixelScrollBar() const { return associated.active(); }
     bool sourceLineVisible(int sourceLine) const;
     int visibleRowForSourceLine(int sourceLine) const;
     int sourceLineForVisibleRow(int visibleRow) const;

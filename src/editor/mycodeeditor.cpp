@@ -2634,15 +2634,15 @@ void MyCodeEditor::wheelEvent(QWheelEvent* event)
 
     state->projection.ensure(this, state->folding.collapsedLineRanges());
     if (state->projection.active() && event) {
-        const int steps = wheelNotchSteps(event);
-        if (steps != 0) {
+        if (state->projection.usesPixelScrollBar() && !event->pixelDelta().isNull()) {
             QScrollBar* bar = verticalScrollBar();
-            bar->setValue(bar->value() - steps * 3 * bar->singleStep());
-        } else if (!event->pixelDelta().isNull()) {
-            QScrollBar* bar = verticalScrollBar();
-            const int lineHeight = qMax(1, fontMetrics().height());
-            const int rows = blockModel()->items().isEmpty() ? event->pixelDelta().y() / lineHeight : event->pixelDelta().y();
-            bar->setValue(bar->value() - rows);
+            bar->setValue(bar->value() - event->pixelDelta().y());
+        } else {
+            const int steps = wheelNotchSteps(event);
+            if (steps != 0) {
+                QScrollBar* bar = verticalScrollBar();
+                bar->setValue(bar->value() - steps * 3 * bar->singleStep());
+            }
         }
         viewport()->update();
         event->accept();

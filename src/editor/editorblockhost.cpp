@@ -24,6 +24,7 @@
 #include <QMouseEvent>
 #include <QPushButton>
 #include <QKeyEvent>
+#include <QWheelEvent>
 #include <QTextLayout>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
@@ -401,6 +402,22 @@ bool EditorBlockHost::eventFilter(QObject* object, QEvent* event) {
     if (id.isEmpty()) { if(event->type()==QEvent::MouseMove || event->type()==QEvent::Enter || event->type()==QEvent::Leave) refreshControls(); return false; }
     const auto* block = model->find(id); if (!block) return false;
     const auto view = views.value(id);
+    if (event->type() == QEvent::Wheel && widget != view.grip
+        && view.content && !view.content->isEditing() && !block->detached
+        && widget->window() == editor->window()) {
+        // Intercept before nested text/wave viewports consume Preview scrolling.
+        // Live ancestry above also excludes content moved to a detached page.
+        auto* wheel = static_cast<QWheelEvent*>(event);
+        auto* viewport = editor->viewport();
+        QWheelEvent forwarded(viewport->mapFromGlobal(wheel->globalPosition()), wheel->globalPosition(),
+            wheel->pixelDelta(), wheel->angleDelta(), wheel->buttons(), wheel->modifiers(),
+            wheel->phase(), wheel->inverted(), wheel->source(), wheel->pointingDevice());
+        forwarded.setTimestamp(wheel->timestamp());
+        QApplication::sendEvent(viewport, &forwarded);
+        // Consume even at a scroll boundary; propagation would deliver it again.
+        event->accept();
+        return true;
+    }
     if (event->type() == QEvent::MouseMove || event->type() == QEvent::Enter || event->type() == QEvent::Leave
         || event->type() == QEvent::FocusIn || event->type() == QEvent::FocusOut) {
         const QPointer<QWidget> frame = view.frame, tools = view.tools;
