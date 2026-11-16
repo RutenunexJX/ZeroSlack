@@ -3,6 +3,7 @@
 #include "editorblockpreview.h"
 #include "blocknotestyle.h"
 #include "blockshellmetrics.h"
+#include "editorgutter.h"
 #include "mycodeeditor.h"
 #include <QAbstractTextDocumentLayout>
 #include <QScrollBar>
@@ -78,7 +79,9 @@ void EditorBlockProjection::ensure(MyCodeEditor* editor, const QList<QPair<int,i
             }
             blockHeight = measured.height;
         }
-        gaps.append({block.id, line, row, block.order, 0, blocksVisible ? blockHeight : 0, hiddenAnchor});
+        const qreal markerHeight = EditorGutter::blockMarkerHeight();
+        gaps.append({block.id, line, row, block.order, 0,
+            blocksVisible ? qMax(blockHeight, markerHeight) : markerHeight, hiddenAnchor});
     }
     for (auto it = noteHeights.begin(); it != noteHeights.end();)
         if (!measuredNotes.contains(it.key())) it = noteHeights.erase(it); else ++it;
@@ -149,8 +152,8 @@ QRectF EditorBlockProjection::gapRect(MyCodeEditor* editor, const QString& id) c
 QList<QPair<QString,QRectF>> EditorBlockProjection::visibleGaps(MyCodeEditor* editor, int prefetch) const {
     QList<QPair<QString,QRectF>> result;
     for (const auto& gap : gaps) {
-        const QRectF rect(4, rowTop(gap.row) + (blocksVisible ? rowHeight(gap.row)+gap.offset : 0) - offset(editor),
-            qMax(0, editor->viewport()->width() - 8), blocksVisible ? gap.height : rowHeight(gap.row));
+        const QRectF rect(4, rowTop(gap.row) + rowHeight(gap.row) + gap.offset - offset(editor),
+            qMax(0, editor->viewport()->width() - 8), gap.height);
         if (rect.bottom() >= -prefetch && rect.top() <= editor->viewport()->height() + prefetch) result.append({gap.id, rect});
     }
     return result;

@@ -7,6 +7,7 @@
 #include "uicontrols.h"
 
 #include <QFontDatabase>
+#include <QApplication>
 #include <QFontMetricsF>
 #include <QMouseEvent>
 #include <QMenu>
@@ -21,9 +22,6 @@
 namespace {
 constexpr int kLineNumberLeft = 18;
 constexpr int kLineNumberRightPadding = 4;
-int lineNumberLeft(MyCodeEditor* editor) {
-    return editor && !editor->blockModel()->items().isEmpty() ? 62 : kLineNumberLeft;
-}
 RoundedIcons::Kind blockIcon(const QString& type) {
     return RoundedIcons::blockKind(type);
 }
@@ -45,12 +43,15 @@ public:
 protected:
     void paintEvent(QPaintEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
+    void mouseReleaseEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void wheelEvent(QWheelEvent* event) override;
 
 private:
     MyCodeEditor* codeEditor = nullptr;
     EditorGutter* gutter = nullptr;
+    QPointF blockPressPosition;
+    QString pressedBlock;
 };
 
 LineNumberWidget::LineNumberWidget(
@@ -77,7 +78,21 @@ void LineNumberWidget::mousePressEvent(QMouseEvent* event)
     if (!codeEditor || !gutter)
         return;
 
+    blockPressPosition = event->position();
+    pressedBlock = EditorGutter::associatedBlockAt(codeEditor, blockPressPosition);
+    setProperty("blockGutterDragStarted", false);
     gutter->handleMousePress(codeEditor, event);
+}
+
+void LineNumberWidget::mouseReleaseEvent(QMouseEvent* event)
+{
+    if (codeEditor && gutter && !codeEditor->associatedBlocksVisible()
+        && event->button() == Qt::LeftButton && !pressedBlock.isEmpty()
+        && !property("blockGutterDragStarted").toBool()
+        && (event->position() - blockPressPosition).manhattanLength() < QApplication::startDragDistance()
+        && EditorGutter::associatedBlockAt(codeEditor, event->position()) == pressedBlock)
+        gutter->handleMousePress(codeEditor, event);
+    pressedBlock.clear();
 }
 
 void LineNumberWidget::mouseMoveEvent(QMouseEvent* event)
@@ -114,7 +129,29 @@ int EditorGutter::totalWidth(MyCodeEditor* editor) {
     const int count = editor ? editor->blockCount() : 1;
     const int digits = qMax(3, static_cast<int>(QString::number(qMax(1, count)).size()));
     const QFontMetricsF metrics(lineNumberFont(count));
-    return lineNumberLeft(editor) + qCeil(metrics.horizontalAdvance(QString(digits, QLatin1Char('9')))) + 4 + 16;
+    return kLineNumberLeft + qCeil(metrics.horizontalAdvance(QString(digits, QLatin1Char('9')))) + 4 + 16;
+}
+
+int EditorGutter::blockMarkerHeight() {
+    return 20 + qCeil(QFontMetricsF(lineNumberFont(0)).height());
+}
+
+QRect EditorGutter::blockMarkerRect(MyCodeEditor* editor, const QRectF& gap) {
+    if (gap.isEmpty()) return {};
+    return {kLineNumberLeft, qRound(gap.top()), foldLeft(editor) - kLineNumberLeft,
+            qMin(blockMarkerHeight(), qRound(gap.height()))};
+}
+
+QRect EditorGutter::blockDragHandleRect(MyCodeEditor* editor, const QRectF& gap) {
+    const auto marker = blockMarkerRect(editor, gap);
+    return QRect(marker.center() - QPoint(12, 12), QSize(26, 26));
+}
+
+QString EditorGutter::associatedBlockAt(MyCodeEditor* editor, const QPointF& position) {
+    if (editor && editor->state)
+        for (const auto& gap : editor->state->projection.visibleAssociatedBlocks(editor))
+            if (blockMarkerRect(editor, gap.second).contains(position.toPoint())) return gap.first;
+    return {};
 }
 
 int EditorGutter::widthFor(MyCodeEditor* editor) const
@@ -194,10 +231,10 @@ void EditorGutter::paint(MyCodeEditor* editor, QPaintEvent* event) const
                 ? palette.color(QPalette::Text)
                 : palette.color(QPalette::PlaceholderText));
         painter.drawText(
-            lineNumberLeft(editor),
+            kLineNumberLeft,
             top,
             widthFor(editor)
-                - lineNumberLeft(editor)
+                - kLineNumberLeft
                 - kLineNumberRightPadding - 16,
             bottom - top,
             Qt::AlignRight | Qt::AlignVCenter,
@@ -212,51 +249,38 @@ void EditorGutter::paint(MyCodeEditor* editor, QPaintEvent* event) const
     if (editor->state) {
         const auto& projection=editor->state->projection;
         const auto gaps=projection.visibleAssociatedBlocks(editor);
-        QSet<int> paintedRows;
         for (const auto& gap:gaps) {
             const auto* associated=editor->blockModel()->find(gap.first); if (!associated) continue;
-            int count=1;
-            if(!editor->associatedBlocksVisible()) {
-                const int row=qRound(gap.second.top());if(paintedRows.contains(row))continue;paintedRows.insert(row);
-                count=0;for(const auto& other:gaps)if(qRound(other.second.top())==row)++count;
-            }
-            const int y=qRound(gap.second.top())+(editor->associatedBlocksVisible()?9:qMax(0,qRound(gap.second.height()-16)/2));
-            RoundedIcons::icon(blockIcon(associated->type)).paint(&painter,QRect(3,y,16,16));
+            const auto marker = blockMarkerRect(editor, gap.second);
+            const auto* handle = widget->childAt(marker.center());
+            if (handle && handle->objectName() == "editorBlockDragHandle"
+                && handle->property("blockId").toString() == gap.first) continue;
+            RoundedIcons::icon(blockIcon(associated->type)).paint(&painter,
+                QRect(marker.center().x() - 7, marker.top() + 2, 16, 16));
             painter.setPen(palette.color(QPalette::PlaceholderText));
             const auto ordinal=QString::number(projection.associatedBlockOrdinal(gap.first));
-            painter.drawText(QRect(21,y,39,18),Qt::AlignLeft|Qt::AlignVCenter,
-                             count>1 ? ordinal+"+"+QString::number(count-1) : ordinal);
+            painter.drawText(marker.adjusted(0,18,0,-2),Qt::AlignHCenter|Qt::AlignVCenter,
+                painter.fontMetrics().elidedText(ordinal,Qt::ElideRight,marker.width()));
         }
     }
 }
 
 void EditorGutter::handleMousePress(MyCodeEditor* editor, QMouseEvent* event) const
 {
-    if(editor->state && !editor->associatedBlocksVisible() && event->position().x()<lineNumberLeft(editor)
-        && (event->button()==Qt::LeftButton || event->button()==Qt::RightButton)) {
-        QStringList ids;
-        for(const auto& gap:editor->state->projection.visibleAssociatedBlocks(editor))
-            if(gap.second.top()<=event->position().y() && event->position().y()<=gap.second.bottom())ids.append(gap.first);
-        if(!ids.isEmpty()) {
+    const auto id = associatedBlockAt(editor, event->position());
+    if(!id.isEmpty() && (event->button()==Qt::LeftButton || event->button()==Qt::RightButton)) {
+        if (!editor->associatedBlocksVisible() && event->button() == Qt::LeftButton
+            && event->type() == QEvent::MouseButtonPress) { event->accept(); return; }
+        if (!editor->associatedBlocksVisible() || event->button() == Qt::RightButton) {
             auto* menu=UiControls::menu(widget);menu->setObjectName("collapsedBlockMenu");menu->setAttribute(Qt::WA_DeleteOnClose);
-            for(const auto& id:ids)if(const auto* block=editor->blockModel()->find(id)) {
-                const auto label=QString::number(editor->state->projection.associatedBlockOrdinal(id))+" · "+block->type;
-                auto* target=ids.size()==1 ? menu : menu->addMenu(RoundedIcons::icon(blockIcon(block->type)),label);
-                editor->populateAssociatedBlockMenu(target,id);
-                if(ids.size()==1)editor->selectAssociatedBlock(id);
-                else QObject::connect(target,&QMenu::aboutToShow,editor,[editor,id]{editor->selectAssociatedBlock(id);});
-            }
+            editor->populateAssociatedBlockMenu(menu,id);
+            editor->selectAssociatedBlock(id);
             menu->popup(event->globalPosition().toPoint());event->accept();return;
         }
-    }
-    if (editor->state && event->button()==Qt::LeftButton) {
-        for (const auto& gap:editor->state->projection.visibleAssociatedBlocks(editor))
-            if (event->position().y()>=gap.second.top() && event->position().y()<=gap.second.bottom()) {
-                const int line=editor->state->projection.sourceLineForAssociatedBlock(gap.first);
-                const auto source=editor->document()->findBlockByNumber(line);
-                if (source.isValid()) editor->setTextCursor(QTextCursor(source));
-                editor->selectAssociatedBlock(gap.first); event->accept(); return;
-            }
+        const int line=editor->state->projection.sourceLineForAssociatedBlock(id);
+        const auto source=editor->document()->findBlockByNumber(line);
+        if (source.isValid()) editor->setTextCursor(QTextCursor(source));
+        editor->selectAssociatedBlock(id); event->accept(); return;
     }
     if (editor->state && editor->state->handleGutterMousePress(editor, event)) {
         event->accept();
@@ -279,6 +303,12 @@ void EditorGutter::handleMouseMove(MyCodeEditor* editor, QMouseEvent* event) con
         return;
 
     editor->state->handleGutterMouseMove(editor, event);
+    const auto id = associatedBlockAt(editor, event->position());
+    const auto* block = editor->blockModel()->find(id);
+    widget->setToolTip(block ? QString("%1 · %2\nSelect or drag block")
+        .arg(editor->state->projection.associatedBlockOrdinal(id)).arg(block->type) : QString());
+    if (block && !editor->documentReadOnly()) widget->setCursor(Qt::OpenHandCursor);
+    else widget->unsetCursor();
 }
 
 void EditorGutter::handleWheel(MyCodeEditor* editor, QWheelEvent* event) const

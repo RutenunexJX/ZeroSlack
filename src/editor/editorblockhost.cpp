@@ -108,7 +108,8 @@ void EditorBlockHost::refreshControls() {
             const auto pointer=editor->mapFromGlobal(QCursor::pos());
             const int top=editor->mapFromGlobal(view.frame->mapToGlobal(QPoint())).y();
             const auto area=QRect(0,top,editor->width(),view.frame->height());
-            view.grip->setVisible(view.frame->isVisible() && (area.contains(pointer) || view.grip->hasFocus() || it.key()==selectedId));
+            view.grip->setVisible(!editor->documentReadOnly() && view.frame->isVisible()
+                && (area.contains(pointer) || view.grip->hasFocus() || it.key()==selectedId));
             view.grip->setEnabled(!editor->documentReadOnly());view.grip->raise();
         }
     }
@@ -232,6 +233,12 @@ void EditorBlockHost::updateVisible() {
     editor->state->projection.ensure(editor, editor->state->folding.collapsedLineRanges());
     editor->state->projection.prepareVisibleGeometry(editor);
     const auto demanded = editor->state->projection.visibleAssociatedBlocks(editor, editor->viewport()->height());
+    const auto isCompact=[this](const EditorAssociatedBlock& block){
+        const int anchorLine=block.missing ? editor->blockCount()-1
+            : editor->document()->findBlock(qMax(block.start,block.end-1)).blockNumber();
+        return block.collapsed || block.compactReference()
+            || editor->state->projection.sourceLineForAssociatedBlock(block.id)!=anchorLine;
+    };
     QSet<QString> keep;
     for (const auto& item : demanded) {
         if (!model->find(item.first)) continue;
@@ -251,7 +258,7 @@ void EditorBlockHost::updateVisible() {
             view.revision = block->revision;
             view.styleRevision = BlockNoteStyle::instance().revision();
         }
-        const bool compact = item.second.height() <= 36;
+        const bool compact=isCompact(*block);
         const auto title=block->type=="reference"
             ? (block->caption.isEmpty()?block->uri:block->caption)
             : block->type=="text"?QString("Text note"):block->type;
@@ -263,10 +270,14 @@ void EditorBlockHost::updateVisible() {
         view.frame->layout()->setContentsMargins(compact?QMargins(36,4,100,4):BlockShellMetrics::contents);
         view.title->setVisible(compact || block->missing);
         if(view.content)view.content->present(*block, editor->documentReadOnly(), compact);
-        view.frame->setGeometry(item.second.toAlignedRect());
+        auto frameRect=item.second.toAlignedRect();
+        if(compact)frameRect.setHeight(36);
+        view.frame->setGeometry(frameRect);
         view.frame->show();
-        const auto top=view.grip->parentWidget()->mapFromGlobal(view.frame->mapToGlobal(QPoint())).y();
-        view.grip->move(2,top+(compact?4:30));
+        view.grip->setGeometry(EditorGutter::blockDragHandleRect(editor, item.second));
+        const auto description=QString("%1 · %2\nSelect or drag block")
+            .arg(editor->state->projection.associatedBlockOrdinal(item.first)).arg(block->type);
+        view.grip->setToolTip(description);view.grip->setAccessibleName(description);
     }
     for (auto it = views.begin(); it != views.end();) {
         const bool focused = it->frame == QApplication::focusWidget() || it->frame->isAncestorOf(QApplication::focusWidget());
@@ -278,9 +289,11 @@ void EditorBlockHost::updateVisible() {
                 if(focused){
                     // Clipping an editing child preserves its focus and selection;
                     // hiding it would transfer focus and finish the text session.
-                    it->frame->setGeometry(editor->state->projection.associatedBlockRect(editor,it.key()).toAlignedRect());
-                    const int top=it->grip->parentWidget()->mapFromGlobal(it->frame->mapToGlobal(QPoint())).y();
-                    it->grip->move(2,top+(it->frame->height()<=36?4:30));
+                    auto frameRect=editor->state->projection.associatedBlockRect(editor,it.key()).toAlignedRect();
+                    if(isCompact(model->presentation(it.key())))frameRect.setHeight(36);
+                    it->frame->setGeometry(frameRect);
+                    it->grip->setGeometry(EditorGutter::blockDragHandleRect(editor,
+                        editor->state->projection.associatedBlockRect(editor,it.key())));
                 }else it->frame->hide();
                 it->grip->hide();
             }

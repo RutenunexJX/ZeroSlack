@@ -9,6 +9,7 @@
 #include "pinloompreviewimage.h"
 #include "blocknotestyle.h"
 #include "editorblockcontent.h"
+#include "editorgutter.h"
 #include "waveblockcontent.h"
 #include "insightvisualstyle.h"
 #include <QLibrary>
@@ -26,7 +27,104 @@ class EditorBlockTest : public QObject {
         EditorAssociatedBlock fixed; fixed.type = "text"; fixed.text = "note";
         return model()->insert(fixed, cursor);
     }
+    void settleGutter() {
+        const auto size=editor->size();editor->resize(size.width()+1,size.height());editor->resize(size);
+        QCoreApplication::processEvents();editor->viewport()->repaint();
+    }
+    QMap<QString,QRect> markerHits() {
+        auto* gutter=editor->findChild<QWidget*>("editorLineNumberGutter");
+        QMap<QString,QRect> result;
+        for(int y=0;y<gutter->height();++y){
+            const QPoint point(gutter->width()/2,y);
+            const auto id=EditorGutter::associatedBlockAt(editor.get(),point);
+            if(!id.isEmpty())result[id]=result.contains(id)?result[id].united(QRect(point,QSize(1,1))):QRect(point,QSize(1,1));
+        }
+        return result;
+    }
 private slots:
+    void blocksKeepGutterWidthAndSourceColumn() {
+        auto* gutter=editor->findChild<QWidget*>("editorLineNumberGutter");QVERIFY(gutter);
+        settleGutter();const int width=gutter->width(),viewportX=editor->viewport()->x();
+        const auto source=editor->toPlainText();
+        const auto codeX=[&]{return editor->viewport()->x()+editor->cursorRect(QTextCursor(editor->document())).x();};
+        const int beforeX=codeX();
+        const auto first=insert(),second=insert(editor->document()->findBlockByNumber(1).position());
+        for(bool visible:{true,false,true}){
+            editor->setAssociatedBlocksVisible(visible);
+            for(bool collapsed:{false,true,false}){
+                for(const auto& id:{first,second}){auto block=*model()->find(id);block.collapsed=collapsed;QVERIFY(model()->update(block));}
+                settleGutter();
+                QCOMPARE(EditorGutter::totalWidth(editor.get()),width);QCOMPARE(gutter->width(),width);
+                QCOMPARE(editor->viewport()->x(),viewportX);QCOMPARE(codeX(),beforeX);QCOMPARE(editor->toPlainText(),source);
+            }
+        }
+        QVERIFY(model()->remove(first));QVERIFY(model()->remove(second));settleGutter();
+        QCOMPARE(gutter->width(),width);QCOMPARE(codeX(),beforeX);
+        editor->setPlainText(QString("line\n").repeated(998));settleGutter();const int threeDigits=gutter->width();
+        editor->moveCursor(QTextCursor::End);editor->insertPlainText("\nline");settleGutter();
+        QVERIFY(gutter->width()>threeDigits);QCOMPARE(editor->viewport()->x()-gutter->width(),viewportX-width);
+    }
+    void inlineMarkersAndHandlesAvoidSourceRows() {
+        editor->resize(800,800);
+        const auto first=insert(),second=insert(),third=insert(editor->document()->findBlockByNumber(1).position());
+        const QStringList ids{first,second,third};
+        const auto source=editor->toPlainText();
+        const auto stored=model()->serialize();
+        auto* gutter=editor->findChild<QWidget*>("editorLineNumberGutter");QVERIFY(gutter);
+        for(bool visible:{true,false,true}){
+            editor->setAssociatedBlocksVisible(visible);settleGutter();
+            const auto hits=markerHits();QCOMPARE(hits.size(),ids.size());
+            for(const auto& id:ids){
+                QVERIFY(hits[id].height()>=editor->fontMetrics().height());
+                for(int row=0;row<editor->blockCount();++row){
+                    const auto g=editor->blockGeometry(row);
+                    QVERIFY(!hits[id].intersects(QRect(0,qRound(g.top),gutter->width(),qRound(g.height))));
+                }
+                for(const auto& other:ids)if(id!=other)QVERIFY(!hits[id].intersects(hits[other]));
+                if(visible){
+                    QWidget* shell=nullptr;QWidget* grip=nullptr;
+                    for(auto* candidate:editor->findChildren<QWidget*>("editorBlockShell"))if(candidate->property("blockId")==id)shell=candidate;
+                    for(auto* candidate:editor->findChildren<QWidget*>("editorBlockDragHandle"))if(candidate->property("blockId")==id)grip=candidate;
+                    QVERIFY(shell && grip);
+                    const auto marker=EditorGutter::blockMarkerRect(editor.get(),shell->geometry());
+                    QVERIFY(marker.contains(grip->geometry()));QVERIFY(gutter->rect().contains(marker));
+                    QCOMPARE(EditorGutter::associatedBlockAt(editor.get(),grip->geometry().center()),id);
+                    QTest::mouseClick(gutter,Qt::LeftButton,Qt::NoModifier,hits[id].center());
+                    QVERIFY(shell->property("blockSelected").toBool());
+                }else{
+                    for(auto* frame:editor->findChildren<QWidget*>("editorBlockShell"))QVERIFY(!frame->isVisible());
+                    for(auto* grip:editor->findChildren<QWidget*>("editorBlockDragHandle"))QVERIFY(!grip->isVisible());
+                    QSignalSpy copy(editor.get(),&MyCodeEditor::editorBlockClipboardRequested);
+                    QTest::mouseClick(gutter,Qt::LeftButton,Qt::NoModifier,hits[id].center());
+                    auto* menu=qobject_cast<QMenu*>(QApplication::activePopupWidget());QVERIFY(menu);
+                    QCOMPARE(menu->objectName(),QString("collapsedBlockMenu"));
+                    QAction* action=nullptr;for(auto* item:menu->actions())if(item->text()=="Copy")action=item;
+                    QVERIFY(action);action->trigger();menu->close();
+                    QCOMPARE(copy.count(),1);QCOMPARE(copy.first().first().toString(),id);
+                }
+            }
+            const auto row=editor->blockGeometry(0);
+            QVERIFY(EditorGutter::associatedBlockAt(editor.get(),QPoint(gutter->width()/2,qRound(row.top+row.height/2))).isEmpty());
+            QCOMPARE(model()->serialize(),stored);QCOMPARE(editor->toPlainText(),source);
+        }
+    }
+    void compactMarkersFollowFoldedAndScrolledProjection() {
+        editor->resize(650,700);
+        const QString source="module m;\ninitial begin\n  a = 1;\n  b = 2;\nend\nendmodule\n"+QString("// tail\n").repeated(80);
+        editor->setPlainText(source);
+        const auto first=insert(source.indexOf("a =")),second=insert(source.indexOf("a =")),third=insert(source.indexOf("b ="));
+        editor->setAssociatedBlocksVisible(false);settleGutter();
+        QTRY_VERIFY(!editor->syntaxDocument()->hasPendingEdits());QVERIFY(editor->toggleFoldAtLineForTest(1));settleGutter();
+        const auto before=markerHits();QCOMPARE(before.size(),3);
+        const auto anchor=editor->blockGeometry(1),next=editor->blockGeometry(5);
+        for(const auto& hit:before){QVERIFY(hit.top()>=anchor.top+anchor.height);QVERIFY(hit.bottom()<next.top);}
+        auto* scroll=editor->verticalScrollBar();const int previous=scroll->value();
+        scroll->setValue(previous+editor->fontMetrics().height());QCoreApplication::processEvents();
+        const auto after=markerHits();QCOMPARE(after.size(),3);
+        for(const auto& id:{first,second,third})QCOMPARE(after[id].top()-before[id].top(),previous-scroll->value());
+        QVERIFY(editor->toggleFoldAtLineForTest(1));editor->setAssociatedBlocksVisible(true);settleGutter();
+        QCOMPARE(editor->toPlainText(),source);
+    }
     void associatedBlocksFollowDocumentScroll_data() {
         QTest::addColumn<QString>("input");
         for(const auto& input:{"wheel","thumb","page"})QTest::newRow(input)<<QString::fromLatin1(input);

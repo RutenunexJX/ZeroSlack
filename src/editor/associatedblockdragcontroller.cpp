@@ -214,6 +214,7 @@ bool AssociatedBlockDragController::gutterTarget(MyCodeEditor* editor, const QPo
             const auto next=projection->neighboringAssociatedBlock(gap.first,true);
             if (const auto* sibling=model->find(next); sibling && anchorLine(*sibling)==line) before=next;
         }
+        if (gap.first==excluded) { before=excluded; edge=gap.second.top(); }
         break;
     }
     if (!overGap) {
@@ -223,7 +224,7 @@ bool AssociatedBlockDragController::gutterTarget(MyCodeEditor* editor, const QPo
                 && block.order<firstOrder) { before=block.id; firstOrder=block.order; }
     }
     const auto source=editor->document()->findBlockByNumber(line);
-    if (!source.isValid() || (!excluded.isEmpty() && before==excluded)) { clearPreview(); return false; }
+    if (!source.isValid()) { clearPreview(); return false; }
     targetCursor=QTextCursor(source); beforeId=before;
     if (targetEditor!=editor || !marker) {
         delete marker; delete markerLine;
@@ -245,14 +246,15 @@ bool AssociatedBlockDragController::gutterTarget(MyCodeEditor* editor, const QPo
     marker->show(); markerLine->show(); marker->raise(); markerLine->raise();
     if (splitPreview) splitPreview->clearPreview(); lastGlobal=global; scrollTimer->start(); if(!external) concealSource(); return true;
 }
-void AssociatedBlockDragController::start(QWidget* handle, Qt::KeyboardModifiers modifiers) {
-    SharedDocument* document=nullptr; QString blockId;
+void AssociatedBlockDragController::start(QWidget* handle, Qt::KeyboardModifiers modifiers, const QString& selectedBlock) {
+    SharedDocument* document=nullptr; QString blockId=selectedBlock;
     for (auto* p=handle;p;p=p->parentWidget()) {
         if (auto* page=qobject_cast<AssociatedBlockPage*>(p)) { document=page->ownerDocument(); blockId=page->blockId(); break; }
         if (blockId.isEmpty()) blockId=p->property("blockId").toString();
         if (auto* editor=qobject_cast<MyCodeEditor*>(p)) { document=manager->sharedDocumentForEditor(editor); break; }
     }
     if (!document || !DocumentBlockModel::get(document->textDocument())->find(blockId)) return;
+    if (handle->objectName()=="editorLineNumberGutter") handle->setProperty("blockGutterDragStarted",true);
     QPointer<QWidget> focus=QApplication::focusWidget(), handleGuard=handle, movingContent;
     QPointer<QLabel> placeholder;
     QPointer<QDrag> drag=new QDrag(this); drag->setMimeData(createMimeData(document,blockId));
@@ -264,7 +266,7 @@ void AssociatedBlockDragController::start(QWidget* handle, Qt::KeyboardModifiers
         const auto& theme=InsightVisualStyle::theme();painter.setPen(QPen(theme.border,1));painter.setBrush(theme.panelBackground);
         painter.drawRoundedRect(QRectF(1,1,126,30),6,6);RoundedIcons::icon(RoundedIcons::Grip).paint(&painter,QRect(6,8,16,16));
         painter.setPen(theme.textPrimary);painter.drawText(QRect(28,0,96,32),Qt::AlignVCenter|Qt::AlignLeft,label);}
-    drag->setPixmap(ghost);drag->setHotSpot({14,16});nativeDrag=drag;dragImage=ghost;cancelled=false;dragging=true;pressed.clear();presentationTimer->start();
+    drag->setPixmap(ghost);drag->setHotSpot({14,16});nativeDrag=drag;dragImage=ghost;cancelled=false;nativeEventsObserved=false;dragging=true;pressed.clear();presentationTimer->start();
     handle->setCursor(Qt::ClosedHandCursor);
     if(auto* source=editorAncestor(handle))for(auto* shell:source->findChildren<QFrame*>("editorBlockShell"))
         if(shell->property("blockId").toString()==blockId) {
@@ -310,17 +312,17 @@ void AssociatedBlockDragController::start(QWidget* handle, Qt::KeyboardModifiers
             POINT cursor{}; GetCursorPos(&cursor); ScreenToClient(hwnd,&cursor);
             // Qt 6.10 starts OLE only after a move reaches its input window.
             PostMessageW(hwnd,WM_MOUSEMOVE,MK_LBUTTON,MAKELPARAM(cursor.x,cursor.y));
-            bool released=false; QPoint releasePosition;
+            bool released=false; QPoint releasePosition; Qt::DropAction releaseAction=Qt::IgnoreAction;
             QTimer releaseCheck;
             releaseCheck.setInterval(10);
             connect(&releaseCheck,&QTimer::timeout,&releaseCheck,[&] {
                 if (!self || !drag) { releaseCheck.stop(); return; }
                 if (GetAsyncKeyState(VK_ESCAPE)&0x8000) cancelled=true;
                 if (cancelled) { releaseCheck.stop(); QDrag::cancel(); }
-                else if (!(GetAsyncKeyState(VK_LBUTTON)&0x8000)) {
+                else if (!nativeEventsObserved && !(GetAsyncKeyState(VK_LBUTTON)&0x8000)) {
                     // Release can also arrive while Qt is entering OLE.
                     // End that loop before committing the observed release.
-                    released=true; releasePosition=QCursor::pos();
+                    released=true; releasePosition=QCursor::pos(); releaseAction=requestedAction();
                     releaseCheck.stop(); QDrag::cancel();
                 }
             });
@@ -328,7 +330,7 @@ void AssociatedBlockDragController::start(QWidget* handle, Qt::KeyboardModifiers
             result=drag->exec(Qt::MoveAction|Qt::CopyAction,Qt::MoveAction);
             releaseCheck.stop();
             if (self && drag && released && !cancelled && result==Qt::IgnoreAction
-                && routeTarget(QApplication::widgetAt(releasePosition),releasePosition,true,requestedAction())) result=requestedAction();
+                && routeTarget(QApplication::widgetAt(releasePosition),releasePosition,true,releaseAction)) result=releaseAction;
         } else cancelled=true;
     } else
 #endif
@@ -350,7 +352,13 @@ void AssociatedBlockDragController::start(QWidget* handle, Qt::KeyboardModifiers
     if(result==Qt::IgnoreAction && sourcePage && sourceGroup && sourceGroup->indexOf(sourcePage)>=0) {
         sourceGroup->setCurrentWidget(sourcePage); sourcePage->setFocus(Qt::OtherFocusReason);
     }
-    if(result==Qt::IgnoreAction && focus && focus->isVisible())focus->setFocus(Qt::OtherFocusReason);
+    if(result==Qt::IgnoreAction && focus) {
+        if(focus->isVisible())focus->setFocus(Qt::OtherFocusReason);
+        // Floating controls reappear when the restored page refreshes.
+        QTimer::singleShot(0,this,[focus] {
+            if(focus && focus->isVisible() && focus->window()->isActiveWindow())focus->setFocus(Qt::OtherFocusReason);
+        });
+    }
     activeMime.clear(); nativeDrag.clear(); if (drag) drag->deleteLater(); emit gestureFinished();
 }
 bool AssociatedBlockDragController::eventFilter(QObject* watched, QEvent* event) {
@@ -413,15 +421,29 @@ bool AssociatedBlockDragController::eventFilter(QObject* watched, QEvent* event)
             return true;
         }
     }
-    if (handle && event->type()==QEvent::MouseButtonPress) {
-        auto* mouse=static_cast<QMouseEvent*>(event); if (mouse->button()==Qt::LeftButton) { pressed=handle; pressedAt=mouse->globalPosition().toPoint(); }
-    } else if (handle && pressed==handle && event->type()==QEvent::MouseMove) {
+    if (event->type()==QEvent::MouseButtonPress) {
         auto* mouse=static_cast<QMouseEvent*>(event);
-        if ((mouse->buttons()&Qt::LeftButton) && (mouse->globalPosition().toPoint()-pressedAt).manhattanLength()>=QApplication::startDragDistance()) { start(handle,mouse->modifiers()); return true; }
-    } else if (event->type()==QEvent::MouseButtonRelease) { pressed.clear(); pressedTabPage.clear(); }
+        if (mouse->button()==Qt::LeftButton) {
+            pressedBlockId.clear();
+            if (!handle && widget->objectName()=="editorLineNumberGutter") {
+                auto* code=editorAncestor(widget);
+                if (code && (!code->documentReadOnly() || mouse->modifiers().testFlag(Qt::ControlModifier)))
+                    pressedBlockId=EditorGutter::associatedBlockAt(code,mouse->position());
+                if (!pressedBlockId.isEmpty()) handle=widget;
+            }
+            if (handle) { pressed=handle; pressedAt=mouse->globalPosition().toPoint(); }
+        }
+    } else if (pressed && !pressedTabPage && event->type()==QEvent::MouseMove) {
+        auto* mouse=static_cast<QMouseEvent*>(event);
+        if ((mouse->buttons()&Qt::LeftButton) && (mouse->globalPosition().toPoint()-pressedAt).manhattanLength()>=QApplication::startDragDistance()) {
+            const auto source=pressed; const auto selected=pressedBlockId; pressedBlockId.clear();
+            start(source,mouse->modifiers(),selected); return true;
+        }
+    } else if (event->type()==QEvent::MouseButtonRelease) { pressed.clear(); pressedTabPage.clear(); pressedBlockId.clear(); }
     const bool move=event->type()==QEvent::DragEnter || event->type()==QEvent::DragMove, drop=event->type()==QEvent::Drop;
     if (!move && !drop) { if(event->type()==QEvent::DragLeave) clearPreview(); return false; }
     auto* e=static_cast<QDropEvent*>(event);
+    if(dragging && nativeDrag && valid(e->mimeData()))nativeEventsObserved=true;
     const auto global=widget->mapToGlobal(e->position().toPoint());
     auto* hit=widget->objectName()=="editorLineNumberGutter" ? widget : widget->childAt(e->position().toPoint());
     for(auto* ancestor=hit;ancestor;ancestor=ancestor->parentWidget())if(ancestor->objectName()=="editorLineNumberGutter"){hit=ancestor;break;}
@@ -463,6 +485,13 @@ bool AssociatedBlockDragController::routeTarget(QWidget* widget, const QPoint& g
         if (drop) {
             const auto editor=targetEditor; const auto cursor=targetCursor; const auto before=beforeId;
             QString issue;
+            if (action==Qt::MoveAction && before==id && manager->sharedDocumentForEditor(editor)==owner) {
+                // Keep the native gutter target alive at the starting position;
+                // a release here validates the document but does not mutate it.
+                const bool current=DocumentBlockTransfer::validateParticipant(owner,true,&issue);
+                if (!current && editor && !issue.isEmpty()) emit editor->editorStatusMessageRequested(issue);
+                clearPreview(); return current;
+            }
             const auto placed=DocumentBlockTransfer::apply(sourceSnapshot,manager->sharedDocumentForEditor(editor),cursor,
                 action==Qt::CopyAction ? DocumentBlockTransfer::Mode::Copy : DocumentBlockTransfer::Mode::Move,before,&issue);
             if (placed.isEmpty()) { if (editor && !issue.isEmpty()) emit editor->editorStatusMessageRequested(issue); clearPreview(); return false; }

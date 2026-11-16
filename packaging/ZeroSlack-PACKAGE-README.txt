@@ -1,3 +1,5 @@
+Release 0.35.12 places block icons and ordinals between source line numbers without widening the gutter. Blocks can move directly up or down within the gutter, including Clean and collapsed modes. Ctrl-drag copying, cancellation, read-only guards and undo/redo retain their validated behavior. Embedded components remain unchanged.
+
 Release 0.35.11 unifies sidebar, bottom-panel and floating-drawer surfaces with a neutral palette, removes redundant tab decoration, and keeps Problems filters compact. Functional acceptance is retained with two reproduced baseline test failures recorded separately; formal build, layout and package verification have their own evidence. Embedded components remain unchanged.
 
 Release 0.35.10 aligns view-mode controls with the main editor and groups mode, simulation and workspace actions, with overflow access in narrow windows. Design merges a unique trustworthy module into its file row while preserving declaration navigation, independent source/simulation tops, multiple definitions and actual instance hierarchy. Functional acceptance is retained with separate formal build and package verification.
@@ -10,7 +12,7 @@ Release 0.35.5 persists validated semantic workspace results, filters Design hie
 
 Release 0.35.4 restores nested module diagrams and reorganizes Design roots, unifies dock tabs and sidebar icons, reduces the welcome page to recent workspaces, and improves Settings contrast. Inline blocks support shared editing, appearance settings, drag-out pages and gutter reattachment; Pinloom references validate capabilities before opening. Functional acceptance is retained with release-specific build and package checks. Suite SDK/Runtime remains 1.0.2, native xIPs 2.16.2 and the independent asset adapter 2.14.2.
 
-ZeroSlack v0.35.11 Windows package
+ZeroSlack v0.35.12 Windows package
 
 Release 0.35.3 aligns tab contents and smaller close marks, removes welcome animation resources, moves Run and simulation settings into the title row with the top selected in Design, creates untitled Markdown/block documents until first save, restores module block diagrams, removes redundant panel collapse controls, and gives floating windows visible borders. Scoped GUI and real Questa evidence is retained; the known baseline native drag-release failure remains recorded. Suite SDK/Runtime remains 1.0.2, native xIPs 2.16.2 and the independent asset adapter 2.14.2.
 

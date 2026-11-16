@@ -2,6 +2,8 @@
 #define EDITORGUTTER_H
 
 #include <QRect>
+#include <QRectF>
+#include <QString>
 
 class MyCodeEditor;
 class QMouseEvent;
@@ -14,6 +16,10 @@ class EditorGutter
 public:
     static int totalWidth(MyCodeEditor* editor);
     static int foldLeft(MyCodeEditor* editor) { return totalWidth(editor) - 16; }
+    static int blockMarkerHeight();
+    static QRect blockMarkerRect(MyCodeEditor* editor, const QRectF& gap);
+    static QRect blockDragHandleRect(MyCodeEditor* editor, const QRectF& gap);
+    static QString associatedBlockAt(MyCodeEditor* editor, const QPointF& position);
     void init(MyCodeEditor* editor);
     void destroy();
     void handleUpdateRequest(MyCodeEditor* editor, const QRect& rect, int dy) const;
