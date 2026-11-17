@@ -1,3 +1,5 @@
+Release 0.35.18 automatically loads the packaged template catalog, including /timescale. User and workspace overrides, hidden states and explicit restoration survive package upgrades without overwriting personal templates. Embedded component versions remain unchanged.
+
 Release 0.35.17 restores normal editor scrolling after deleting an embedded block, simplifies double-click semantic cards with editor-matched typography, and keeps Ctrl definition previews complete and stable when switching symbols. Embedded component versions remain unchanged.
 
 Release 0.35.15 updates stale reviewed-source identities and the retired linked-preview regex inventory. Source-policy checks and all 246 execution-policy contracts pass with the original mutation checks retained. Embedded component versions remain unchanged.

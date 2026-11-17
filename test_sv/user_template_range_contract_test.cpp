@@ -57,6 +57,7 @@ private slots:
         const auto bytes = QJsonDocument(QJsonObject{{"templates", QJsonArray{entry}}}).toJson();
         QVERIFY(write(path, bytes));
         UserTemplateService templates(path, directory.filePath("workspace.json"));
+        templates.setBundledTemplateFilePath({});
         const auto loaded = templates.reload();
         CompletionService completion;
         completion.setUserTemplateService(&templates);
@@ -85,6 +86,7 @@ private slots:
         const QByteArray initial = "{\"templates\": []}\n";
         QVERIFY(write(path, initial));
         UserTemplateService templates(path, directory.filePath("workspace.json"));
+        templates.setBundledTemplateFilePath({});
         UserTemplateRecord record; record.commandToken = ";;rangeprobe"; record.insertText = body;
         if (slot) {
             CodeTemplateSlot range; range.name = "probe"; range.start = start; range.length = length;

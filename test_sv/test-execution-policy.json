@@ -5036,6 +5036,23 @@
       "target": "slash_template_test"
     },
     {
+      "name": "bundled_templates_test",
+      "role": "compiled",
+      "managedSince": "2026-11-17",
+      "reviewBy": "2026-12-07",
+      "reviewOwner": "AppSuite部署统筹",
+      "source": "test_sv/bundled_templates_test.cpp; build/coordination/20261114-block-scroll-sync/implementation/bundled-templates01/REPORT.md",
+      "when": {},
+      "execution": "run",
+      "reason": {
+        "category": "self_contained",
+        "detail": "Bundled catalog layering, atomic failure recovery, persisted visibility, scoped overrides and isolated native manager/slash insertion; no external user fixtures."
+      },
+      "timeout": 120,
+      "timeoutBasis": "Initial 120-second budget fixed in CMake before execution; covers isolated catalog persistence and native template-manager interactions.",
+      "target": "bundled_templates_test"
+    },
+    {
       "name": "editor_block_test",
       "role": "compiled",
       "managedSince": "2026-11-08",

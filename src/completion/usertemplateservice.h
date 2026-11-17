@@ -7,6 +7,7 @@
 #include <QString>
 #include <QJsonObject>
 #include <memory>
+#include <functional>
 
 struct UserTemplateRecord {
     QString id;
@@ -20,6 +21,9 @@ struct UserTemplateRecord {
     QVariantMap command;
     QString storageSource;
     QVariantMap extraFields;
+    QString bundledId;
+    bool bundledStateOnly = false;
+    QString definitionSource;
 };
 
 struct UserTemplateIssue {
@@ -51,15 +55,22 @@ public:
     QString storageLocation() const;
     QString globalTemplateLocation() const;
     QString workspaceTemplateLocation() const;
+    QString bundledTemplateLocation() const;
+    void setBundledTemplateFilePath(const QString& filePath);
     void setGlobalTemplateFilePath(const QString& filePath);
     void setWorkspaceRoot(const QString& workspaceRoot);
     void setWorkspaceTemplateFilePath(const QString& filePath);
     UserTemplateLoadReport reload() const;
+    UserTemplateLoadReport loadReport() const;
     QList<UserTemplateRecord> records() const;
     QList<UserTemplateRecord> recordsForFile(const QString& fileName, bool simulationOnly = false) const;
     QList<CodeTemplateItem> catalogForFile(const QString& fileName, bool simulationOnly = false) const;
     UserTemplateSaveReport saveRecord(const UserTemplateRecord& record, bool workspace, quint64 expectedRevision = 0, const QString& expectedStorageRevision = {}) const;
     UserTemplateSaveReport deleteRecord(const QString& id, bool workspace, quint64 expectedRevision = 0, const QString& expectedStorageRevision = {}) const;
+    UserTemplateSaveReport setBundledHidden(const UserTemplateRecord& record, bool hidden, bool workspace,
+        const QString& file = {}, quint64 expectedRevision = 0) const;
+    UserTemplateSaveReport resetBundledOverride(const UserTemplateRecord& record, bool workspace,
+        const QString& file = {}, quint64 expectedRevision = 0) const;
     QString storageRevision(bool workspace) const;
     static QJsonObject toJson(const UserTemplateRecord& record);
     static UserTemplateLoadReport fromJson(const QJsonObject& object);
@@ -86,14 +97,21 @@ public:
 private:
     QString globalTemplateFilePath;
     QString workspaceTemplateFilePath;
+    QString bundledTemplateFilePath;
     mutable QString cachedFileVersion;
     mutable UserTemplateLoadReport cachedReport;
+    mutable UserTemplateLoadReport lastLoadReport;
+    mutable QList<UserTemplateRecord> cachedBundledRecords, cachedGlobalRecords, cachedWorkspaceRecords;
     mutable QList<CodeTemplateItem> cachedCatalog;
     mutable bool cacheValid = false;
     mutable quint64 revision = 0;
     mutable quint64 fileReads = 0;
     void ensureLoaded() const;
     void resetScopeCache();
+    QString fileVersion() const;
+    UserTemplateSaveReport updateRecords(bool workspace, quint64 expectedRevision,
+        const QString& expectedStorageRevision,
+        const std::function<void(QList<UserTemplateRecord>&)>& update) const;
 
     static std::unique_ptr<UserTemplateService> instance;
 };

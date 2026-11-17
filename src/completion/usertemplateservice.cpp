@@ -2,6 +2,8 @@
 #include "ordinarytemplateplan.h"
 #include "templatecapabilities.h"
 #include <QSaveFile>
+#include <QCoreApplication>
+#include <QUuid>
 #include <QLockFile>
 #include <QDateTime>
 #ifdef Q_OS_WIN
@@ -70,12 +72,14 @@ constexpr const char* kUserTemplateSelectionStart = "selectionStart";
 constexpr const char* kUserTemplateSelectionLength = "selectionLength";
 
 enum class UserTemplateScope {
+    Bundled,
     Global,
     Workspace
 };
 
 QString scopeName(UserTemplateScope scope)
 {
+    if (scope == UserTemplateScope::Bundled) return QStringLiteral("bundled");
     return scope == UserTemplateScope::Workspace
         ? QStringLiteral("workspace")
         : QStringLiteral("global");
@@ -304,8 +308,14 @@ UserTemplateRecord recordFromJsonObject(const QJsonObject& object,
 {
     UserTemplateRecord record;
     record.extraFields = object.toVariantMap();
+    record.bundledId = object.value(QStringLiteral("bundledId")).toString();
+    record.bundledStateOnly = object.value(QStringLiteral("bundledStateOnly")).toBool();
+    if ((object.contains("bundledId") && (!object.value("bundledId").isString() || record.bundledId.trimmed().isEmpty()))
+        || (object.contains("bundledStateOnly") && !object.value("bundledStateOnly").isBool()))
+        appendIssue(report, source, object.value("id").toString(), "bundledId", "Invalid bundled-template override identity or state.");
     record.command = object.value(object.contains("editor") ? QStringLiteral("editor") : QStringLiteral("simulation")).toObject().toVariantMap();
     record.storageSource = source;
+    record.definitionSource = source;
     record.id = object.value(QStringLiteral("id")).toString();
     record.commandToken =
         object.value(QString::fromLatin1(kUserTemplateCommand)).toString();
@@ -375,8 +385,11 @@ QList<UserTemplateRecord> readTemplateFile(const QString& filePath,
     if (filePath.trimmed().isEmpty())
         return records;
     const QFileInfo fileInfo(filePath);
-    if (!fileInfo.exists())
+    if (!fileInfo.exists()) {
+        if (scope == UserTemplateScope::Bundled)
+            appendIssue(report, filePath, {}, "catalog", "Bundled template catalog is missing; the last valid catalog is retained.");
         return records;
+    }
     if (!fileInfo.isFile()) {
         appendIssue(report,
                     filePath,
@@ -409,6 +422,12 @@ QList<UserTemplateRecord> readTemplateFile(const QString& filePath,
         return records;
     }
 
+    if (scope == UserTemplateScope::Bundled && (!document.isObject()
+        || !document.object().value("schemaVersion").isDouble()
+        || document.object().value("schemaVersion").toDouble() != 1)) {
+        appendIssue(report, filePath, {}, "schemaVersion", "Unsupported bundled template catalog version; expected schemaVersion 1.");
+        return records;
+    }
     const QJsonArray array = templateArrayFromDocument(document, filePath, report);
     records.reserve(array.size());
     for (const QJsonValue& value : array) {
@@ -423,6 +442,13 @@ QList<UserTemplateRecord> readTemplateFile(const QString& filePath,
         UserTemplateLoadReport recordReport;
         UserTemplateRecord record =
             recordFromJsonObject(value.toObject(), filePath, &recordReport);
+        if (scope == UserTemplateScope::Bundled) {
+            if (value.toObject().value("id").toString().trimmed().isEmpty()
+                || !record.bundledId.isEmpty() || record.bundledStateOnly
+                || !record.command.value("file").toString().isEmpty())
+                appendIssue(&recordReport, filePath, record.id, "id", "Bundled definitions require an explicit stable id and cannot contain local overrides or file scope.");
+            record.bundledId = record.id;
+        }
         if (!recordReport.issues.isEmpty()) {
             if (report) {
                 report->issues.append(recordReport.issues);
@@ -475,6 +501,9 @@ bool appendValidRecord(UserTemplateLoadReport* report,
                     QStringLiteral("id"),
                     QStringLiteral("Template id must be unique."));
     }
+    if (record.bundledStateOnly && (record.bundledId.isEmpty() || !record.insertText.isEmpty()
+        || !record.templateSlots.isEmpty()))
+        appendIssue(report, source, issueCommand, "bundledStateOnly", "A visibility override requires a bundled identity and no template body or inputs.");
 
     const bool simulation = QRegularExpression(QStringLiteral("^@[A-Za-z_][A-Za-z0-9_.:-]*$")).match(record.commandToken).hasMatch();
     const bool ordinary = record.commandToken.startsWith('/') && record.commandToken.size() > 1;
@@ -515,9 +544,14 @@ bool appendValidRecord(UserTemplateLoadReport* report,
                     QStringLiteral("command"),
                     QStringLiteral("Template command token must be unique."));
     }
+    const auto bundledKey = QStringLiteral("\nidentity\n") + record.bundledId.toCaseFolded()
+        + QLatin1Char('\n') + normalizePath(record.command.value("file").toString()).toCaseFolded();
+    if (!record.bundledId.isEmpty() && seenCommands->contains(bundledKey))
+        appendIssue(report, source, issueCommand, "bundledId", "Only one override of a bundled identity is allowed in each file scope.");
     if (record.insertText.isEmpty() && record.command.value(QStringLiteral("symbol")).toString().isEmpty()
         && record.command.value(QStringLiteral("kind")).toString() != QStringLiteral("block")
         && record.command.value(QStringLiteral("kind")).toString() != QStringLiteral("print")
+        && !record.bundledStateOnly
         && !record.command.value(QStringLiteral("disabled")).toBool()) {
         appendIssue(report,
                     source,
@@ -579,6 +613,7 @@ bool appendValidRecord(UserTemplateLoadReport* report,
 
     seenIds->insert(lowerId);
     seenCommands->insert(lowerCommand);
+    if (!record.bundledId.isEmpty()) seenCommands->insert(bundledKey);
     report->records.append(record);
     return true;
 }
@@ -603,11 +638,55 @@ UserTemplateLoadReport validateRecordsForSave(
     return report;
 }
 
+bool sameTemplate(const UserTemplateRecord& left, const UserTemplateRecord& right)
+{
+    const auto leftId = left.bundledId.isEmpty() ? left.id : left.bundledId;
+    const auto rightId = right.bundledId.isEmpty() ? right.id : right.bundledId;
+    return leftId.compare(rightId, Qt::CaseInsensitive) == 0
+        || left.commandToken.compare(right.commandToken, Qt::CaseInsensitive) == 0;
+}
+
+UserTemplateRecord applyOverride(const UserTemplateRecord& previous, UserTemplateRecord next)
+{
+    if (next.bundledId.isEmpty()) next.bundledId = previous.bundledId;
+    if (!next.bundledStateOnly) return next;
+    auto resolved = previous;
+    resolved.id = next.id;
+    resolved.bundledId = next.bundledId;
+    resolved.storageSource = next.storageSource;
+    resolved.command.insert("disabled", next.command.value("disabled").toBool());
+    if (next.command.contains("file")) resolved.command.insert("file", next.command.value("file"));
+    return resolved;
+}
+
+void overlayRecord(QList<UserTemplateRecord>& records, const UserTemplateRecord& record, bool sameFile)
+{
+    const auto inScope = [&](const UserTemplateRecord& previous) {
+        return !sameFile || previous.command.value("file").toString().compare(
+            record.command.value("file").toString(), Qt::CaseInsensitive) == 0;
+    };
+    const auto identity = record.bundledId.isEmpty() ? record.id : record.bundledId;
+    auto existing = std::find_if(records.begin(), records.end(), [&](const auto& previous) {
+        return inScope(previous) && identity.compare(previous.bundledId.isEmpty() ? previous.id : previous.bundledId, Qt::CaseInsensitive) == 0;
+    });
+    if (existing == records.end()) existing = std::find_if(records.begin(), records.end(), [&](const auto& previous) {
+        return inScope(previous) && sameTemplate(previous, record);
+    });
+    if (existing == records.end()) { records.append(record); return; }
+    const int index = std::distance(records.begin(), existing);
+    const auto resolved = applyOverride(*existing, record);
+    records.erase(std::remove_if(records.begin(), records.end(), [&](const auto& previous) {
+        return inScope(previous) && sameTemplate(previous, record);
+    }), records.end());
+    records.insert(qMin(index, int(records.size())), resolved);
+}
+
 void mergeLoadedRecords(UserTemplateLoadReport* report,
                         const QList<UserTemplateRecord>& records,
                         const QString& source,
                         UserTemplateScope scope)
 {
+    Q_UNUSED(scope);
     if (!report)
         return;
 
@@ -632,31 +711,7 @@ void mergeLoadedRecords(UserTemplateLoadReport* report,
         seenIdsInFile = candidateIds;
         seenCommandsInFile = candidateCommands;
 
-        UserTemplateRecord validRecord = candidateReport.records.first();
-        const QString lowerCommand =
-            validRecord.commandToken.trimmed().toCaseFolded() + QLatin1Char('\n')
-            + validRecord.command.value(QStringLiteral("file")).toString().toCaseFolded();
-        const auto existing =
-            std::find_if(report->records.begin(),
-                         report->records.end(),
-                         [&lowerCommand](const UserTemplateRecord& existingRecord) {
-                             return existingRecord.commandToken.trimmed().toCaseFolded() + QLatin1Char('\n')
-                                 + existingRecord.command.value(QStringLiteral("file")).toString().toCaseFolded()
-                                 == lowerCommand;
-                         });
-        if (existing != report->records.end()) {
-            if (scope == UserTemplateScope::Workspace) {
-                *existing = validRecord;
-            } else {
-                appendIssue(report,
-                            source,
-                            validRecord.id,
-                            QStringLiteral("command"),
-                            QStringLiteral("Duplicate global user template command ignored."));
-            }
-            continue;
-        }
-        report->records.append(validRecord);
+        overlayRecord(report->records, candidateReport.records.first(), true);
     }
 }
 
@@ -664,6 +719,9 @@ QJsonObject recordToJsonObject(const UserTemplateRecord& record)
 {
     QJsonObject object = QJsonObject::fromVariantMap(record.extraFields);
     object.insert(QStringLiteral("id"), record.id);
+    object.remove("bundledId"); object.remove("bundledStateOnly");
+    if (!record.bundledId.isEmpty()) object.insert("bundledId", record.bundledId);
+    if (record.bundledStateOnly) object.insert("bundledStateOnly", true);
     object.insert(QStringLiteral("label"), record.label);
     object.insert(QStringLiteral("selectionStart"), record.selectionStart);
     object.insert(QStringLiteral("selectionLength"), record.selectionLength);
@@ -682,11 +740,13 @@ QJsonObject recordToJsonObject(const UserTemplateRecord& record)
     return object;
 }
 
-void validateOrdinaryWrite(UserTemplateSaveReport* report, bool workspace, const QString& globalPath, const QString& workspacePath) {
+void validateOrdinaryWrite(UserTemplateSaveReport* report, bool workspace, const QString& globalPath,
+                          const QString& workspacePath, const QList<UserTemplateRecord>& bundled, const QString& bundledPath) {
     if (!report->valid) return;
     UserTemplateLoadReport merged;
     const auto global = workspace ? readTemplateFile(globalPath,UserTemplateScope::Global,&merged) : report->records;
     const auto local = workspace ? report->records : readTemplateFile(workspacePath,UserTemplateScope::Workspace,&merged);
+    mergeLoadedRecords(&merged,bundled,bundledPath,UserTemplateScope::Bundled);
     mergeLoadedRecords(&merged,global,globalPath,UserTemplateScope::Global);
     mergeLoadedRecords(&merged,local,workspacePath,UserTemplateScope::Workspace);
     auto resources = OrdinaryTemplatePlanner::builtins(); resources.append(merged.records);
@@ -751,6 +811,7 @@ UserTemplateService::UserTemplateService(const QString& globalPath,
                                  ? defaultGlobalTemplatePath()
                                  : normalizePath(globalPath))
     , workspaceTemplateFilePath(normalizePath(workspacePath))
+    , bundledTemplateFilePath(QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("templates/catalog.json")))
 {
 }
 
@@ -774,12 +835,24 @@ QString UserTemplateService::workspaceTemplateLocation() const
     return workspaceTemplateFilePath;
 }
 
+QString UserTemplateService::bundledTemplateLocation() const { return bundledTemplateFilePath; }
+
+void UserTemplateService::setBundledTemplateFilePath(const QString& path)
+{
+    const auto next = normalizePath(path);
+    if (next == bundledTemplateFilePath) return;
+    bundledTemplateFilePath = next;
+    cachedBundledRecords.clear();
+    resetScopeCache();
+}
+
 void UserTemplateService::setGlobalTemplateFilePath(const QString& filePath)
 {
     const auto next = filePath.trimmed().isEmpty()
         ? defaultGlobalTemplatePath()
         : normalizePath(filePath);
     if (next == globalTemplateFilePath) return;
+    cachedGlobalRecords.clear();
     globalTemplateFilePath = next; resetScopeCache();
 }
 
@@ -791,55 +864,81 @@ void UserTemplateService::setWorkspaceRoot(const QString& workspaceRoot)
 void UserTemplateService::setWorkspaceTemplateFilePath(const QString& filePath)
 {
     const auto next = normalizePath(filePath); if (next == workspaceTemplateFilePath) return;
+    cachedWorkspaceRecords.clear();
     workspaceTemplateFilePath = next; resetScopeCache();
 }
 
 void UserTemplateService::resetScopeCache() {
-    cacheValid = false; cachedFileVersion.clear(); cachedReport = {}; cachedCatalog.clear(); ++revision;
+    cacheValid = false; cachedFileVersion.clear(); cachedReport = {}; lastLoadReport = {}; cachedCatalog.clear();
+    ++revision;
+}
+
+QString UserTemplateService::fileVersion() const
+{
+    return templateFileVersion(bundledTemplateFilePath) + QLatin1Char('\n')
+        + templateFileVersion(globalTemplateFilePath) + QLatin1Char('\n') + templateFileVersion(workspaceTemplateFilePath);
 }
 
 UserTemplateLoadReport UserTemplateService::reload() const
 {
-    const auto before = templateFileVersion(globalTemplateFilePath) + QLatin1Char('\n') + templateFileVersion(workspaceTemplateFilePath);
-    fileReads += QFileInfo(globalTemplateFilePath).isFile() + QFileInfo(workspaceTemplateFilePath).isFile();
-    UserTemplateLoadReport report;
-    mergeLoadedRecords(&report,
-                       readTemplateFile(globalTemplateFilePath,
-                                        UserTemplateScope::Global,
-                                        &report),
-                       globalTemplateFilePath,
-                       UserTemplateScope::Global);
-    mergeLoadedRecords(&report,
-                       readTemplateFile(workspaceTemplateFilePath,
-                                        UserTemplateScope::Workspace,
-                                        &report),
-                       workspaceTemplateFilePath,
-                       UserTemplateScope::Workspace);
-    report.valid = report.issues.isEmpty();
-    if (report.valid) {
-        auto ordinary = OrdinaryTemplatePlanner::builtins();
-        ordinary.append(report.records);
-        const auto issue = OrdinaryTemplatePlanner::validate(ordinary);
-        if (!issue.isEmpty()) { appendIssue(&report, storageLocation(), {}, "editor", issue); report.valid = false; }
-    }
+    const auto before = fileVersion();
+    const auto load = [&](const QString& path, UserTemplateScope scope) {
+        UserTemplateLoadReport parsed;
+        fileReads += QFileInfo(path).isFile();
+        const auto input = readTemplateFile(path, scope, &parsed);
+        auto validated = validateRecordsForSave(input, path);
+        validated.issues = parsed.issues + validated.issues;
+        if (!parsed.failureReason.isEmpty()) validated.failureReason = parsed.failureReason;
+        validated.valid = validated.issues.isEmpty();
+        return validated;
+    };
+    const auto bundled = load(bundledTemplateFilePath, UserTemplateScope::Bundled);
+    const auto global = load(globalTemplateFilePath, UserTemplateScope::Global);
+    const auto workspace = load(workspaceTemplateFilePath, UserTemplateScope::Workspace);
+    const auto nextBundled = bundled.valid ? bundled.records : cachedBundledRecords;
+    const auto nextGlobal = global.valid ? global.records : cachedGlobalRecords;
+    const auto nextWorkspace = workspace.valid ? workspace.records : cachedWorkspaceRecords;
+    UserTemplateLoadReport effective;
+    mergeLoadedRecords(&effective, nextBundled, bundledTemplateFilePath, UserTemplateScope::Bundled);
+    mergeLoadedRecords(&effective, nextGlobal, globalTemplateFilePath, UserTemplateScope::Global);
+    mergeLoadedRecords(&effective, nextWorkspace, workspaceTemplateFilePath, UserTemplateScope::Workspace);
+    const auto issue = OrdinaryTemplatePlanner::validate(effective.records);
+    if (!issue.isEmpty()) appendIssue(&effective, storageLocation(), {}, "editor", issue);
+    cacheValid = before == fileVersion();
     cachedFileVersion = before;
-    cacheValid = before == templateFileVersion(globalTemplateFilePath) + QLatin1Char('\n') + templateFileVersion(workspaceTemplateFilePath);
-    // Do not publish a partial read or an invalid generation. Callers of
-    // reload still receive the failure; active readers keep the last good data.
-    if (report.valid && cacheValid) {
-        cachedReport = report;
+    if (!cacheValid) appendIssue(&effective, storageLocation(), {}, "catalog", "Template files changed during loading; no partial catalog was published.");
+    // Each layer is validated as a whole. A failed layer retains its last valid
+    // snapshot; a failed composition never replaces the active generation.
+    if (effective.issues.isEmpty() && cacheValid) {
+        const bool unchanged = effective.records.size() == cachedReport.records.size()
+            && std::equal(effective.records.cbegin(), effective.records.cend(), cachedReport.records.cbegin(),
+                [](const auto& a, const auto& b) { return a.storageSource == b.storageSource && recordToJsonObject(a) == recordToJsonObject(b); });
+        cachedBundledRecords = nextBundled;
+        cachedGlobalRecords = nextGlobal;
+        cachedWorkspaceRecords = nextWorkspace;
+        cachedReport = effective; cachedReport.valid = true;
         cachedCatalog.clear();
-        for (const auto& record : report.records) cachedCatalog.append(itemFromRecord(record));
-        ++revision;
+        for (const auto& record : effective.records)
+            if (!record.bundledStateOnly && !record.command.value("disabled").toBool()) cachedCatalog.append(itemFromRecord(record));
+        if (!unchanged || (bundled.valid && global.valid && workspace.valid)) ++revision;
     }
-    return report;
+    effective.issues += bundled.issues + global.issues + workspace.issues;
+    if (effective.failureReason.isEmpty()) {
+        for (const auto& layer : {bundled, global, workspace})
+            if (!layer.failureReason.isEmpty()) { effective.failureReason = layer.failureReason; break; }
+    }
+    effective.valid = effective.issues.isEmpty();
+    effective.records = cachedReport.records;
+    lastLoadReport = effective;
+    return effective;
 }
 
 void UserTemplateService::ensureLoaded() const
 {
-    const auto current = templateFileVersion(globalTemplateFilePath) + QLatin1Char('\n') + templateFileVersion(workspaceTemplateFilePath);
-    if (!cacheValid || cachedFileVersion != current) reload();
+    if (!cacheValid || cachedFileVersion != fileVersion()) reload();
 }
+
+UserTemplateLoadReport UserTemplateService::loadReport() const { ensureLoaded(); return lastLoadReport; }
 
 quint64 UserTemplateService::catalogRevision() const { ensureLoaded(); return revision; }
 
@@ -861,6 +960,7 @@ QList<CodeTemplateItem> UserTemplateService::matchingTemplates(
     QList<CodeTemplateItem> result;
     const QString normalized = commandToken.trimmed();
     for (const UserTemplateRecord& record : records()) {
+        if (record.bundledStateOnly || record.command.value("disabled").toBool()) continue;
         if (normalized.isEmpty()
             || tokenMatches(record.commandToken, normalized)) {
             result.append(itemFromRecord(record));
@@ -882,26 +982,19 @@ UserTemplateSaveReport UserTemplateService::validateRecords(
     return validateRecordsForSave(inputRecords, globalTemplateFilePath);
 }
 
-UserTemplateSaveReport UserTemplateService::setRecords(
-    const QList<UserTemplateRecord>& inputRecords) const
+UserTemplateSaveReport UserTemplateService::setRecords(const QList<UserTemplateRecord>& inputRecords) const
 {
-    UserTemplateSaveReport report = validateRecords(inputRecords);
-    validateOrdinaryWrite(&report,false,globalTemplateFilePath,workspaceTemplateFilePath);
-    if (!report.valid)
-        return report;
-
-    if (!writeRecordsToJsonFile(globalTemplateFilePath,
-                                report.records,
-                                &report.failureReason)) {
-        report.valid = false;
-        appendIssue(&report,
-                    globalTemplateFilePath,
-                    QString(),
-                    QStringLiteral("storage"),
-                    report.failureReason);
-        return report;
-    }
-    cacheValid = false;
+    // This explicit full replacement also recovers malformed global JSON.
+    // Per-record edits continue to reject an unreadable source configuration.
+    UserTemplateSaveReport report;
+    QDir().mkpath(QFileInfo(globalTemplateFilePath).absolutePath());
+    QLockFile lock(globalTemplateFilePath + QStringLiteral(".lock"));
+    if (!lock.tryLock(0)) { report.failureReason = "Another operation is updating Templates. Retry after it finishes."; return report; }
+    ensureLoaded();
+    report = validateRecords(inputRecords);
+    validateOrdinaryWrite(&report, false, globalTemplateFilePath, workspaceTemplateFilePath, cachedBundledRecords, bundledTemplateFilePath);
+    if (report.valid && !writeRecordsToJsonFile(globalTemplateFilePath, report.records, &report.failureReason)) report.valid = false;
+    if (report.valid) cacheValid = false;
     return report;
 }
 
@@ -966,21 +1059,23 @@ void UserTemplateService::clear() const
 
 QList<UserTemplateRecord> UserTemplateService::recordsForFile(const QString& fileName, bool simulationOnly) const
 {
-    auto result = simulationBuiltins();
-    QHash<QString, int> priorities;
-    for (const auto& record : result) priorities.insert(record.commandToken.toCaseFolded(), 0);
     const auto file = normalizePath(fileName);
-    for (const auto& record : records()) {
-        const auto local = record.command.value(QStringLiteral("file")).toString();
+    auto candidates = records();
+    const auto priority = [&](const UserTemplateRecord& record) {
+        if (!record.command.value("file").toString().isEmpty()) return 3;
+        return record.storageSource == bundledTemplateFilePath ? 0
+            : record.storageSource == workspaceTemplateFilePath ? 2 : 1;
+    };
+    std::stable_sort(candidates.begin(), candidates.end(), [&](const auto& a, const auto& b) { return priority(a) < priority(b); });
+    QList<UserTemplateRecord> result;
+    for (const auto& record : candidates) {
+        const auto local = record.command.value("file").toString();
         if (!local.isEmpty() && normalizePath(local).compare(file, Qt::CaseInsensitive) != 0) continue;
-        if (simulationOnly && !record.commandToken.startsWith(QLatin1Char('@'))) continue;
-        const int priority = !local.isEmpty() ? 3 : record.storageSource == workspaceTemplateFilePath ? 2 : 1;
-        const auto key = record.commandToken.toCaseFolded();
-        if (priorities.contains(key) && priorities.value(key) > priority) continue;
-        auto it = std::find_if(result.begin(), result.end(), [&](const auto& previous) { return previous.commandToken.toCaseFolded() == key; });
-        if (it == result.end()) result.append(record); else *it = record;
-        priorities.insert(key, priority);
+        if (simulationOnly && !record.commandToken.startsWith('@')) continue;
+        overlayRecord(result, record, false);
     }
+    // Unresolved state-only records remain manageable while their package
+    // definition is absent; insertion catalogs exclude them.
     return result;
 }
 
@@ -988,7 +1083,7 @@ QList<CodeTemplateItem> UserTemplateService::catalogForFile(const QString& fileN
 {
     QList<CodeTemplateItem> result;
     for (const auto& record : recordsForFile(fileName, simulationOnly))
-        if (!record.command.value(QStringLiteral("disabled")).toBool()) result << itemFromRecord(record);
+        if (!record.bundledStateOnly && !record.command.value(QStringLiteral("disabled")).toBool()) result << itemFromRecord(record);
     return result;
 }
 
@@ -1009,54 +1104,89 @@ UserTemplateLoadReport UserTemplateService::fromJson(const QJsonObject& object)
     return validateRecordsForSave({record}, QStringLiteral("request"));
 }
 
-UserTemplateSaveReport UserTemplateService::saveRecord(const UserTemplateRecord& record, bool workspace, quint64 expectedRevision, const QString& expectedStorageRevision) const
+UserTemplateSaveReport UserTemplateService::updateRecords(bool workspace, quint64 expectedRevision,
+    const QString& expectedStorageRevision, const std::function<void(QList<UserTemplateRecord>&)>& update) const
 {
     const auto path = workspace ? workspaceTemplateFilePath : globalTemplateFilePath;
+    UserTemplateLoadReport loaded;
+    if (path.isEmpty()) { loaded.failureReason = "No template storage is configured for this scope."; return loaded; }
     QDir().mkpath(QFileInfo(path).absolutePath());
     QLockFile lock(path + QStringLiteral(".lock"));
-    UserTemplateLoadReport loaded;
-    if (!lock.tryLock(0)) { loaded.failureReason = QStringLiteral("Another operation is updating Templates. Retry after it finishes."); return loaded; }
+    if (!lock.tryLock(0)) { loaded.failureReason = "Another operation is updating Templates. Retry after it finishes."; return loaded; }
     if (!expectedStorageRevision.isEmpty() && storageRevision(workspace) != expectedStorageRevision) {
-        loaded.failureReason = QStringLiteral("Template storage revision conflict; no records were written."); return loaded;
+        loaded.failureReason = "Template storage revision conflict; no records were written."; return loaded;
     }
     if (expectedRevision && catalogRevision() != expectedRevision) {
-        loaded.failureReason = QStringLiteral("Templates changed before this write. Reopen the manager; the current configuration was retained.");
-        return loaded;
+        loaded.failureReason = "Templates changed before this write. Reopen the manager; the current configuration was retained."; return loaded;
     }
+    ensureLoaded();
     auto next = readTemplateFile(path, workspace ? UserTemplateScope::Workspace : UserTemplateScope::Global, &loaded);
     if (!loaded.issues.isEmpty()) return loaded;
-    const auto id = normalizedTemplateId(record);
-    auto found = std::find_if(next.begin(), next.end(), [&](const auto& previous) { return previous.id == id; });
-    if (found == next.end()) next << record; else *found = record;
+    update(next);
     auto report = validateRecordsForSave(next, path);
-    validateOrdinaryWrite(&report,workspace,globalTemplateFilePath,workspaceTemplateFilePath);
+    validateOrdinaryWrite(&report, workspace, globalTemplateFilePath, workspaceTemplateFilePath, cachedBundledRecords, bundledTemplateFilePath);
     if (report.valid && !writeRecordsToJsonFile(path, report.records, &report.failureReason)) report.valid = false;
     if (report.valid) cacheValid = false;
     return report;
 }
 
-UserTemplateSaveReport UserTemplateService::deleteRecord(const QString& id, bool workspace, quint64 expectedRevision, const QString& expectedStorageRevision) const
+UserTemplateSaveReport UserTemplateService::saveRecord(const UserTemplateRecord& input, bool workspace,
+    quint64 expectedRevision, const QString& expectedStorageRevision) const
 {
-    const auto path = workspace ? workspaceTemplateFilePath : globalTemplateFilePath;
-    QDir().mkpath(QFileInfo(path).absolutePath());
-    QLockFile lock(path + QStringLiteral(".lock"));
-    UserTemplateLoadReport loaded;
-    if (!lock.tryLock(0)) { loaded.failureReason = QStringLiteral("Another operation is updating Templates. Retry after it finishes."); return loaded; }
-    if (!expectedStorageRevision.isEmpty() && storageRevision(workspace) != expectedStorageRevision) {
-        loaded.failureReason = QStringLiteral("Template storage revision conflict; no records were written."); return loaded;
+    ensureLoaded();
+    auto record = input;
+    if (record.bundledId.isEmpty()) {
+        auto bundled = std::find_if(cachedBundledRecords.cbegin(), cachedBundledRecords.cend(),
+            [&](const auto& candidate) { return candidate.id.compare(record.id, Qt::CaseInsensitive) == 0; });
+        if (bundled == cachedBundledRecords.cend())
+            bundled = std::find_if(cachedBundledRecords.cbegin(), cachedBundledRecords.cend(),
+                [&](const auto& candidate) { return candidate.commandToken.compare(record.commandToken, Qt::CaseInsensitive) == 0; });
+        if (bundled != cachedBundledRecords.cend()) record.bundledId = bundled->id;
     }
-    if (expectedRevision && catalogRevision() != expectedRevision) {
-        loaded.failureReason = QStringLiteral("Templates changed before this write. Reopen the manager; the current configuration was retained.");
-        return loaded;
-    }
-    auto next = readTemplateFile(path, workspace ? UserTemplateScope::Workspace : UserTemplateScope::Global, &loaded);
-    if (!loaded.issues.isEmpty()) return loaded;
-    next.erase(std::remove_if(next.begin(), next.end(), [&](const auto& record) { return record.id == id; }), next.end());
-    auto report = validateRecordsForSave(next, path);
-    validateOrdinaryWrite(&report,workspace,globalTemplateFilePath,workspaceTemplateFilePath);
-    if (report.valid && !writeRecordsToJsonFile(path, report.records, &report.failureReason)) report.valid = false;
-    if (report.valid) cacheValid = false;
-    return report;
+    return updateRecords(workspace, expectedRevision, expectedStorageRevision, [&](auto& next) {
+        auto found = std::find_if(next.begin(), next.end(), [&](const auto& previous) { return previous.id.compare(normalizedTemplateId(record), Qt::CaseInsensitive) == 0; });
+        if (found == next.end()) next << record; else *found = record;
+    });
+}
+
+UserTemplateSaveReport UserTemplateService::deleteRecord(const QString& id, bool workspace,
+    quint64 expectedRevision, const QString& expectedStorageRevision) const
+{
+    return updateRecords(workspace, expectedRevision, expectedStorageRevision, [&](auto& next) {
+        next.erase(std::remove_if(next.begin(), next.end(), [&](const auto& record) { return record.id == id; }), next.end());
+    });
+}
+
+UserTemplateSaveReport UserTemplateService::setBundledHidden(const UserTemplateRecord& record, bool hidden,
+    bool workspace, const QString& file, quint64 expectedRevision) const
+{
+    if (record.bundledId.isEmpty()) { UserTemplateSaveReport result; result.failureReason = "This template has no bundled identity."; return result; }
+    return updateRecords(workspace, expectedRevision, {}, [&](auto& next) {
+        auto found = std::find_if(next.begin(), next.end(), [&](const auto& candidate) {
+            return sameTemplate(candidate, record) && normalizePath(candidate.command.value("file").toString()).compare(normalizePath(file), Qt::CaseInsensitive) == 0;
+        });
+        if (found == next.end()) {
+            UserTemplateRecord state;
+            state.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+            state.bundledId = record.bundledId; state.bundledStateOnly = true;
+            state.commandToken = record.commandToken; state.label = record.label;
+            if (!file.isEmpty()) state.command.insert("file", normalizePath(file));
+            next.append(state); found = next.end() - 1;
+        }
+        found->bundledId = record.bundledId;
+        found->command.insert("disabled", hidden);
+    });
+}
+
+UserTemplateSaveReport UserTemplateService::resetBundledOverride(const UserTemplateRecord& record,
+    bool workspace, const QString& file, quint64 expectedRevision) const
+{
+    if (record.bundledId.isEmpty()) { UserTemplateSaveReport result; result.failureReason = "This template has no bundled identity."; return result; }
+    return updateRecords(workspace, expectedRevision, {}, [&](auto& next) {
+        next.erase(std::remove_if(next.begin(), next.end(), [&](const auto& candidate) {
+            return sameTemplate(candidate, record) && normalizePath(candidate.command.value("file").toString()).compare(normalizePath(file), Qt::CaseInsensitive) == 0;
+        }), next.end());
+    });
 }
 
 QList<UserTemplateRecord> UserTemplateService::simulationBuiltins() { return {}; }

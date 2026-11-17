@@ -252,6 +252,7 @@ QJsonObject ZeroSlackAutomationService::templates(const QJsonObject& request, co
     const bool local = scope == "workspace";
     QJsonObject data{{"revision", service.storageRevision(local)}, {"scope", scope},
         {"storage", local ? service.workspaceTemplateLocation() : service.globalTemplateLocation()}};
+    data.insert("bundledCatalog", service.bundledTemplateLocation());
     const auto file = request.value("file").toString().isEmpty() ? QString() : absolute(root, request.value("file").toString());
     const auto records = service.recordsForFile(file);
     if (command == "templates.list" || command == "templates.get") {
@@ -260,7 +261,9 @@ QJsonObject ZeroSlackAutomationService::templates(const QJsonObject& request, co
             if (command == "templates.get" && record.id != request.value("id").toString()) continue;
             auto item = UserTemplateService::toJson(record);
             item.insert("storageSource", record.storageSource);
+            item.insert("definitionSource", record.definitionSource);
             item.insert("builtin", record.storageSource == "builtin");
+            item.insert("bundled", record.storageSource == service.bundledTemplateLocation());
             items << item;
         }
         if (command == "templates.get" && items.isEmpty()) return failure("not_found", "Unknown or shadowed template id.");
@@ -412,8 +415,11 @@ QJsonObject ZeroSlackAutomationService::document(const QJsonObject& request, con
         } else {
             if (!request.contains("start")) return failure("invalid_range", "An explicit UTF-16 start offset is required.", data);
             UserTemplateService catalog; catalog.setWorkspaceRoot(root);
+            const auto loaded = catalog.reload();
+            if (!loaded.valid) return failure("invalid_catalog", reportError(loaded), data);
             bool found = false;
             for (const auto& record : catalog.recordsForFile(file)) {
+                if (record.bundledStateOnly || record.command.value("disabled").toBool()) continue;
                 if (record.id != request.value("templateId").toString()) continue;
                 found = true; operation.item.id = record.id; operation.item.title = record.label;
                 operation.item.parameters = record.command; operation.item.insertionText = record.insertText; operation.item.templateSlots = record.templateSlots;

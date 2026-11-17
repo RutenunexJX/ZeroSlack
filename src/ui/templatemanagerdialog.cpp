@@ -63,7 +63,8 @@ TemplateManagerDialog::TemplateManagerDialog(UserTemplateService *s, const Simul
     leftLayout->addLayout(buttons);
     auto *add = UiControls::pushButton("New", left);
     add->setIcon(RoundedIcons::icon(RoundedIcons::Add));
-    auto *erase = UiControls::pushButton("Delete", left);
+    erase = UiControls::pushButton("Delete", left);
+    erase->setObjectName("templateDeleteOrHide");
     erase->setIcon(RoundedIcons::icon(RoundedIcons::Delete));
     buttons->addWidget(add);
     buttons->addWidget(erase);
@@ -72,11 +73,15 @@ TemplateManagerDialog::TemplateManagerDialog(UserTemplateService *s, const Simul
     reloadButton->setObjectName("templateReload"); buttons->addWidget(reloadButton);
     connect(reloadButton,&QPushButton::clicked,this,[this] {
         const auto report=service->reload();
-        if (!report.valid) { status(reportText(report)); return; }
         const auto previous=selected.id; reload();
         for (int row=0;row<records.size();++row) if (records[row].id==previous) { list->setCurrentRow(row); break; }
-        status("Templates reloaded from disk.");
+        status(report.valid ? "Templates reloaded from disk." : reportText(report));
     });
+    restore = UiControls::pushButton("Reset override", left);
+    restore->setObjectName("templateResetOverride");
+    restore->setToolTip("Remove this template's custom definition and visibility override in the selected scope. Inherit the lower-priority definition.");
+    leftLayout->addWidget(restore);
+    connect(restore, &QPushButton::clicked, this, &TemplateManagerDialog::resetOverride);
     auto *import = UiControls::pushButton("Import legacy mappings…", left);
     leftLayout->addWidget(import);
     auto* importResource = UiControls::pushButton("Import resource…", left);
@@ -308,6 +313,7 @@ TemplateManagerDialog::TemplateManagerDialog(UserTemplateService *s, const Simul
     reload();
     load(-1);
     refreshAssetState();
+    if (!service->loadReport().valid) status(reportText(service->loadReport()));
 }
 void TemplateManagerDialog::setPackageInputs(const QStringList &files)
 {
@@ -360,14 +366,22 @@ void TemplateManagerDialog::reload()
 {
     const QSignalBlocker block(list);
     list->clear();
-    records = OrdinaryTemplatePlanner::catalog(service, request.context.fileName);
-    records.append(service->recordsForFile(request.context.fileName, true));
+    records = service->recordsForFile(request.context.fileName);
+    records.erase(std::remove_if(records.begin(), records.end(), [&](const auto& record) {
+        const auto suffixes = record.command.value("extensions").toStringList();
+        return record.commandToken.startsWith('/') && !suffixes.isEmpty()
+            && !suffixes.contains(QFileInfo(request.context.fileName).suffix(), Qt::CaseInsensitive);
+    }), records.end());
     for (const auto &record : records) {
-        list->addItem(record.commandToken + (record.command.value("disabled").toBool() ? " [hidden]" : "") +
-                      (record.storageSource == "builtin"                              ? "   Built-in"
+        list->addItem(record.commandToken + (record.bundledStateOnly ? " [unavailable]" : "")
+                      + (record.command.value("disabled").toBool() ? " [hidden]" : "") +
+                      (record.storageSource == service->bundledTemplateLocation()     ? "   Bundled"
+                       : record.storageSource == "builtin"                           ? "   Built-in"
                        : !record.command.value("file").toString().isEmpty()           ? "   This file"
                        : record.storageSource == service->workspaceTemplateLocation() ? "   Workspace"
-                                                                                      : "   Global"));
+                                                                                      : "   Global")
+                      + (!record.bundledId.isEmpty() && record.storageSource != service->bundledTemplateLocation()
+                          ? record.bundledStateOnly || record.definitionSource != record.storageSource ? " visibility" : " override" : ""));
         const auto kind = record.command.value("kind").toString();
         const auto glyph = kind == "block" ? RoundedIcons::blockKind(record.command.value("blockType").toString())
             : kind == "task" || kind == "function" || kind == "call" ? RoundedIcons::Subroutine
@@ -380,6 +394,9 @@ void TemplateManagerDialog::load(int row)
 {
     ++operation;
     selected = row >= 0 && row < records.size() ? records[row] : UserTemplateRecord{};
+    erase->setText(selected.bundledId.isEmpty() ? "Delete" : selected.command.value("disabled").toBool() ? "Show" : "Hide");
+    erase->setEnabled(!selected.id.isEmpty());
+    restore->setEnabled(!selected.bundledId.isEmpty() && selected.storageSource != service->bundledTemplateLocation());
     name->setText(selected.commandToken);
     description->setText(selected.description);
     const auto type = selected.command.value("kind", "snippet").toString();
@@ -390,7 +407,7 @@ void TemplateManagerDialog::load(int row)
     scope->setCurrentIndex(selected.id.isEmpty() || !selected.command.value("file").toString().isEmpty() ? 0
                            : selected.storageSource == service->workspaceTemplateLocation()              ? 1
                                                                                                          : 2);
-    if (selected.storageSource == "builtin")
+    if (selected.storageSource == "builtin" || selected.storageSource == service->bundledTemplateLocation())
         scope->setCurrentIndex(workspace.isEmpty() ? 2 : 1);
     symbol->setText(selected.command.value("symbol").toString());
     packages->setPlainText(selected.command.value("compileOrder").toStringList().join('\n'));
@@ -439,7 +456,9 @@ void TemplateManagerDialog::load(int row)
         put(fieldTable, row, 3, f.value("unit").toString());
     }
     revision = service->catalogRevision();
-    status("File commands apply only to the current saved file. Use ${name} for snippet inputs.");
+    status(selected.bundledId.isEmpty() ? "File commands apply only to the current saved file. Use ${name} for snippet inputs."
+        : selected.bundledStateOnly ? "This bundled definition is currently unavailable. Its saved visibility state is retained."
+        : "Bundled template. Save edits or change visibility in the selected scope; package upgrades preserve your overrides.");
 }
 void TemplateManagerDialog::addInput(const QString &inputName, const QVariantMap &input)
 {
@@ -576,6 +595,7 @@ void TemplateManagerDialog::save()
         return;
     }
     auto record = selected;
+    record.bundledStateOnly = false;
     if (record.id.isEmpty() || record.storageSource == "builtin")
         record.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     record.commandToken = name->text().trimmed();
@@ -609,7 +629,11 @@ void TemplateManagerDialog::save()
         status("Open a workspace before choosing Workspace scope.");
         return;
     }
-    if (!selected.storageSource.isEmpty() && selected.storageSource != "builtin" &&
+    const auto targetStorage = toWorkspace ? service->workspaceTemplateLocation() : service->globalTemplateLocation();
+    if (!record.bundledId.isEmpty() && (selected.storageSource != targetStorage
+        || selected.command.value("file").toString() != record.command.value("file").toString()))
+        record.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    if (record.bundledId.isEmpty() && !selected.storageSource.isEmpty() && selected.storageSource != "builtin" &&
         selected.storageSource !=
             (toWorkspace ? service->workspaceTemplateLocation() : service->globalTemplateLocation()))
     {
@@ -730,6 +754,19 @@ void TemplateManagerDialog::remove()
         status("Templates changed. Reopen before deleting.");
         return;
     }
+    if (!selected.bundledId.isEmpty()) {
+        if (scope->currentIndex() == 1 && workspace.isEmpty()) { status("Open a workspace before choosing Workspace scope."); return; }
+        const auto file = scope->currentIndex() == 0 ? request.context.fileName : QString();
+        if (scope->currentIndex() == 0 && (file.isEmpty() || !QFileInfo(file).isAbsolute())) { status("Save this file before changing its template visibility."); return; }
+        const bool hidden = !selected.command.value("disabled").toBool();
+        const auto id = selected.bundledId;
+        const auto report = service->setBundledHidden(selected, hidden, scope->currentIndex() != 2 && !workspace.isEmpty(), file, revision);
+        if (!report.valid) { status(reportText(report)); return; }
+        selectBundled(id);
+        status(selected.bundledStateOnly ? "Visibility saved. The template will be available when its package definition returns."
+            : hidden ? "Template hidden in the selected scope. Your definition is retained." : "Template shown in the selected scope.");
+        return;
+    }
     if (selected.storageSource == "builtin")
     {
         auto hidden = selected;
@@ -756,6 +793,26 @@ void TemplateManagerDialog::remove()
     reload();
     load(-1);
     status("Template deleted. Source packages were retained.");
+}
+
+void TemplateManagerDialog::selectBundled(const QString& id)
+{
+    reload();
+    for (int row = 0; row < records.size(); ++row)
+        if (records[row].bundledId == id) { list->setCurrentRow(row); return; }
+    load(-1);
+}
+
+void TemplateManagerDialog::resetOverride()
+{
+    if (selected.bundledId.isEmpty()) return;
+    if (scope->currentIndex() == 1 && workspace.isEmpty()) { status("Open a workspace before choosing Workspace scope."); return; }
+    const auto file = scope->currentIndex() == 0 ? request.context.fileName : QString();
+    const auto id = selected.bundledId;
+    const auto report = service->resetBundledOverride(selected, scope->currentIndex() != 2 && !workspace.isEmpty(), file, revision);
+    if (!report.valid) { status(reportText(report)); return; }
+    selectBundled(id);
+    status("Override removed in the selected scope. The inherited definition and visibility now apply.");
 }
 void TemplateManagerDialog::inspect(const std::function<void(const QList<SemanticSymbolRecord> &)> &done)
 {

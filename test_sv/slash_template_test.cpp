@@ -37,6 +37,7 @@ private slots:
     void init() {
         QVERIFY(root.isValid());
         auto* service = UserTemplateService::getInstance();
+        service->setBundledTemplateFilePath({});
         service->setGlobalTemplateFilePath(root.filePath(QString::number(QRandomGenerator::global()->generate()) + ".json"));
         service->setWorkspaceTemplateFilePath({}); service->reload();
         QVERIFY(service->setRecords(ordinaryTemplateFixtures()).valid);
@@ -94,7 +95,7 @@ private slots:
         open(); auto* list=editor->findChild<QListWidget*>("editorSlashCandidates"); QCOMPARE(list->count(),6);
         for(int i=0;i<list->count();++i) QCOMPARE(list->item(i)->data(Qt::UserRole+1).toString(),QString("Block"));
         QTest::keyClick(search(),Qt::Key_Escape);
-        UserTemplateService reopened(service->globalTemplateLocation(),{}); QVERIFY(reopened.records().isEmpty());
+        UserTemplateService reopened(service->globalTemplateLocation(),{}); reopened.setBundledTemplateFilePath({}); QVERIFY(reopened.records().isEmpty());
     }
     void transientAtEveryPosition_data() {
         QTest::addColumn<QString>("source"); QTest::addColumn<int>("position");
@@ -224,7 +225,11 @@ private slots:
         QTest::keyClicks(page,"/");
         auto* query=page->findChild<QLineEdit*>("editorSlashQuery"); QVERIFY(query && query->isVisible());
         QTRY_VERIFY(query->hasFocus());
-        QApplication::clipboard()->setText("clocked process"); QTRY_COMPARE(QApplication::clipboard()->text(),QString("clocked process"));
+        const auto seedClipboard = [] {
+            QApplication::clipboard()->setText("clocked process");
+            return QApplication::clipboard()->text();
+        };
+        QTRY_COMPARE(seedClipboard(), QString("clocked process"));
         QTest::keyClick(query,Qt::Key_V,Qt::ControlModifier);
         QCOMPARE(query->text(),QString("clocked process")); QVERIFY(query->isVisible());
         QCOMPARE(page->toPlainText(),source); QCOMPARE(page->document()->availableUndoSteps(),undo);

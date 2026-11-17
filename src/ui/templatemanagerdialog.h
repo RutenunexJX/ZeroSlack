@@ -10,6 +10,7 @@ class QPlainTextEdit;
 class QTableWidget;
 class QCheckBox;
 class QFileSystemWatcher;
+class QPushButton;
 
 class ZEROSLACK_API TemplateManagerDialog final : public UiDialog
 {
@@ -30,6 +31,8 @@ class ZEROSLACK_API TemplateManagerDialog final : public UiDialog
     void load(int row);
     void save();
     void remove();
+    void resetOverride();
+    void selectBundled(const QString& id);
     void inspect(const std::function<void(const QList<SemanticSymbolRecord> &)> &done);
     void bindCallable();
     void createImplementation();
@@ -56,4 +59,5 @@ class ZEROSLACK_API TemplateManagerDialog final : public UiDialog
     QLineEdit *tag, *eventMessage, *condition;
     QCheckBox *messageInput;
     QLabel *notice, *assetNotice;
+    QPushButton *erase, *restore;
 };

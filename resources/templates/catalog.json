@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "templates": [
+    {
+      "id": "user:timescale",
+      "command": "/timescale",
+      "label": "Timescale 1ns / 1ps",
+      "description": "Insert a Verilog timescale directive",
+      "body": "`timescale 1ns / 1ps"
+    }
+  ]
+}

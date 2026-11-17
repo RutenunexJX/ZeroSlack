@@ -90,7 +90,7 @@ QList<UserTemplateRecord> OrdinaryTemplatePlanner::builtins() { return {}; }
 QList<UserTemplateRecord> OrdinaryTemplatePlanner::catalog(UserTemplateService* service, const QString& file) {
     auto result = builtins();
     for (const auto& record : service->recordsForFile(file)) {
-        if (record.commandToken.startsWith('@') || record.command.value("disabled").toBool()) continue;
+        if (record.bundledStateOnly || record.commandToken.startsWith('@') || record.command.value("disabled").toBool()) continue;
         const auto extensions = record.command.value("extensions").toStringList();
         if (!extensions.isEmpty() && !extensions.contains(QFileInfo(file).suffix(), Qt::CaseInsensitive)) continue;
         const auto found = std::find_if(result.begin(), result.end(), [&](const auto& r) { return r.commandToken.compare(record.commandToken, Qt::CaseInsensitive) == 0; });

@@ -22,7 +22,7 @@
 }
 ```
 
-`context` 支持 `any`、`code`、`codeLine`、`module`；位置限制只在确认模板时检查，不限制 `/` 搜索。`Text` 接受普通文字；数值约束使用 `Value`。`Module`、`Instance`、`Port`、`Internal`、`Signal`、`Parameter` 复用现有语义服务，事实不可用时显示原因。内置 `/process` 提供过程与信号输入，`/wrap` 显式接收选区。
+`context` 支持 `any`、`code`、`codeLine`、`module`；位置限制只在确认模板时检查，不限制 `/` 搜索。`Text` 接受普通文字；数值约束使用 `Value`。`Module`、`Instance`、`Port`、`Internal`、`Signal`、`Parameter` 复用现有语义服务，事实不可用时显示原因。
 
 `${include:id}` 或 `${include:/command}` 在插入前展开依赖，`${cursor}` 指定最终光标。同名输入必须具有一致约束并在填参时联动。组合限制为 16 层、128 个节点、1 MiB；缺失依赖、循环或无效输入拒绝保存与插入。资源声明 `acceptsBody: true` 后，`${body}` 接收选区。完整有效资源才会替换同一作用域的缓存；切换工作区不会复用上一工作区目录，正在填写的实例保留原定义。
 
@@ -33,6 +33,16 @@ Block 预设使用 `editor: {"kind":"block","blockType":"text","text":"Note"}`�
 ## 已有仿真资源
 
 `tb-dut.json` 包含 `@clk_init`、`@reset`；`examples/` 中每个文件只包含一份可编辑定义。两份样例由现有 UserTemplateService、共享模板规划器和模板元数据处理，不按指令名称分派 C++ 处理器。
+
+## 随包携带的 Timescale 模板
+
+`catalog.json` 是唯一随包自动加载目录，格式为 `{"schemaVersion": 1, "templates": [...]}`。正式包携带 `templates/catalog.json`，GUI 与 CLI 都从各自可执行文件所在的安装目录读取，不依赖当前工作目录，也不需要导入。当前目录只启用 `/timescale`，稳定 ID 为 `user:timescale`，正文精确为 `` `timescale 1ns / 1ps ``。其他资源文件仍是手动导入的样例，不会被自动扫描或恢复为内置模板。后续增加随包定义只需维护此目录并正常打包。
+
+优先级为工作区 > 用户全局 > 随包；已有的文件限定命令仍优先作用于对应文件。稳定 ID 或同一作用域的命令冲突会在有效目录中去重，原用户数据不删除。编辑随包条目时，选择保存作用域后 Save 生成覆盖；包内 JSON 保持只读，升级不覆盖个人正文、名称或输入配置。
+
+`Tools > Templates > Manage Templates…` 标注 Bundled 及覆盖来源。Hide／Show 在所选作用域保存可见状态；Reset override 显式删除该作用域的定义及可见性覆盖，恢复继承的内容。用户自建条目仍使用 Delete。纯可见状态以带 `bundledId` 和 `bundledStateOnly: true` 的轻量记录存入原有用户／工作区 JSON；不会复制默认正文。条目从包中暂时移除时状态仍保留，重新加入后继续生效。文件作用域仅影响对应文件，工作区状态不带到其他工作区。
+
+目录缺失、JSON 损坏、版本不支持或重复身份／命令均报告错误；每层完整校验后才发布，失败保留该层最近一次有效数据，已有效的其他配置仍可使用。重启后无法从磁盘重建损坏层的旧内容，错误仍明确报告；不会把失败结果写回个人配置。显式 Reload 可重新读取修正后的目录，旧编辑会拒绝覆盖外部更新。
 
 ## 合并与重新加载
 

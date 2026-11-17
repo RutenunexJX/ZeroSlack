@@ -955,6 +955,13 @@ target_include_directories(zeroslack_cli_support PRIVATE ${ZEROSLACK_MODULE_INCL
 target_compile_definitions(zeroslack_cli_support PUBLIC ZEROSLACK_CLI_AUTOMATION=1)
 target_sources(zeroslack_cli PRIVATE src/cli/cliautomation.cpp src/cli/cliautomation.h)
 target_link_libraries(zeroslack_cli PRIVATE zeroslack_core)
+add_custom_target(zeroslack_template_catalog
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:demo>/templates" "$<TARGET_FILE_DIR:zeroslack_cli>/templates"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_CURRENT_SOURCE_DIR}/resources/templates/catalog.json" "$<TARGET_FILE_DIR:demo>/templates/catalog.json"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_CURRENT_SOURCE_DIR}/resources/templates/catalog.json" "$<TARGET_FILE_DIR:zeroslack_cli>/templates/catalog.json"
+    VERBATIM)
+add_dependencies(demo zeroslack_template_catalog)
+add_dependencies(zeroslack_cli zeroslack_template_catalog)
 if(WIN32 AND TARGET Qt6::QOffscreenIntegrationPlugin)
     add_custom_command(TARGET zeroslack_cli POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:zeroslack_cli>/platforms"
@@ -1095,6 +1102,11 @@ if(BUILD_TESTING)
     target_link_libraries(simulation_driver_insertion_test PRIVATE zeroslack_core Qt6::Test)
     add_executable(template_authoring_test test_sv/template_authoring_test.cpp)
     add_executable(slash_template_test test_sv/slash_template_test.cpp)
+    add_executable(bundled_templates_test test_sv/bundled_templates_test.cpp)
+    target_link_libraries(bundled_templates_test PRIVATE zeroslack_core Qt6::Test)
+    zeroslack_qt_test_command(bundled_templates_test_command bundled_templates_test bundled_templates_test)
+    add_test(NAME bundled_templates_test COMMAND ${bundled_templates_test_command})
+    set_tests_properties(bundled_templates_test PROPERTIES TIMEOUT 120)
     target_link_libraries(slash_template_test PRIVATE zeroslack_core Qt6::Test)
     zeroslack_qt_test_command(slash_template_test_command slash_template_test slash_template_test)
     add_test(NAME slash_template_test COMMAND ${slash_template_test_command})
