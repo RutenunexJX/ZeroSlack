@@ -102,7 +102,7 @@ TemplateManagerDialog::TemplateManagerDialog(UserTemplateService *s, const Simul
     name->setPlaceholderText("/name");
     scope = choices({"This file", "Workspace", "User global"}, right);
     scope->setObjectName("templateScope");
-    kind = choices({"snippet", "block:text", "block:image", "block:reference", "block:code", "block:attachment", "block:wave", "operations", "task", "function", "call", "print", "driver"}, right);
+    kind = choices({"snippet", "Module signals", "Module parameters", "block:text", "block:image", "block:reference", "block:code", "block:attachment", "block:wave", "operations", "task", "function", "call", "print", "driver"}, right);
     kind->setObjectName("templateKind");
     description = UiControls::lineEdit(right);
     aliases = UiControls::lineEdit(right);
@@ -255,6 +255,15 @@ TemplateManagerDialog::TemplateManagerDialog(UserTemplateService *s, const Simul
     connect(configure, &QPushButton::clicked, this, [this] { configureInput(inputTable->currentRow()); });
     connect(inputTable, &QTableWidget::cellDoubleClicked, this,
             [this](int row, int) { configureInput(row); });
+    connect(kind, &QComboBox::currentTextChanged, this, [this, inputAdd, inputRemove, configure](const QString& value) {
+        const bool generated = value == "Module signals" || value == "Module parameters";
+        body->setReadOnly(generated);
+        body->setPlaceholderText(generated ? "Choose a module when inserting this template to preview its declarations."
+                                          : "Code as written. Optional inputs: ${signal}, ${cycles}");
+        acceptsBody->setEnabled(!generated); location->setEnabled(!generated);
+        inputTable->setEnabled(!generated); inputAdd->setEnabled(!generated);
+        inputRemove->setEnabled(!generated); configure->setEnabled(!generated);
+    });
     connect(fieldAdd, &QPushButton::clicked, this,
             [this]
             {
@@ -400,7 +409,8 @@ void TemplateManagerDialog::load(int row)
     name->setText(selected.commandToken);
     description->setText(selected.description);
     const auto type = selected.command.value("kind", "snippet").toString();
-    kind->setCurrentText(type == "block" ? "block:" + selected.command.value("blockType").toString() : type);
+    kind->setCurrentText(type == "block" ? "block:" + selected.command.value("blockType").toString()
+        : type == "moduleDeclarations" ? selected.command.value("mode").toString() == "signals" ? "Module signals" : "Module parameters" : type);
     extensions->setText(selected.command.value("extensions").toStringList().join(", "));
     acceptsBody->setChecked(selected.command.value("acceptsBody").toBool());
     location->setCurrentIndex(qMax(0,location->findData(selected.command.value("context","any"))));
@@ -658,7 +668,15 @@ void TemplateManagerDialog::save()
     record.command.insert("compileOrder", packages->toPlainText().split('\n', Qt::SkipEmptyParts));
     record.templateSlots.clear();
     record.insertText.clear();
-    if (record.commandToken.startsWith('/') && (kind->currentText() == "snippet" || kind->currentText().startsWith("block:"))) {
+    if (kind->currentText() == "Module signals" || kind->currentText() == "Module parameters") {
+        if (!record.commandToken.startsWith('/')) { status("Module declarations require a / command."); return; }
+        record.command.insert("kind", "moduleDeclarations");
+        record.command.insert("mode", kind->currentText() == "Module signals" ? "signals" : "parameters");
+        record.command.insert("context", "module");
+        record.command.insert("acceptsBody", false);
+        record.command.remove("inputs"); record.command.remove("symbol"); record.command.remove("sourceFile");
+    }
+    else if (record.commandToken.startsWith('/') && (kind->currentText() == "snippet" || kind->currentText().startsWith("block:"))) {
         record.insertText = body->toPlainText();
         record.command.remove("symbol"); record.command.remove("sourceFile");
         if (kind->currentText().startsWith("block:")) {

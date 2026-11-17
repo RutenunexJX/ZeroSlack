@@ -352,6 +352,8 @@ set(ZEROSLACK_CORE_SOURCES
     src/editor/editorstructuralinputcontroller.cpp
     src/editor/editortemplateslotcontroller.cpp
     src/editor/editorslashcontroller.cpp
+    src/editor/moduletemplatepopup.cpp
+    src/completion/moduletemplateplan.cpp
     src/completion/ordinarytemplateplan.cpp
     src/documents/documentblockmodel.cpp
     src/documents/documentreferenceservice.cpp
@@ -1103,6 +1105,11 @@ if(BUILD_TESTING)
     add_executable(template_authoring_test test_sv/template_authoring_test.cpp)
     add_executable(slash_template_test test_sv/slash_template_test.cpp)
     add_executable(bundled_templates_test test_sv/bundled_templates_test.cpp)
+    add_executable(module_templates_test test_sv/module_templates_test.cpp)
+    target_link_libraries(module_templates_test PRIVATE zeroslack_core Qt6::Test)
+    zeroslack_qt_test_command(module_templates_test_command module_templates_test module_templates_test)
+    add_test(NAME module_templates_test COMMAND ${module_templates_test_command})
+    set_tests_properties(module_templates_test PROPERTIES TIMEOUT 120)
     target_link_libraries(bundled_templates_test PRIVATE zeroslack_core Qt6::Test)
     zeroslack_qt_test_command(bundled_templates_test_command bundled_templates_test bundled_templates_test)
     add_test(NAME bundled_templates_test COMMAND ${bundled_templates_test_command})

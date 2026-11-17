@@ -34,9 +34,17 @@ Block 预设使用 `editor: {"kind":"block","blockType":"text","text":"Note"}`�
 
 `tb-dut.json` 包含 `@clk_init`、`@reset`；`examples/` 中每个文件只包含一份可编辑定义。两份样例由现有 UserTemplateService、共享模板规划器和模板元数据处理，不按指令名称分派 C++ 处理器。
 
-## 随包携带的 Timescale 模板
+## 随包模板
 
-`catalog.json` 是唯一随包自动加载目录，格式为 `{"schemaVersion": 1, "templates": [...]}`。正式包携带 `templates/catalog.json`，GUI 与 CLI 都从各自可执行文件所在的安装目录读取，不依赖当前工作目录，也不需要导入。当前目录只启用 `/timescale`，稳定 ID 为 `user:timescale`，正文精确为 `` `timescale 1ns / 1ps ``。其他资源文件仍是手动导入的样例，不会被自动扫描或恢复为内置模板。后续增加随包定义只需维护此目录并正常打包。
+`catalog.json` 是唯一随包自动加载目录，格式为 `{"schemaVersion": 1, "templates": [...]}`。正式包携带 `templates/catalog.json`，GUI 与 CLI 都从各自可执行文件所在的安装目录读取，不依赖当前工作目录，也不需要导入。目录启用 `/timescale`、`/signals` 和 `/parameters`，稳定 ID 分别为 `user:timescale`、`user:signals`、`user:parameters`。Timescale 正文精确为 `` `timescale 1ns / 1ps ``。其他资源文件仍是手动导入的样例，不会被自动扫描或恢复为内置模板。
+
+`/signals`、`/parameters` 在模块内空行使用，共用模块搜索、参数配置和预览浮层。候选同时显示来源文件及行号；选择单一搜索结果也不会自动插入。可编辑非 localparam 参数值或类型，并设置生成名称的前后缀。`/signals` 保留端口数据类型、符号宽度和数组维度，去除方向，并默认生成依赖的 localparam；inout 保留网络连接语义。取消勾选 Include required parameters 时使用当前位置已有的参数，不修改其值。`/parameters` 可选择参数、选择 localparam 或 parameter 输出，依赖项按顺序补入，原 localparam 保持派生且只读。
+
+预览使用 Slang 源语法生成，名字冲突、参数循环、无效表达式和目标作用域中不可用的类型会阻止插入。接口或组合表达式端口不能直接转换为普通内部信号；仍可使用该模块的 `/parameters`。Insert 一次写入，支持一次撤销与重做。Esc、Cancel、源文件／光标／模板变化不会写入预览。Ctrl+Space 行为保持。
+
+这两项的资源配置为 `editor: {"kind":"moduleDeclarations","mode":"signals"或"parameters","context":"module"}`，无固定 body；模板管理器可修改命令、可见性及覆盖，生成规则共用同一核心服务，不能作为 `${include:...}` 片段嵌套。
+
+CLI 的 `document.insert` 使用相同生成器，指定 `templateId`、`module`，重名时补 `moduleFile` 和 `moduleLine`。`declarations` 接收 `prefix`、`suffix`、`keyword`（localparam／parameter）、`includeParameters`、`selectedParameters` 数组及 `values`（参数名到 SV 表达式字符串）。省略 selectedParameters 时选择可覆盖参数。原 expectedRevision、dryRun 和显式 sources 契约保持，生成结果是普通源码，不创建模板实例元数据。
 
 优先级为工作区 > 用户全局 > 随包；已有的文件限定命令仍优先作用于对应文件。稳定 ID 或同一作用域的命令冲突会在有效目录中去重，原用户数据不删除。编辑随包条目时，选择保存作用域后 Save 生成覆盖；包内 JSON 保持只读，升级不覆盖个人正文、名称或输入配置。
 

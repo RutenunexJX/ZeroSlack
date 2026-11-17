@@ -1,6 +1,7 @@
 #include "ordinarytemplateplan.h"
 #include "codetemplateservice.h"
 #include "templateinputservice.h"
+#include "moduletemplateplan.h"
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -22,8 +23,8 @@ struct Expansion {
         if (++nodes > 128 || depth > 16 || visiting.contains(record.id)) {
             plan.error = "Template composition is cyclic or exceeds its limit."; return;
         }
-        if (record.command.value("kind").toString() == "block") {
-            plan.error = "A code template cannot include a block preset."; return;
+        if (record.command.value("kind").toString() == "block" || ModuleTemplatePlanner::handles(record.command)) {
+            plan.error = "Choose this resource directly; it requires interactive selection."; return;
         }
         visiting.insert(record.id);
         const auto inputs = record.command.value("inputs").toMap();
@@ -130,6 +131,11 @@ QString OrdinaryTemplatePlanner::validate(const QList<UserTemplateRecord>& catal
     for (const auto& record : effective) {
         if (!record.commandToken.startsWith('/')) continue;
         if (!QStringList{"any","code","codeLine","module"}.contains(record.command.value("context","any").toString())) return "Unsupported template location.";
+        if (ModuleTemplatePlanner::handles(record.command)) {
+            const auto error = ModuleTemplatePlanner::configurationError(record.command);
+            if (!error.isEmpty()) return error;
+            continue;
+        }
         if (record.command.value("kind").toString() == "block") {
             if (!QStringList{"text", "image", "reference", "code", "attachment", "wave"}.contains(record.command.value("blockType").toString()))
                 return "Unsupported block preset type.";

@@ -1,5 +1,6 @@
 #include "usertemplateservice.h"
 #include "ordinarytemplateplan.h"
+#include "moduletemplateplan.h"
 #include "templatecapabilities.h"
 #include <QSaveFile>
 #include <QCoreApplication>
@@ -551,6 +552,7 @@ bool appendValidRecord(UserTemplateLoadReport* report,
     if (record.insertText.isEmpty() && record.command.value(QStringLiteral("symbol")).toString().isEmpty()
         && record.command.value(QStringLiteral("kind")).toString() != QStringLiteral("block")
         && record.command.value(QStringLiteral("kind")).toString() != QStringLiteral("print")
+        && !ModuleTemplatePlanner::handles(record.command)
         && !record.bundledStateOnly
         && !record.command.value(QStringLiteral("disabled")).toBool()) {
         appendIssue(report,

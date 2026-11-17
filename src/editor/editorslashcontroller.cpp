@@ -5,6 +5,7 @@
 #include "insightvisualstyle.h"
 #include "uicontrols.h"
 #include "templateinputservice.h"
+#include "moduletemplatepopup.h"
 #include <QApplication>
 #include <QFrame>
 #include <QLineEdit>
@@ -157,6 +158,11 @@ EditorSlashController::Eligibility EditorSlashController::eligibility(const User
         if (location == "module" && (!syntax->moduleScopeTarget(position).ok() || syntax->alwaysScopeTarget(position).ok()))
             return {Eligibility::Unavailable, "Requires a known module body outside a procedural block."};
     }
+    if (ModuleTemplatePlanner::handles(record.command)) {
+        const auto issue = ModuleTemplatePlanner::configurationError(record.command);
+        return issue.isEmpty() ? Eligibility{Eligibility::Available, "Enter chooses a module · Esc cancels"}
+                               : Eligibility{Eligibility::Unavailable, issue};
+    }
     const auto plan = OrdinaryTemplatePlanner::prepare(record, snapshot, original.selectedText().replace(QChar::ParagraphSeparator, '\n'));
     if (!plan.error.isEmpty()) return {Eligibility::Unavailable, plan.error};
     return {Eligibility::Available, "Enter inserts · Esc cancels"};
@@ -179,6 +185,11 @@ void EditorSlashController::confirm() {
     if (record.command.value("kind").toString() == "block") {
         const auto cursor = original; cancel(true);
         emit editor->editorBlockInsertRequested(record.command, cursor);
+        return;
+    }
+    if (ModuleTemplatePlanner::handles(record.command)) {
+        cancel(true);
+        (new ModuleTemplatePopup(editor, record.command))->openAtCursor();
         return;
     }
     auto plan = OrdinaryTemplatePlanner::prepare(record, snapshot, original.selectedText().replace(QChar::ParagraphSeparator, '\n'));

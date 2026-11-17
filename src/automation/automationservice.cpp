@@ -10,6 +10,7 @@
 #include "usertemplateservice.h"
 #include "simulationcommandplanner.h"
 #include "simulationcommandservice.h"
+#include "moduletemplateplan.h"
 #include "formatterservice.h"
 #include "formattercursoranchor.h"
 #include "workspacesessionstateservice.h"
@@ -186,10 +187,10 @@ QJsonObject ZeroSlackAutomationService::execute(const QJsonObject& request) {
     const auto command = request.value("command").toString();
     if (command.startsWith("simulation.") && (request.contains("timeoutMs") || request.contains("durationNs") || request.contains("sources")))
         return failure("retired_parameter", "Simulation derives its inputs from tb + top and ends under TB control. sources, durationNs and timeoutMs are retired; client waiting does not stop a run.");
-    const QSet<QString> stringFields{"command", "workspace", "file", "tb", "top", "scope", "id", "templateId", "parentId", "parentSlot", "instanceId", "slot", "value", "module", "instance", "replaceId", "projectId", "runId", "simulator", "expectedRevision", "expectedDiskRevision", "expectedOutputRevision", "output", "kind"};
-    const QSet<QString> integerFields{"start", "length", "offset", "limit", "timeoutMs"};
+    const QSet<QString> stringFields{"command", "workspace", "file", "tb", "top", "scope", "id", "templateId", "parentId", "parentSlot", "instanceId", "slot", "value", "module", "moduleFile", "instance", "replaceId", "projectId", "runId", "simulator", "expectedRevision", "expectedDiskRevision", "expectedOutputRevision", "output", "kind"};
+    const QSet<QString> integerFields{"start", "length", "offset", "limit", "timeoutMs", "moduleLine"};
     const QSet<QString> arrayFields{"sources", "reuse"};
-    const QSet<QString> objectFields{"record", "parameters", "bindings", "project"};
+    const QSet<QString> objectFields{"record", "parameters", "bindings", "project", "declarations"};
     for (auto it = request.begin(); it != request.end(); ++it) {
         bool valid = false;
         if (stringFields.contains(it.key())) valid = it.value().isString();
@@ -205,6 +206,20 @@ QJsonObject ZeroSlackAutomationService::execute(const QJsonObject& request) {
         const auto values = request.value(key).toObject();
         for (auto it = values.begin(); it != values.end(); ++it)
             if (!it.value().isString()) return failure("invalid_arguments", QString(key) + " values must be expression strings.");
+    }
+    const auto declarations = request.value("declarations").toObject();
+    for (auto it = declarations.begin(); it != declarations.end(); ++it) {
+        bool valid = false;
+        if (QStringList{"prefix", "suffix", "keyword"}.contains(it.key())) valid = it->isString();
+        else if (it.key() == "includeParameters") valid = it->isBool();
+        else if (it.key() == "selectedParameters") {
+            valid = it->isArray();
+            for (const auto& value : it->toArray()) valid &= value.isString() && !value.toString().isEmpty();
+        } else if (it.key() == "values") {
+            valid = it->isObject(); const auto values = it->toObject();
+            for (auto value = values.begin(); value != values.end(); ++value) valid &= value->isString();
+        }
+        if (!valid) return failure("invalid_arguments", "Invalid declaration option: " + it.key());
     }
     if (command == "capabilities") return capabilities();
     if (command == "templates.examples") {
@@ -367,6 +382,7 @@ QJsonObject ZeroSlackAutomationService::document(const QJsonObject& request, con
         auto query = request; query.insert("command", "document.inspect"); return document(query, root);
     }
     QList<TemplateDocumentEdit> edits;
+    QString ordinaryText; int ordinaryStart = -1;
     QString selected, inputOwner; int inputIndex = -1;
     std::shared_ptr<TemplateInputContext> inputs;
     FormatterReport formatting;
@@ -434,11 +450,52 @@ QJsonObject ZeroSlackAutomationService::document(const QJsonObject& request, con
                 for (const auto& slot : parent->inputs) if (slot.name == operation.item.templateParentSlot)
                     operation.item.templateContent = operation.context.templateContent = slot.input.value("content").toString();
             }
-            const auto plan = SimulationCommandPlanner::prepare(operation);
-            if (!plan.error.isEmpty()) return failure("plan_rejected", plan.error, data);
-            edits << TemplateDocumentEdit{plan.start, plan.length, plan.text, operation.item.templateParentId,
-                operation.item.templateParentSlot, {}, plan.instance, plan.placeholders};
-            if (!model->applyEdits(edits, &selected, &error)) return failure("plan_rejected", error, data);
+            if (ModuleTemplatePlanner::handles(operation.item.parameters)) {
+                if (operation.context.replacementLength || !operation.item.templateParentId.isEmpty())
+                    return failure("invalid_range", "Module declarations require an empty insertion range in a module body.", data);
+                SemanticSymbolRecord selectedModule;
+                for (const auto& candidate : inputs->snapshot->getSymbolRecordsByDeclarationKind(SymbolTaxonomy::DeclarationKind::Module)) {
+                    if (candidate.name != request.value("module").toString()) continue;
+                    if (request.contains("moduleFile") && !EditorFileIdentity::same(candidate.location.fileName, absolute(root, request.value("moduleFile").toString()))) continue;
+                    if (request.contains("moduleLine") && candidate.location.startLine != request.value("moduleLine").toInt()) continue;
+                    if (selectedModule.isValid()) return failure("ambiguous_module", "Specify module file and line to distinguish duplicate names.", data);
+                    selectedModule = candidate;
+                }
+                if (!selectedModule.isValid()) return failure("module_required", "Choose a module from the supplied sources using module and, when needed, moduleFile and moduleLine.", data);
+                const auto moduleModel = ModuleTemplatePlanner::inspect(operation, selectedModule);
+                ModuleTemplateOptions options;
+                options.mode = operation.item.parameters.value("mode").toString();
+                const auto configuration = request.value("declarations").toObject();
+                options.prefix = configuration.value("prefix").toString(); options.suffix = configuration.value("suffix").toString();
+                options.parameterKeyword = configuration.value("keyword").toString("localparam");
+                options.includeParameters = configuration.value("includeParameters").toBool(true);
+                const auto values = configuration.value("values").toObject();
+                for (auto it = values.begin(); it != values.end(); ++it) {
+                    if (!it->isString()) return failure("invalid_value", "Parameter values must be SV expression strings.", data);
+                    options.values.insert(it.key(), it->toString());
+                }
+                if (configuration.contains("selectedParameters")) {
+                    for (const auto& value : configuration.value("selectedParameters").toArray()) options.selectedParameters.insert(value.toString());
+                } else for (const auto& parameter : moduleModel.parameters) if (!parameter.local) options.selectedParameters.insert(parameter.name);
+                auto generated = ModuleTemplatePlanner::prepare(moduleModel, options);
+                if (generated.error.isEmpty()) generated.error = ModuleTemplatePlanner::validateInsertion(operation, moduleModel, generated.text);
+                if (!generated.error.isEmpty()) return failure("plan_rejected", generated.error, data);
+                if (!SimulationCommandPlanner::sourcesCurrent(moduleModel.captured)) return failure("source_conflict", "Module sources changed during preparation.", data);
+                if (!model->canInsert(start, 0, {}, {})) return failure("protected_range", "The insertion intersects template ownership.", data);
+                ordinaryStart = start; ordinaryText = generated.text;
+                QTextCursor cursor(&staged); cursor.setPosition(start);
+                const auto indentation = cursor.block().text().left(cursor.positionInBlock());
+                auto adjusted = ordinaryText;
+                for (int i = adjusted.size() - 2; i >= 0; --i) if (adjusted[i] == '\n') adjusted.insert(i + 1, indentation);
+                model->beginChange(); cursor.beginEditBlock(); cursor.insertText(adjusted);
+                model->applyChange(start, 0, adjusted.size()); cursor.endEditBlock(); model->endChange();
+            } else {
+                const auto plan = SimulationCommandPlanner::prepare(operation);
+                if (!plan.error.isEmpty()) return failure("plan_rejected", plan.error, data);
+                edits << TemplateDocumentEdit{plan.start, plan.length, plan.text, operation.item.templateParentId,
+                    operation.item.templateParentSlot, {}, plan.instance, plan.placeholders};
+            }
+            if (ordinaryStart < 0 && !model->applyEdits(edits, &selected, &error)) return failure("plan_rejected", error, data);
         }
         if (inputs->current && !inputs->current()) return failure("source_conflict", "A dependency changed during preparation.", data);
     } else return failure("unknown_command", "Unknown document operation.");
@@ -452,6 +509,9 @@ QJsonObject ZeroSlackAutomationService::document(const QJsonObject& request, con
         if (editor->toPlainText() != before) return failure("revision_conflict", "The open document changed during preparation.");
         if (command == "document.format") {
             const auto result = editor->formatDocument(); if (!result.accepted()) return failure("format_rejected", result.diagnostic);
+        } else if (ordinaryStart >= 0) {
+            QTextCursor cursor(editor->document()); cursor.setPosition(ordinaryStart); editor->setTextCursor(cursor);
+            if (!editor->insertOrdinaryTemplate(ordinaryText, {}, ordinaryText.size(), &error)) return failure("apply_failed", error);
         } else if (inputIndex >= 0) {
             auto transaction = editor->beginSynchronousEditTransaction();
             const auto slot = editor->templateModel()->instance(inputOwner)->inputs[inputIndex];

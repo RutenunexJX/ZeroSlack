@@ -7,6 +7,20 @@
       "label": "Timescale 1ns / 1ps",
       "description": "Insert a Verilog timescale directive",
       "body": "`timescale 1ns / 1ps"
+    },
+    {
+      "id": "user:signals",
+      "command": "/signals",
+      "label": "Module signals",
+      "description": "Create internal signals from a module's ports",
+      "editor": {"kind": "moduleDeclarations", "mode": "signals", "context": "module", "extensions": ["sv", "svh", "v", "vh"]}
+    },
+    {
+      "id": "user:parameters",
+      "command": "/parameters",
+      "label": "Module parameters",
+      "description": "Create parameter declarations from a module",
+      "editor": {"kind": "moduleDeclarations", "mode": "parameters", "context": "module", "extensions": ["sv", "svh", "v", "vh"]}
     }
   ]
 }
