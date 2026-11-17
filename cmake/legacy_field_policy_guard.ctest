@@ -508,10 +508,13 @@ set(PHASE_L_REVIEWED_SOURCE_NORMALIZATION "utf8-crlf-to-lf-v1")
 # Linked-context previews now use EditorBlockPreview; their obsolete URI regex was retired.
 # Template regex patterns, source inventory, extraction and normalization remain unchanged.
 # Provenance: build/coordination/20261114-block-scroll-sync/implementation/policy-regex-review01/REGEX-REVIEW.json.
+# 2026-11-17: review bundled-template changes in 2c3cdf0; refresh only two complete-source pins.
+# Regex statements, literals, purposes, fixed inventory and checking rules remain unchanged.
+# Provenance: build/coordination/20261114-block-scroll-sync/implementation/bundled-templates01/policy-review01/REGEX-REVIEW.json.
 set(PHASE_L_REVIEWED_REGEX_USAGE
     "src/completion/simulationcommandprefix.cpp|e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855|987c024b13a27e010517a6fc8b2905fa427aff71bc5086a59cf6ddcd509e64fe"
     "src/completion/templatecapabilities.cpp|2c44206dc8be8af7887134525d2aa91cf7a6621ed7c761c0ccaaa1bfcf2cdb4f|73417fc560e907e70e006231ea6bd869b1f5680052e1893c192c1ca3ef888664"
-    "src/completion/usertemplateservice.cpp|d8f9a2e3fb7bd43796d6ec0f40025ec9e7405bf9214adb1ba5e622b21b2076b0|2836edeb6a0e6f69062b0192a18ed4af42ae3576e72c8615caa343de04549d7b"
+    "src/completion/usertemplateservice.cpp|d8f9a2e3fb7bd43796d6ec0f40025ec9e7405bf9214adb1ba5e622b21b2076b0|79a6718ea6499d3155aff0563f0f60928040182a606506f8531e6b41954a1a29"
     "src/editor/tbinputassist.cpp|692ce60c6209858c8c3bef0412990d80a81b5c530af200e9f361bc695674081f|743e724100edbd98bafb8ca068b7d4c32df96468c1a229142c188877306b7a66"
     "src/integrations/xips/xipsassetsync.cpp|ebbffbf2fbd193b9d6fb14df17c662aa9c11399bee4a16ace7a712949234e203|494b643ed8808b47df2f64f8122e7ce5757793e0abe638c69db3e9f0dad72786"
     "src/integrations/xips/xipscontextprovider.cpp|85fde73909049adc944c53d777aa32858f23c1666c5ee6cd98073e7940cac896|f309ec69a2989f82793e33ac57195ff7c235ee2c8089f1b1e6d3a616a33d7959"
@@ -532,7 +535,7 @@ set(PHASE_L_REVIEWED_REGEX_USAGE
     # Provenance: build/coordination/20261106-web-retire/implementation/REGEX-REVIEW.json.
     # 2026-11-09 C/E shared-host placement; regex unchanged. Provenance: implementation/REGEX-REVIEW.json.
     "src/ui/linkedcontextcontroller.cpp|9c739a5da4dff7ce01f05291fd853ce472ca7a06c4c681be57674a099fa8e599|ebe39ff11eb0b0ed964d4431b0e52c865a6d03a591f6b04d477c028e7e21f861"
-    "src/ui/templatemanagerdialog.cpp|9b6e26960cb1535017135d00fd49807feb213d838e3a24063380eeea7b09923c|93268d8afeb085746aa68a649dbd58d6540fd668a052167df0e9a828de71a85a"
+    "src/ui/templatemanagerdialog.cpp|9b6e26960cb1535017135d00fd49807feb213d838e3a24063380eeea7b09923c|b7e58c930dacc0f820bb0dfe2cc1db6992341b475fe9b5c9e9faaefcceb2edeb"
 )
 zeroslack_verify_reviewed_regex_contract("${ZEROSLACK_SOURCE_DIR}"
     "${PHASE_L_REVIEWED_REGEX_SOURCE_REVISION}"
