@@ -17,6 +17,7 @@
 
 class QLabel;
 class QLineEdit;
+class QPlainTextEdit;
 class QMouseEvent;
 class QToolButton;
 class QScrollArea;
@@ -85,11 +86,10 @@ private:
     QVBoxLayout* layout = nullptr;
     QLabel* titleLabel = nullptr;
     QWidget* headerHost = nullptr;
-    QLabel* symbolIcon = nullptr;
-    QLabel* categoryLabel = nullptr;
     QPointer<QScrollArea> symbolScroll;
     QPointer<QWidget> symbolBody;
-    QPointer<QWidget> symbolFooter;
+    QPointer<QWidget> summaryText;
+    QPointer<QPlainTextEdit> definitionText;
     QRect anchorRect;
     QFont contentFont;
     QString defaultStyleSheet;
@@ -108,6 +108,7 @@ private:
     void applyAppearance();
     void buildSymbolCard();
     void resizeSymbolCard();
+    void resizeDefinitionPreview();
     QLabel* addLabel(const QString& text,
                      PeekContentRowRole role,
                      bool wordWrap);

@@ -129,7 +129,20 @@ SymbolHoverReport EditorSemanticContextService::symbolHoverReport(
     const EditorSemanticContext& context,
     const SourceIdentifierTarget* sourceIdentifier) const
 {
-    return SymbolHoverService::getInstance()->hoverForContext(context, sourceIdentifier);
+    auto report = SymbolHoverService::getInstance()->hoverForContext(context, sourceIdentifier);
+    if (report.available && report.unavailableReason.isEmpty()) {
+        const auto preview = DefinitionPreviewService::getInstance()->previewForContext(context, sourceIdentifier);
+        const int preceding = preview.highlightedLine - preview.firstLineNumber - 1;
+        if (preview.available && !preview.stale && preceding >= 0 && preceding < preview.codeLines.size()) {
+            const auto line = preview.codeLines.at(preceding).trimmed();
+            if (line.startsWith(QStringLiteral("//"))) {
+                report.commentText = line.mid(2).trimmed();
+                if (report.commentText.startsWith(QLatin1Char('/')) || report.commentText.startsWith(QLatin1Char('!')))
+                    report.commentText = report.commentText.mid(1).trimmed();
+            }
+        }
+    }
+    return report;
 }
 
 DefinitionPreviewReport EditorSemanticContextService::definitionPreviewReport(

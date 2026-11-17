@@ -6,7 +6,6 @@
 #include "applicationthememanager.h"
 #include "insightvisualstyle.h"
 #include "roundedicons.h"
-#include "uitypography.h"
 
 #include <QGraphicsDropShadowEffect>
 #include <QScrollArea>
@@ -24,7 +23,10 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QToolButton>
+#include <QTextBlock>
+#include <QTextDocument>
 #include <QVBoxLayout>
+#include <QtMath>
 
 namespace {
 QString locationText(const QString& fileName, int line)
@@ -41,13 +43,49 @@ bool hasCurrentEffectiveValue(const SymbolHoverReport& report)
     return report.effectiveValueStatus == EffectiveValueStatus::Current;
 }
 
-QString effectiveValueLabel(const SymbolHoverReport& report)
-{
-    if (report.instanceBound || !report.defaultEvaluation)
-        return QStringLiteral("effective value");
-    return QStringLiteral(
-        "default value (unbound instance / \u672a\u7ed1\u5b9a\u5b9e\u4f8b)");
-}
+class PeekTextRow final : public QWidget {
+public:
+    PeekTextRow(const QString& text, const QString& name, const QFont& font, QWidget* parent)
+        : QWidget(parent), view(UiControls::readOnlyText(text, this))
+    {
+        view->setObjectName(name);
+        view->setFont(font);
+        view->setFrameShape(QFrame::NoFrame);
+        view->setStyleSheet(QStringLiteral("QPlainTextEdit {background:transparent;border:0;padding:0;}"));
+        view->setLineWrapMode(QPlainTextEdit::WidgetWidth);
+        view->setWordWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
+        view->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        view->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        view->document()->setDocumentMargin(0);
+        view->setFocusPolicy(Qt::ClickFocus);
+        view->setMinimumSize(0,0);
+        view->setSizePolicy(QSizePolicy::Ignored,QSizePolicy::Ignored);
+        auto* row = new QVBoxLayout(this);
+        row->setContentsMargins(0,0,0,0);
+        row->setSizeConstraint(QLayout::SetNoConstraint);
+        row->addWidget(view);
+        QSizePolicy policy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        policy.setHeightForWidth(true);
+        setSizePolicy(policy);
+    }
+    int heightForWidth(int width) const override
+    {
+        QTextDocument measure;
+        measure.setDefaultFont(view->font());
+        measure.setDocumentMargin(0);
+        auto option = measure.defaultTextOption();
+        option.setWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
+        measure.setDefaultTextOption(option);
+        measure.setPlainText(view->toPlainText());
+        measure.setTextWidth(qMax(1,width));
+        return qCeil(measure.size().height()) + 2;
+    }
+    QSize sizeHint() const override { return QSize(240,heightForWidth(240)); }
+    QSize minimumSizeHint() const override { return QSize(0,view->fontMetrics().height()+2); }
+private:
+    QPlainTextEdit* view;
+};
+
 }
 
 EditorHoverPopup::EditorHoverPopup(QWidget* parent)
@@ -85,23 +123,11 @@ EditorHoverPopup::EditorHoverPopup(QWidget* parent)
     auto* headerLayout = new QHBoxLayout(headerHost);
     headerLayout->setContentsMargins(0, 0, 0, 0);
     headerLayout->setSpacing(6);
-    symbolIcon = new QLabel(headerHost);
-    symbolIcon->setObjectName(QStringLiteral("peekSymbolIcon"));
-    symbolIcon->setFixedSize(18, 18);
-    symbolIcon->hide();
-    headerLayout->addWidget(symbolIcon, 0, Qt::AlignVCenter);
-
     titleLabel = UiControls::label(headerHost);
     titleLabel->setObjectName(QStringLiteral("peekTitle"));
     titleLabel->setTextFormat(Qt::PlainText);
     titleLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
     headerLayout->addWidget(titleLabel,1);
-    categoryLabel = UiControls::label(headerHost);
-    categoryLabel->setObjectName(QStringLiteral("peekCategory"));
-    categoryLabel->setTextFormat(Qt::PlainText);
-    categoryLabel->hide();
-    headerLayout->addWidget(categoryLabel,0,Qt::AlignVCenter);
-
     closeButton = UiControls::toolButton(this);
     closeButton->setObjectName(QStringLiteral("peekCloseButton"));
     closeButton->setText(QStringLiteral("\u00d7"));
@@ -174,6 +200,12 @@ void EditorHoverPopup::showContent(const PeekContentModel& content,
     closeButton->setFont(editorFont);
 
     applyAppearance();
+    if (content.symbolCard || content.readOnlyText.contentSized) {
+        titleLabel->hide();
+        summaryText = new PeekTextRow(content.title,QStringLiteral("peekTitleText"),titleLabel->font(),headerHost);
+        if (!content.symbolCard) summaryText->findChild<QPlainTextEdit*>()->setFocusPolicy(Qt::NoFocus);
+        qobject_cast<QHBoxLayout*>(headerHost->layout())->insertWidget(0,summaryText,1);
+    }
     if (content.symbolCard)
         buildSymbolCard();
     else
@@ -203,7 +235,25 @@ void EditorHoverPopup::showContent(const PeekContentModel& content,
                 qMin(minimum.height(),
                      qMax(1, parentWidget()->height() - 72)));
         }
-        textEdit->setMinimumSize(minimum);
+        if (content.readOnlyText.contentSized) {
+            definitionText = textEdit;
+            textEdit->setMinimumSize(0,0);
+            textEdit->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Ignored);
+            textEdit->setFocusPolicy(Qt::NoFocus);
+            const auto block = textEdit->document()->findBlockByNumber(content.readOnlyText.highlightedLine);
+            if (block.isValid()) {
+                QTextEdit::ExtraSelection selection;
+                selection.cursor = QTextCursor(block);
+                selection.format.setBackground(palette().alternateBase());
+                selection.format.setProperty(QTextFormat::FullWidthSelection,true);
+                textEdit->setExtraSelections({selection});
+                auto cursor = selection.cursor;
+                cursor.setPosition(block.position()+qBound(0,content.readOnlyText.highlightedColumn,block.length()-1));
+                textEdit->setTextCursor(cursor);
+            }
+        } else {
+            textEdit->setMinimumSize(minimum);
+        }
         layout->addWidget(textEdit);
     }
     if (content.editor.enabled) {
@@ -262,6 +312,7 @@ void EditorHoverPopup::showContent(const PeekContentModel& content,
             button->setDefault(action.defaultAction);
             button->setAutoDefault(false);
             button->setFocusPolicy(Qt::NoFocus);
+            if (content.readOnlyText.contentSized) button->setMinimumSize(button->sizeHint());
             if (action.role
                 == PeekContentActionRole::Destructive
                 && !button->property("zeroslackElaControl").toBool()) {
@@ -292,8 +343,16 @@ void EditorHoverPopup::showContent(const PeekContentModel& content,
                  qMax(1, parentWidget()->height() - 8)));
     }
     setMaximumSize(maximum);
+    // New children added to an already visible popup must participate in this layout pass.
+    for (int i=0;i<layout->count();++i)
+        if (auto* widget=layout->itemAt(i)->widget()) widget->show();
+    if (summaryText) summaryText->show();
+    headerHost->show();
+    QFrame::layout()->invalidate();
     if (content.symbolCard) {
         resizeSymbolCard();
+    } else if (content.readOnlyText.contentSized) {
+        resizeDefinitionPreview();
     } else {
         adjustSize();
         resize(qMin(width(), maximum.width()), qMin(height(), maximum.height()));
@@ -302,6 +361,7 @@ void EditorHoverPopup::showContent(const PeekContentModel& content,
     show();
     // Newly inserted child layouts acquire their real size hints when shown.
     if (content.symbolCard) resizeSymbolCard();
+    if (content.readOnlyText.contentSized) resizeDefinitionPreview();
     raise();
 }
 
@@ -332,57 +392,41 @@ void EditorHoverPopup::applyAppearance()
     auto* header = qobject_cast<QHBoxLayout*>(headerHost->layout());
     outer->setContentsMargins(card ? 1 : 10, card ? 1 : 8, card ? 1 : 10, card ? 1 : 8);
     outer->setSpacing(card ? 0 : 4);
-    header->setContentsMargins(card ? 10 : 0, card ? 6 : 0, card ? 6 : 0, card ? 4 : 0);
-    header->setSpacing(6);
-    symbolIcon->setVisible(card);
-    categoryLabel->setVisible(card && !currentContent.category.isEmpty());
-    titleLabel->setWordWrap(false);
+    header->setContentsMargins(0, 0, 0, 0);
+    header->setSpacing(8);
+    titleLabel->setWordWrap(card);
+    titleLabel->setTextInteractionFlags(card
+        ? Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard : Qt::TextSelectableByMouse);
     titleLabel->setSizePolicy(card ? QSizePolicy::Ignored : QSizePolicy::Preferred, QSizePolicy::Preferred);
-    titleLabel->setToolTip(currentContent.title);
+    titleLabel->setToolTip(QString());
     closeButton->setFixedSize(QSize(24,24));
     if (!card) {
+        header->setAlignment(closeButton, Qt::Alignment());
         setStyleSheet(defaultStyleSheet);
         setGraphicsEffect(nullptr);
         closeButton->setIcon(QIcon());
         closeButton->setText(QStringLiteral("\u00d7"));
         return;
     }
-
-    setFont(UiTypography::font());
-    QFont symbolFont = contentFont;
-    symbolFont.setPixelSize(UiTypography::font(UiTypography::Role::PanelTitle).pixelSize());
-    symbolFont.setWeight(QFont::DemiBold);
-    titleLabel->setFont(symbolFont);
-    UiTypography::apply(categoryLabel, UiTypography::Role::Metadata);
-    categoryLabel->setText(currentContent.category);
+    setFont(contentFont);
+    QFont codeFont = contentFont;
+    codeFont.setWeight(QFont::DemiBold);
+    titleLabel->setFont(codeFont);
     closeButton->setText(QString());
     closeButton->setIcon(RoundedIcons::icon(RoundedIcons::Close));
-    closeButton->setIconSize(QSize(14, 14));
+    closeButton->setIconSize(QSize(14,14));
+    header->setAlignment(closeButton, Qt::AlignTop);
     const auto& theme = ApplicationThemeManager::instance().theme();
-    const QColor surface = theme.panelBackground;
-    const QColor border = InsightVisualStyle::subtleBorder(surface, theme.textPrimary);
+    const auto surface = theme.panelBackground;
+    const auto border = InsightVisualStyle::subtleBorder(surface, theme.textPrimary);
     setStyleSheet(QStringLiteral(
         "QFrame#editorHoverPopup {background:%1;border:1px solid %2;border-radius:6px;}"
-        "QWidget#peekHeader, QWidget#peekFooter {background:transparent;}"
-        "QLabel {background:transparent;border:0;color:%3;}"
-        "QLabel#peekCategory, QLabel#peekFieldLabel, QLabel#peekDetailRow {color:%4;}"
-        "QLabel#peekNotice {color:%5;}"
-        "QScrollArea#peekSymbolScroll, QWidget#peekSymbolBody, QWidget#peekDetails {background:%1;border:0;}"
-        "QPlainTextEdit#peekLongDetail {background:%1;color:%3;border:0;}")
+        "QWidget#peekHeader, QWidget#peekDetails {background:transparent;}"
+        "QLabel, QPlainTextEdit {background:transparent;border:0;color:%3;}"
+        "QPlainTextEdit#peekComment {color:%4;} QPlainTextEdit#peekNotice {color:%5;}"
+        "QScrollArea#peekSymbolScroll, QWidget#peekSymbolBody {background:%1;border:0;}")
         .arg(surface.name(),border.name(),theme.textPrimary.name(),theme.textSecondary.name(),theme.warning.name()));
-    const bool parameter=currentContent.category.contains("parameter",Qt::CaseInsensitive);
-    const bool enumeration=currentContent.category.contains("enum",Qt::CaseInsensitive);
-    auto kind = parameter ? RoundedIcons::Parameter : enumeration ? RoundedIcons::EnumType : RoundedIcons::CatalogSize;
-    if (currentContent.portAccent) {
-        const auto category = currentContent.category.toLower();
-        if (category == "input" || category == "input port") kind = RoundedIcons::InputPort;
-        else if (category == "output" || category == "output port") kind = RoundedIcons::OutputPort;
-        else if (category == "inout" || category == "inout port") kind = RoundedIcons::InoutPort;
-    }
-    symbolIcon->setVisible(kind != RoundedIcons::CatalogSize);
-    if (symbolIcon->isVisible()) symbolIcon->setPixmap(RoundedIcons::icon(kind).pixmap(QSize(18,18),devicePixelRatioF()));
     setGraphicsEffect(nullptr);
-
 }
 
 void EditorHoverPopup::buildSymbolCard()
@@ -398,153 +442,119 @@ void EditorHoverPopup::buildSymbolCard()
     symbolBody = body;
     body->setObjectName(QStringLiteral("peekSymbolBody"));
     auto* bodyLayout = new QVBoxLayout(body);
-    bodyLayout->setContentsMargins(10,4,10,4);
+    bodyLayout->setContentsMargins(10,8,10,8);
     bodyLayout->setSpacing(6);
-    auto* details = new QWidget(body);
-    details->setObjectName(QStringLiteral("peekDetails"));
-    auto* detailLayout = new QVBoxLayout(details);
-    detailLayout->setContentsMargins(0,6,0,0);
-    detailLayout->setSpacing(6);
-    QFont codeFont = contentFont;
-    codeFont.setPixelSize(UiTypography::font().pixelSize());
-    codeFont.setWeight(QFont::Normal);
-    QStringList typeSummary;
-    for(const auto& row:currentContent.rows)if(!row.detail && (row.fieldLabel=="Type" || row.fieldLabel=="Signedness"))typeSummary.append(row.fieldValue);
-    if(!typeSummary.isEmpty()) {
-        auto* summary=UiControls::label(typeSummary.join(QStringLiteral(" · ")),body);
-        summary->setObjectName("peekTypeSummary");summary->setTextFormat(Qt::PlainText);summary->setWordWrap(true);
-        summary->setTextInteractionFlags(Qt::TextSelectableByMouse);summary->setFont(codeFont);
-        summary->setSizePolicy(QSizePolicy::Ignored,QSizePolicy::Preferred);bodyLayout->addWidget(summary);
-    }
-    for (const auto& row : currentContent.rows) {
-        if(!row.detail && (row.fieldLabel=="Type" || row.fieldLabel=="Signedness"))continue;
-        if (!row.detail && !row.fieldLabel.isEmpty()) {
-            auto* field = new QWidget(body);
-            auto* fieldLayout = new QHBoxLayout(field);
-            fieldLayout->setContentsMargins(0, 0, 0, 0);
-            fieldLayout->setSpacing(6);
-            auto* label = UiControls::label(row.fieldLabel + QLatin1Char(':'), field);
-            label->setObjectName(QStringLiteral("peekFieldLabel"));
-            label->setTextFormat(Qt::PlainText);
-            label->setFont(UiTypography::font());
-            fieldLayout->addWidget(label, 0, Qt::AlignTop);
-            auto* value = UiControls::label(row.fieldValue, field);
-            value->setObjectName(QStringLiteral("peekFieldValue"));
-            value->setAccessibleName(row.text);
-            value->setProperty("peekField", row.fieldLabel);
-            value->setTextFormat(Qt::PlainText);
-            value->setWordWrap(true);
-            value->setTextInteractionFlags(Qt::TextSelectableByMouse);
-            value->setAlignment(Qt::AlignLeft | Qt::AlignTop);
-            value->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-            QFont valueFont = codeFont;
-            if (row.prominent) valueFont.setWeight(QFont::DemiBold);
-            value->setFont(valueFont);
-            fieldLayout->addWidget(value, 1);
-            bodyLayout->addWidget(field);
-        } else if (row.detail && (row.text.size() > 180 || row.text.count(QLatin1Char('\n')) > 3)) {
-            auto* text = UiControls::readOnlyText(row.text, details);
-            text->setObjectName(QStringLiteral("peekLongDetail"));
-            text->setReadOnly(true);
-            text->setFont(codeFont);
-            text->setFrameShape(QFrame::NoFrame);
-            text->setWordWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
-            text->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-            text->setFixedHeight(6*QFontMetrics(codeFont).lineSpacing());
-            detailLayout->addWidget(text);
-        } else {
-            auto* label = UiControls::label(row.text, row.detail ? details : body);
-            label->setObjectName(row.detail ? QStringLiteral("peekDetailRow") : QStringLiteral("peekNotice"));
-            label->setTextFormat(Qt::PlainText);
-            label->setWordWrap(true);
-            label->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-            label->setTextInteractionFlags(Qt::TextSelectableByMouse);
-            label->setFont(row.role == PeekContentRowRole::Code ? codeFont : UiTypography::font());
-            (row.detail ? detailLayout : bodyLayout)->addWidget(label);
-        }
-    }
-    const bool hasDetails = detailLayout->count() > 0;
-    bodyLayout->addWidget(details);
-    details->hide();
-    scroll->setWidget(body);
-    layout->addWidget(scroll);
-    auto* footer = new QWidget(this);
-    symbolFooter = footer;
-    footer->setObjectName(QStringLiteral("peekFooter"));
-    auto* footerLayout = new QHBoxLayout(footer);
-    footerLayout->setContentsMargins(6,4,6,6);
-    footerLayout->setSpacing(8);
-    if (hasNavigableTarget()) {
-        auto* source = UiControls::toolButton(footer);
-        source->setObjectName(QStringLiteral("peekSourceLink"));
-        source->setText(QStringLiteral("%1:%2").arg(QFileInfo(targetFile).fileName()).arg(targetLine));
-        source->setToolTip(QStringLiteral("%1:%2 — Go to definition").arg(targetFile).arg(targetLine));
-        source->setAccessibleName(source->toolTip());
-        source->setIcon(RoundedIcons::icon(RoundedIcons::File));
-        source->setIconSize(QSize(16, 16));
-        source->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-        source->setFont(UiTypography::font(UiTypography::Role::Metadata));
-        source->setFocusPolicy(Qt::NoFocus);
-        source->setCursor(Qt::PointingHandCursor);
-        source->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-        source->setEnabled(bool(navigationHandler));
-        connect(source, &QToolButton::clicked, this, [this]() {
-            // Copy the callback and target: navigation may close or destroy this popup.
-            auto navigate = navigationHandler;
-            const auto target = currentContent.navigationTarget;
-            if (navigate && target.isValid()) navigate(target.fileName, target.line, target.column);
-        });
-        footerLayout->addWidget(source, 1);
-    } else {
-        footerLayout->addStretch(1);
-    }
-    if (hasDetails) {
-        auto* toggle = UiControls::toolButton(footer);
+    // Summary and optional enum members share one scrolling layout.
+    QFrame::layout()->removeWidget(headerHost);
+    bodyLayout->addWidget(headerHost);
+    const auto addText = [&](const PeekContentRow& row, QVBoxLayout* target) {
+        const auto name = row.role == PeekContentRowRole::Warning ? QStringLiteral("peekNotice")
+            : row.role == PeekContentRowRole::Muted ? QStringLiteral("peekComment")
+            : row.detail ? QStringLiteral("peekDetailRow") : QStringLiteral("peekSummaryRow");
+        target->addWidget(new PeekTextRow(row.text,name,contentFont,target->parentWidget()));
+    };
+    for (const auto& row : currentContent.rows)
+        if (!row.detail) addText(row, bodyLayout);
+
+    QStringList sections;
+    for (const auto& row : currentContent.rows)
+        if (row.detail && !row.detailSection.isEmpty() && !sections.contains(row.detailSection))
+            sections.append(row.detailSection);
+    for (const auto& section : sections) {
+        auto* toggle = UiControls::toolButton(body);
         toggle->setObjectName(QStringLiteral("peekDetailsToggle"));
-        toggle->setText(QStringLiteral("Details"));
-        toggle->setCheckable(true);
-        toggle->setIcon(RoundedIcons::icon(RoundedIcons::Down));
-        toggle->setIconSize(QSize(12, 12));
+        toggle->setProperty("peekSection", section);
+        toggle->setText(section);
+        toggle->setArrowType(Qt::RightArrow);
         toggle->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-        toggle->setFont(UiTypography::font(UiTypography::Role::Metadata));
+        toggle->setFont(contentFont);
         toggle->setFocusPolicy(Qt::NoFocus);
+        toggle->setAutoRaise(true);
         toggle->setCursor(Qt::PointingHandCursor);
-        connect(toggle, &QToolButton::toggled, this, [this, details, toggle](bool expanded) {
+        bodyLayout->addWidget(toggle,0,Qt::AlignLeft);
+        auto* details = new QWidget(body);
+        details->setObjectName(QStringLiteral("peekDetails"));
+        details->setProperty("peekSection", section);
+        auto* detailLayout = new QVBoxLayout(details);
+        detailLayout->setContentsMargins(0,0,0,0);
+        detailLayout->setSpacing(6);
+        for (const auto& row : currentContent.rows)
+            if (row.detail && row.detailSection == section) addText(row, detailLayout);
+        bodyLayout->addWidget(details);
+        details->hide();
+        connect(toggle, &QToolButton::clicked, this, [this, details, toggle] {
+            const bool expanded = !details->isVisible();
             details->setVisible(expanded);
-            toggle->setText(expanded ? QStringLiteral("Hide details") : QStringLiteral("Details"));
-            toggle->setIcon(RoundedIcons::icon(expanded ? RoundedIcons::Up : RoundedIcons::Down));
+            toggle->setArrowType(expanded ? Qt::DownArrow : Qt::RightArrow);
             resizeSymbolCard();
         });
-        footerLayout->addWidget(toggle);
     }
-    layout->addWidget(footer);
-    body->show();
-    scroll->show();
-    footer->show();
+    scroll->setWidget(body);
+    layout->addWidget(scroll);
+    headerHost->show(); body->show(); scroll->show();
 }
 
 void EditorHoverPopup::resizeSymbolCard()
 {
-    if (!symbolScroll || !symbolBody || !symbolFooter) return;
-    const QFontMetrics metrics(titleLabel->font());
-    int desired=metrics.horizontalAdvance(currentContent.title.left(80))+categoryLabel->sizeHint().width()+86;
-    for(const auto& row:currentContent.rows)if(!row.detail)
-        desired=qMax(desired,metrics.horizontalAdvance(row.fieldValue.isEmpty()?row.text.left(80):row.fieldValue.left(80))+28);
-    const int cardWidth=qMin(maximumWidth(),qMax(24*fontMetrics().averageCharWidth(),desired));
-    setMinimumWidth(0);
-    resize(cardWidth, height());
-    // Reserve space for a vertical scrollbar before measuring wrapped rows.
-    const int bodyWidth = qMax(1, cardWidth - 2 - style()->pixelMetric(QStyle::PM_ScrollBarExtent));
-    auto* bodyLayout = symbolBody->layout();
-    bodyLayout->invalidate();
-    const int bodyHeight = qMax(bodyLayout->minimumSize().height(), bodyLayout->totalHeightForWidth(bodyWidth));
-    const int headerHeight = headerHost->layout()->totalHeightForWidth(cardWidth - 2);
-    const int footerHeight = symbolFooter->sizeHint().height();
-    const int available = qMax(1, maximumHeight() - qMax(0, headerHeight) - footerHeight - 2);
-    symbolScroll->setFixedHeight(qBound(1, bodyHeight, available));
-    QFrame::layout()->invalidate();
+    if (!symbolScroll || !symbolBody) return;
+    if (parentWidget())
+        setMaximumSize(currentContent.maximumSize.boundedTo(parentWidget()->size() - QSize(8,8)).expandedTo(QSize(1,1)));
+    int desired = QFontMetrics(titleLabel->font()).horizontalAdvance(currentContent.title.left(80)) + 58;
+    for (const auto& row : currentContent.rows)
+        if (!row.detail) desired = qMax(desired, QFontMetrics(font()).horizontalAdvance(row.text.left(80)) + 24);
+    const int cardWidth = qMin(maximumWidth(), qMax(240, desired));
+    const auto measureBody = [&](int bodyWidth) {
+        const int textWidth = qMax(1,bodyWidth-20);
+        for (auto* widget : symbolBody->findChildren<QWidget*>()) {
+            if (auto* row = dynamic_cast<PeekTextRow*>(widget))
+                row->setFixedHeight(row->heightForWidth(qMax(1,textWidth-(row==summaryText ? closeButton->width()+8 : 0))));
+        }
+        headerHost->setFixedHeight(qMax(closeButton->height(),summaryText ? summaryText->height() : 0));
+        auto* bodyLayout = symbolBody->layout();
+        bodyLayout->invalidate();
+        const int measured = bodyLayout->totalHeightForWidth(bodyWidth);
+        return qMax(bodyLayout->minimumSize().height(), measured >= 0 ? measured : bodyLayout->sizeHint().height());
+    };
+    const int availableHeight = qMax(1,maximumHeight()-2);
+    int bodyHeight = measureBody(qMax(1,cardWidth-2));
+    if (bodyHeight > availableHeight)
+        bodyHeight = measureBody(qMax(1,cardWidth-2-style()->pixelMetric(QStyle::PM_ScrollBarExtent)));
+    symbolScroll->setFixedHeight(qMin(availableHeight,bodyHeight));
+    resize(cardWidth,symbolScroll->height()+2);
     QFrame::layout()->activate();
-    resize(cardWidth, qMin(maximumHeight(), qMax(0, headerHeight) + footerHeight + symbolScroll->height() + 2));
+    moveNear(anchorRect);
+}
+
+void EditorHoverPopup::resizeDefinitionPreview()
+{
+    if (!definitionText) return;
+    if (parentWidget())
+        setMaximumSize(currentContent.maximumSize.boundedTo(parentWidget()->size()-QSize(8,8)).expandedTo(QSize(1,1)));
+    int width = 320;
+    for (const auto& line : currentContent.readOnlyText.text.split(QLatin1Char('\n')))
+        width = qMax(width,definitionText->fontMetrics().horizontalAdvance(line)+52);
+    width = qMin(maximumWidth(),width);
+    definitionText->setMinimumHeight(0);
+    definitionText->setMaximumHeight(QWIDGETSIZE_MAX);
+    const int innerWidth = qMax(1,width-20);
+    headerHost->setFixedHeight(qMax(closeButton->height(),summaryText
+        ? summaryText->heightForWidth(qMax(1,innerWidth-closeButton->width()-8)) : titleLabel->sizeHint().height()));
+    if (summaryText) summaryText->setFixedHeight(headerHost->height());
+    int controls = 16+headerHost->height()+4;
+    for (int i=0;i<layout->count();++i) {
+        const auto* item=layout->itemAt(i);
+        if (item->widget()!=definitionText) {
+            const auto* widget=item->widget();
+            controls += widget && widget->hasHeightForWidth() ? widget->heightForWidth(innerWidth) : item->sizeHint().height();
+        }
+    }
+    controls += qMax(0,layout->count()-1)*layout->spacing();
+    const int wantedHeight = definitionText->document()->blockCount()*definitionText->fontMetrics().lineSpacing()
+        + style()->pixelMetric(QStyle::PM_ScrollBarExtent)+12;
+    definitionText->setFixedHeight(qMax(1,qMin(wantedHeight,maximumHeight()-controls)));
+    resize(width,qMin(maximumHeight(),controls+definitionText->height()));
+    QFrame::layout()->activate();
+    definitionText->ensureCursorVisible();
     moveNear(anchorRect);
 }
 
@@ -553,152 +563,67 @@ void EditorHoverPopup::showHover(const SymbolHoverReport& report,
                                  const QFont& editorFont)
 {
     PeekContentModel content;
-    content.kind =
-        report.parameterLike || report.enumMember || report.port
-        ? PeekContentKind::EffectiveValue
-        : PeekContentKind::DeclarationPreview;
-    content.title = report.symbolName;
-    content.maximumSize = QSize(520, 480);
+    content.kind = report.parameterLike || report.enumMember || report.port
+        ? PeekContentKind::EffectiveValue : PeekContentKind::DeclarationPreview;
     content.symbolCard = true;
-    content.category = report.displayKind.trimmed();
-    if (!content.category.isEmpty()) content.category[0] = content.category[0].toUpper();
-    content.portAccent = report.port;
-    content.navigationTarget = {report.definitionFile, report.definitionLine, 1};
-
-    auto addRow = [&content](const QString& text,
-                             PeekContentRowRole role =
-                                 PeekContentRowRole::Body,
-                             bool wrap = false) {
-        if (!text.isEmpty())
-            content.rows.append({text, role, wrap});
+    content.maximumSize = QSize(520,480);
+    const auto addRow = [&](const QString& text, PeekContentRowRole role, const QString& section = QString()) {
+        if (text.trimmed().isEmpty()) return;
+        PeekContentRow row{text,role,true};
+        row.detail = !section.isEmpty(); row.detailSection = section;
+        content.rows.append(row);
     };
     if (!report.unavailableReason.isEmpty()) {
-        addRow(report.unavailableReason, PeekContentRowRole::Warning, true);
+        content.title = QStringLiteral("Information unavailable");
+        addRow(report.unavailableReason,PeekContentRowRole::Warning);
+    } else if (!report.moduleName.isEmpty()) {
+        content.title = report.moduleName;
     } else {
-        auto addField = [&](const QString& label,
-                            const QString& value,
-                            bool wrap = false) {
-            if (value.isEmpty())
-                return;
-            PeekContentRow row{QStringLiteral("%1: %2").arg(label, value),
-                               PeekContentRowRole::Body, wrap};
-            row.detail = true;
-            if (label == effectiveValueLabel(report) || label == QStringLiteral("type")
-                || label == QStringLiteral("resolved type") || label == QStringLiteral("signedness")
-                || label == QStringLiteral("enum")) {
-                row.detail = false;
-                row.fieldValue = value;
-                row.fieldLabel = label;
-                row.fieldLabel[0] = row.fieldLabel[0].toUpper();
-                if (label == effectiveValueLabel(report)) {
-                    row.fieldLabel = report.defaultEvaluation && !report.instanceBound
-                        ? QStringLiteral("Default value") : QStringLiteral("Value");
-                    row.prominent = true;
-                } else if (label == QStringLiteral("resolved type")) {
-                    row.fieldLabel = QStringLiteral("Type");
-                }
+        const bool current = hasCurrentEffectiveValue(report);
+        if (report.parameterLike || report.enumMember) {
+            if (current && !report.valueText.isEmpty()) {
+                const QString domain = !report.parameterLike ? QString()
+                    : report.defaultEvaluation && !report.instanceBound
+                        ? QStringLiteral("Default ") : QStringLiteral("Effective ");
+                content.title = domain + report.valueText;
             }
-            content.rows.append(row);
-        };
-
-        addField(QStringLiteral("owner"), report.ownerName);
-
-        addField(QStringLiteral("declaration"),
-                 report.declarationText,
-                 true);
-
-        const bool staleEffectiveValue =
-            report.effectiveValueStatus == EffectiveValueStatus::Stale;
-        if (staleEffectiveValue
-            && (report.parameterLike || report.enumMember || report.port)) {
-            addRow(
-                QStringLiteral(
-                    "effective value: stale (waiting for the current document revision)"),
-                PeekContentRowRole::Warning, true);
+            if (report.enumMember && current)
+                addRow(report.enumTypeName,PeekContentRowRole::Code);
+            if (report.enumMember && current && !report.enumMembers.isEmpty())
+                addRow(report.enumMembers.join(QLatin1Char('\n')),PeekContentRowRole::Code,QStringLiteral("Enum members"));
+        } else if (current) {
+            QString type = report.resolvedTypeText.isEmpty() ? report.typeText : report.resolvedTypeText;
+            type.replace(QStringLiteral("$["),QStringLiteral(" ["));
+            if (!report.unpackedDimensionsText.isEmpty() && !type.contains(report.unpackedDimensionsText))
+                type += QLatin1Char(' ') + report.unpackedDimensionsText;
+            content.title = (report.direction + QLatin1Char(' ') + type).trimmed();
         }
-        const bool unavailableEffectiveValue =
-            report.effectiveValueStatus == EffectiveValueStatus::Unavailable
-            || report.effectiveValueStatus == EffectiveValueStatus::Error;
-        if (unavailableEffectiveValue
-            && (report.parameterLike || report.enumMember || report.port)) {
-            addRow(QStringLiteral("effective value: unavailable"),
-                   PeekContentRowRole::Warning, true);
+        if (content.title.isEmpty()) {
+            content.title = report.effectiveValueStatus == EffectiveValueStatus::Stale
+                ? QStringLiteral("Analysis stale") : QStringLiteral("Information unavailable");
         }
-
-        if (report.parameterLike) {
-            if (hasCurrentEffectiveValue(report)) {
-                addField(effectiveValueLabel(report), report.valueText, true);
-                if (report.defaultEvaluation && !report.instanceBound)
-                    addRow(QStringLiteral("Default evaluation · no instance bound"), PeekContentRowRole::Muted, true);
-                addField(QStringLiteral("value source"),
-                         report.valueSource);
-                addField(QStringLiteral("instance path"),
-                         report.instancePath);
-                addField(QStringLiteral("type"),
-                         report.resolvedTypeText);
-                addField(QStringLiteral("bit width"),
-                         report.bitWidthText);
+        if (!current && report.macroSignatureText.isEmpty())
+            addRow(report.effectiveValueStatus == EffectiveValueStatus::Stale
+                ? QStringLiteral("Waiting for the current document revision.")
+                : report.evaluationFailureReason.isEmpty() ? QStringLiteral("No current semantic result.")
+                : report.evaluationFailureReason,PeekContentRowRole::Warning);
+        if (current && !report.enumMember && !report.instanceBound)
+            addRow(report.ownerName,PeekContentRowRole::Muted);
+        if (current && report.parameterLike) {
+            if (report.expressionText != report.valueText)
+                addRow(report.expressionText,PeekContentRowRole::Code);
+            if (report.instanceBound) {
+                addRow(report.instancePath,PeekContentRowRole::Muted);
+                QString source = report.valueSource;
+                source.remove(QStringLiteral("slang elaborated "),Qt::CaseInsensitive);
+                addRow(source,PeekContentRowRole::Muted);
             }
-            addField(QStringLiteral("expression"),
-                     report.expressionText,
-                     true);
-        } else if (report.enumMember) {
-            if (hasCurrentEffectiveValue(report)) {
-                addField(effectiveValueLabel(report), report.valueText, true);
-                if (report.defaultEvaluation && !report.instanceBound)
-                    addRow(QStringLiteral("Default evaluation · no instance bound"), PeekContentRowRole::Muted, true);
-                addField(QStringLiteral("enum"), report.enumTypeName);
-                addField(QStringLiteral("underlying bit width"),
-                         report.enumUnderlyingBitWidthText);
-                addField(QStringLiteral("value source"),
-                         report.valueSource);
-                addField(QStringLiteral("instance path"),
-                         report.instancePath);
-            }
-        } else if (report.port) {
-            if (hasCurrentEffectiveValue(report)) {
-                addField(QStringLiteral("resolved type"),
-                         report.resolvedTypeText);
-                addField(QStringLiteral("packed dimensions"),
-                         report.packedDimensionsText);
-                addField(QStringLiteral("unpacked dimensions"),
-                         report.unpackedDimensionsText);
-                addField(QStringLiteral("bit width"),
-                         report.bitWidthText);
-                addField(QStringLiteral("signedness"),
-                         report.signednessText);
-                addField(QStringLiteral("interface"),
-                         report.interfaceName);
-                addField(QStringLiteral("modport"), report.modportName);
-                addField(QStringLiteral("instance path"),
-                         report.instancePath);
-            }
-        } else if (!report.typeText.isEmpty()) {
-            addField(QStringLiteral("type"), report.typeText);
         }
-
-        if (!report.evaluationFailureReason.isEmpty()
-            && !staleEffectiveValue) {
-            addRow(QStringLiteral("evaluation failed: %1")
-                       .arg(report.evaluationFailureReason),
-                   PeekContentRowRole::Warning);
-        }
-
-        if (!report.macroSignatureText.isEmpty()) {
-            addRow(QStringLiteral("macro: %1")
-                       .arg(report.macroSignatureText),
-                   PeekContentRowRole::Code, true);
-        }
-        if (!report.macroBodyText.isEmpty()) {
-            PeekContentRow body{QStringLiteral("body: %1").arg(report.macroBodyText), PeekContentRowRole::Code, true};
-            body.detail = true;
-            content.rows.append(body);
-        }
+        if (!report.macroSignatureText.isEmpty()) content.title = report.macroSignatureText;
+        addRow(report.macroBodyText,PeekContentRowRole::Code);
     }
-
-    showContent(content,
-                QRect(globalPosition, QSize(1, 1)),
-                editorFont);
+    if (!report.commentText.isEmpty()) addRow(report.commentText.section(QLatin1Char('\n'),0,0),PeekContentRowRole::Muted);
+    showContent(content,QRect(globalPosition,QSize(1,1)),editorFont);
 }
 
 void EditorHoverPopup::showPreview(const DefinitionPreviewReport& report,
@@ -724,20 +649,21 @@ void EditorHoverPopup::showPreview(const DefinitionPreviewReport& report,
             {location, PeekContentRowRole::Muted, false});
 
     if (report.available) {
+        QStringList lines;
         for (int i = 0; i < report.codeLines.size(); ++i) {
             const int lineNumber = report.firstLineNumber + i;
             const QString line =
                 QStringLiteral("%1  %2")
                     .arg(lineNumber, 4)
                     .arg(report.codeLines.at(i));
-            const bool highlighted = lineNumber == report.highlightedLine;
-            content.rows.append(
-                {line,
-                 highlighted
-                     ? PeekContentRowRole::HighlightedCode
-                     : PeekContentRowRole::Code,
-                 false});
+            lines.append(line);
         }
+        content.readOnlyText.enabled = true;
+        content.readOnlyText.contentSized = true;
+        content.readOnlyText.objectName = QStringLiteral("peekDefinitionCode");
+        content.readOnlyText.text = lines.join(QLatin1Char('\n'));
+        content.readOnlyText.highlightedLine = report.highlightedLine-report.firstLineNumber;
+        content.readOnlyText.highlightedColumn = qMax(0,report.targetColumn-1)+6;
     } else {
         content.rows.append(
             {report.unavailableReason.isEmpty()
@@ -966,7 +892,6 @@ const PeekContentModel& EditorHoverPopup::contentModel() const
 
 bool EditorHoverPopup::eventFilter(QObject* watched, QEvent* event)
 {
-    Q_UNUSED(watched)
     if (!isVisible() || !event) {
         return QFrame::eventFilter(watched, event);
     }
@@ -976,6 +901,21 @@ bool EditorHoverPopup::eventFilter(QObject* watched, QEvent* event)
         if (keyEvent->key() == Qt::Key_Escape) {
             closePopup();
             return true;
+        }
+        if (currentContent.symbolCard) {
+            const auto* receiver = qobject_cast<QWidget*>(watched);
+            const bool inside = receiver && (receiver == this || isAncestorOf(receiver));
+            const bool editingKey = !(keyEvent->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier))
+                && (!keyEvent->text().isEmpty() || keyEvent->key() == Qt::Key_Backspace || keyEvent->key() == Qt::Key_Delete);
+            if (editingKey && receiver && parentWidget()
+                && (inside || receiver == parentWidget() || parentWidget()->isAncestorOf(receiver))) {
+                const QPointer<QWidget> editor = focusReturnWidget;
+                closePopup();
+                if (inside && editor) {
+                    QApplication::sendEvent(editor, keyEvent);
+                    return true;
+                }
+            }
         }
         if (keyEvent->key() == Qt::Key_Return
             || keyEvent->key() == Qt::Key_Enter) {
@@ -996,6 +936,9 @@ bool EditorHoverPopup::eventFilter(QObject* watched, QEvent* event)
         if (!globalRect.contains(mouseEvent->globalPosition().toPoint())
             && !(activePopup && isAncestorOf(activePopup)))
             closePopup();
+    } else if (event->type() == QEvent::Resize && watched == parentWidget()) {
+        if (currentContent.symbolCard) resizeSymbolCard();
+        if (currentContent.readOnlyText.contentSized) resizeDefinitionPreview();
     } else if ((event->type() == QEvent::ApplicationDeactivate
                 || event->type() == QEvent::WindowDeactivate)
                && transientPreview) {
@@ -1007,7 +950,7 @@ bool EditorHoverPopup::eventFilter(QObject* watched, QEvent* event)
 
 void EditorHoverPopup::mouseDoubleClickEvent(QMouseEvent* event)
 {
-    if (event->button() == Qt::LeftButton
+    if (!currentContent.symbolCard && event->button() == Qt::LeftButton
         && hasNavigableTarget()
         && navigationHandler) {
         navigationHandler(targetFile, targetLine, targetColumn);
@@ -1019,6 +962,16 @@ void EditorHoverPopup::mouseDoubleClickEvent(QMouseEvent* event)
 
 void EditorHoverPopup::resetContent()
 {
+    delete summaryText.data();
+    summaryText.clear();
+    definitionText.clear();
+    headerHost->setMinimumHeight(0);
+    headerHost->setMaximumHeight(QWIDGETSIZE_MAX);
+    if (headerHost->parentWidget() != this) {
+        headerHost->setParent(this);
+        qobject_cast<QVBoxLayout*>(QFrame::layout())->insertWidget(0, headerHost);
+        headerHost->show();
+    }
     while (QLayoutItem* item = layout->takeAt(0)) {
         if (QWidget* widget = item->widget()) {
             if (widget == editControl.data()) {

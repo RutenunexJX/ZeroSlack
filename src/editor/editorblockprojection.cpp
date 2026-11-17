@@ -14,10 +14,16 @@
 #include <QtMath>
 #include <algorithm>
 
-void EditorBlockProjection::ensure(MyCodeEditor* editor, const QList<QPair<int,int>>& folds) {
+std::optional<EditorBlockScrollAnchor> EditorBlockProjection::ensure(MyCodeEditor* editor, const QList<QPair<int,int>>& folds) {
     auto* model = DocumentBlockModel::get(editor->document());
     if (std::none_of(model->items().cbegin(), model->items().cend(), [](const auto& block) { return !block.detached && !block.removedReference(); })) {
-        enabled = false; runs.clear(); gaps.clear(); ordinals.clear(); heights.clear(); noteHeights.clear(); return;
+        std::optional<EditorBlockScrollAnchor> anchor;
+        if (enabled) {
+            const int row = rowAtY(offset(editor));
+            anchor = EditorBlockScrollAnchor{sourceForRow(row), offset(editor) - rowTop(row)};
+        }
+        enabled = false; runs.clear(); gaps.clear(); ordinals.clear(); heights.clear(); noteHeights.clear();
+        return anchor;
     }
     const bool wasEnabled = enabled;
     const int previousSource = wasEnabled ? sourceForRow(rowAtY(offset(editor))) : editor->QPlainTextEdit::firstVisibleBlock().blockNumber();
@@ -27,7 +33,7 @@ void EditorBlockProjection::ensure(MyCodeEditor* editor, const QList<QPair<int,i
     if (layoutChanged || sourceCount != editor->document()->blockCount() || collapsed != folds) heights.clear();
     if (!dirty && !layoutChanged && sourceCount == editor->document()->blockCount()
         && modelRevision == model->revision() && collapsed == folds && enabled) {
-        configureScrollBar(editor); return;
+        configureScrollBar(editor); return {};
     }
     document = editor->document(); sourceCount = document->blockCount(); width = editor->viewport()->width();
     blocksVisible=editor->associatedBlocksVisible();
@@ -92,6 +98,7 @@ void EditorBlockProjection::ensure(MyCodeEditor* editor, const QList<QPair<int,i
     for (auto& gap : gaps) { if (gap.row != lastRow) within = 0; gap.offset = within; within += gap.height; lastRow = gap.row; }
     enabled = true; dirty = false; configureScrollBar(editor);
     if (!wasEnabled) editor->verticalScrollBar()->setValue(qRound(rowTop(qMax(0, rowForSource(previousSource)))));
+    return {};
 }
 int EditorBlockProjection::rowForSource(int source) const {
     const auto it = std::upper_bound(runs.cbegin(), runs.cend(), source, [](int line, const Run& run) { return line < run.source; });

@@ -59,6 +59,122 @@ class EditorBlockTest : public QObject {
         return result;
     }
 private slots:
+    void gutterDeleteRestoresScrollContract_data() {
+        QTest::addColumn<bool>("folded");
+        QTest::addColumn<bool>("wrapped");
+        QTest::addColumn<QString>("sequence");
+        for (bool fold : {false, true}) {
+            for (const auto* operation : {"single", "multiple", "repeat", "undo-redo"})
+                QTest::newRow(qPrintable(QString(fold ? "folded-" : "native-") + operation))
+                    << fold << false << QString(operation);
+            QTest::newRow(fold ? "folded-wrapped" : "native-wrapped") << fold << true << QString("single");
+        }
+    }
+    void gutterDeleteRestoresScrollContract() {
+        QFETCH(bool, folded); QFETCH(bool, wrapped); QFETCH(QString, sequence);
+        QStringList lines{"module m;", "initial begin", "  a = 1;", "  b = 2;", "end"};
+        for (int i = 0; i < 500; ++i)
+            lines << QString("logic delete_signal_%1;").arg(i) + (wrapped ? QString(" // wrapped content").repeated(8) : QString());
+        lines << "endmodule";
+        const auto source = lines.join('\n');
+        editor->setPlainText(source); editor->setLineWrapMode(wrapped ? QPlainTextEdit::WidgetWidth : QPlainTextEdit::NoWrap);
+        if (wrapped)
+            for (auto block = editor->document()->begin(); block.isValid(); block = block.next())
+                editor->document()->documentLayout()->blockBoundingRect(block);
+        editor->document()->setModified(false);
+        QTRY_VERIFY(!editor->syntaxDocument()->hasPendingEdits());
+        if (folded) QVERIFY(editor->toggleFoldAtLineForTest(1));
+        const auto settle = [&] {
+            QCoreApplication::processEvents(); editor->viewport()->repaint();
+        };
+        settle();
+        auto* bar = editor->verticalScrollBar();
+        const auto wheel = [&](QPoint pixels, QPoint angle) {
+            QWheelEvent event(QPointF(20,20), editor->viewport()->mapToGlobal(QPoint(20,20)),
+                pixels, angle, Qt::NoButton, Qt::NoModifier, Qt::ScrollUpdate, false);
+            QApplication::sendEvent(editor->viewport(), &event);
+            QCoreApplication::processEvents();
+        };
+        const auto wheelDeltas = [&] {
+            QList<int> result;
+            for (const auto& input : QList<QPair<QPoint,QPoint>>{{{}, {0,-120}}, {{0,-7}, {}}, {{0,-7}, {0,-120}}, {{0,7}, {0,120}}}) {
+                bar->setValue(40); const int before = bar->value();
+                wheel(input.first, input.second); result << bar->value() - before;
+            }
+            return result;
+        };
+        const auto nativeDeltas = wheelDeltas();
+        const int nativeStep = bar->singleStep(), nativePage = bar->pageStep(), nativeMaximum = bar->maximum();
+        int firstSource = -1;
+        QTextCursor cursor, reading;
+        int readingY = 0;
+        const auto removeThroughMenu = [&](const QString& id) {
+            settle(); editor->selectAssociatedBlock(id); settle();
+            const auto hits = markerHits();
+            auto* gutter = editor->findChild<QWidget*>("editorLineNumberGutter");
+            if (!gutter || !hits.contains(id)) {
+                qWarning() << "DELETE_MENU_PRECONDITION" << "marker" << id << hits << bar->value()
+                           << bar->singleStep() << editor->viewProjectionActive();
+                return false;
+            }
+            QTest::mouseClick(gutter, Qt::RightButton, Qt::NoModifier, hits[id].center());
+            QCoreApplication::processEvents();
+            auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget());
+            if (!menu || menu->objectName() != "collapsedBlockMenu") {
+                qWarning() << "DELETE_MENU_PRECONDITION" << "popup" << menu << (menu ? menu->objectName() : QString());
+                return false;
+            }
+            QAction* remove = nullptr;
+            for (auto* action : menu->actions()) if (action->text() == "Delete") remove = action;
+            if (!remove) { menu->close(); return false; }
+            const auto actionRect = menu->actionGeometry(remove);
+            firstSource = editor->cursorForPosition(QPoint(10,3)).blockNumber();
+            reading = editor->cursorForPosition(QPoint(10,3));
+            readingY = editor->cursorRect(reading).top();
+            cursor = editor->textCursor();
+            QTest::mouseClick(menu, Qt::LeftButton, Qt::NoModifier, actionRect.center());
+            QCoreApplication::processEvents();
+            if (model()->find(id)) qWarning() << "DELETE_MENU_PRECONDITION" << "action" << actionRect;
+            return !model()->find(id);
+        };
+        for (int cycle = 0; cycle < (sequence == "repeat" ? 3 : 1); ++cycle) {
+            const QTextCursor anchor(editor->document()->findBlockByNumber(wrapped ? 8 : 45));
+            editor->setTextCursor(anchor);
+            bar->setValue(folded ? editor->visibleRowForSourceLine(anchor.blockNumber() - 3)
+                                 : anchor.block().firstLineNumber() - 5);
+            emit editor->editorBlockInsertRequested({{"blockType", "text"}, {"text", "Delete scroll fixture"}}, anchor);
+            QCOMPARE(model()->items().size(), 1); const auto id = model()->items().first().id;
+            if (sequence == "multiple") {
+                EditorAssociatedBlock second; second.type = "text"; second.text = "Remaining block";
+                const auto other = model()->insert(second, anchor); const auto retained = *model()->find(other);
+                QVERIFY(removeThroughMenu(id)); settle();
+                QVERIFY(editor->viewProjectionActive()); QVERIFY(bar->singleStep() > nativeStep);
+                QCOMPARE(model()->find(other)->start, retained.start); QCOMPARE(model()->find(other)->end, retained.end);
+            }
+            settle(); wheel({}, {0,-120});
+            const auto last = model()->items().last().id;
+            QVERIFY(removeThroughMenu(last)); settle();
+            const int afterSource = editor->cursorForPosition(QPoint(10,3)).blockNumber();
+            const int afterReadingY = editor->cursorRect(reading).top();
+            const int restoredStep = bar->singleStep(), restoredPage = bar->pageStep(), restoredMaximum = bar->maximum();
+            const auto deltas = wheelDeltas();
+            qInfo() << "GUTTER_DELETE_SCROLL" << folded << wrapped << sequence << cycle
+                    << "step" << nativeStep << restoredStep << "page" << nativePage << restoredPage
+                    << "range" << nativeMaximum << restoredMaximum << "source" << firstSource << afterSource
+                    << "wheel" << nativeDeltas << deltas;
+            QCOMPARE(deltas, nativeDeltas); QCOMPARE(restoredStep, nativeStep);
+            QCOMPARE(restoredPage, nativePage); QCOMPARE(restoredMaximum, nativeMaximum);
+            QVERIFY(qAbs(afterSource - firstSource) <= 1);
+            if (!folded) QVERIFY(qAbs(afterReadingY - readingY) <= editor->fontMetrics().height() + 1);
+            QCOMPARE(editor->textCursor(), cursor); QCOMPARE(editor->toPlainText(), source);
+            QVERIFY(!editor->document()->isModified()); QCOMPARE(editor->viewProjectionActive(), folded);
+            if (sequence == "undo-redo") {
+                editor->undo(); settle(); QVERIFY(model()->find(last)); QVERIFY(bar->singleStep() > nativeStep);
+                editor->redo(); settle(); QVERIFY(!model()->find(last));
+                QCOMPARE(wheelDeltas(), nativeDeltas); QCOMPARE(bar->singleStep(), nativeStep);
+            }
+        }
+    }
     void mouseCursorPreservesPresentation_data() {
         QTest::addColumn<QString>("kind");
         QTest::addColumn<QString>("check");

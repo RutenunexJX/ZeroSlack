@@ -8,14 +8,21 @@
 #include "effectivevalueservice.h"
 
 #include <QApplication>
+#include <QClipboard>
+#include <QTextBlock>
+#include <QTextLayout>
+#include <QScrollBar>
+#include <QAbstractTextDocumentLayout>
 #include <QDialog>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QPlainTextEdit>
+#include <QPushButton>
 #include <QToolButton>
 #include <QWidget>
+#include <QtTest/QTest>
 
 #include <cstdio>
 
@@ -50,7 +57,8 @@ bool allLabelsUseFont(const EditorHoverPopup& peek,
 
 int main(int argc, char* argv[])
 {
-    qputenv("QT_QPA_PLATFORM", QByteArrayLiteral("offscreen"));
+    if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM"))
+        qputenv("QT_QPA_PLATFORM", QByteArrayLiteral("offscreen"));
     QApplication app(argc, argv);
     if (!initializeUiStyleForTest()) return 2;
 
@@ -59,6 +67,9 @@ int main(int argc, char* argv[])
     host.setFocusPolicy(Qt::StrongFocus);
     host.show();
     QApplication::processEvents();
+    std::printf("platform=%s actualDpr=%.2f\n", qPrintable(QGuiApplication::platformName()), host.devicePixelRatioF());
+    if (qEnvironmentVariableIsSet("ZEROSLACK_EXPECTED_DPR"))
+        expect("requested DPR matches the real widget", qAbs(host.devicePixelRatioF() - qEnvironmentVariable("ZEROSLACK_EXPECTED_DPR").toDouble()) < 0.01);
 
     EditorHoverPopup peek(&host);
     QFont editorFont(QStringLiteral("Consolas"), 12);
@@ -105,6 +116,52 @@ int main(int argc, char* argv[])
            peek.focusPolicy() == Qt::NoFocus
                && initialClose
                && initialClose->focusPolicy() == Qt::NoFocus);
+
+    DefinitionPreviewReport longDefinition = definition;
+    longDefinition.symbolName = QStringLiteral("downstream_wr_data");
+    longDefinition.codeLines.clear();
+    for (int i=0;i<60;++i)
+        longDefinition.codeLines.append(QString(70,QLatin1Char(' ')) + QStringLiteral("logic [1023:0] downstream_wr_data;") + QString(180,QLatin1Char(' ')) + QStringLiteral("// complete tail"));
+    longDefinition.highlightedLine = longDefinition.firstLineNumber + 42;
+    longDefinition.targetLine = longDefinition.highlightedLine;
+    longDefinition.targetColumn = 85;
+    QHash<QString,QSize> previewSizes;
+    for (int i=0;i<9;++i) {
+        const auto& report = i%3 == 1 ? longDefinition : definition;
+        peek.showPreview(report,host.mapToGlobal(QPoint(880,500)),editorFont);
+        QApplication::processEvents();
+        auto* code = peek.findChild<QPlainTextEdit*>(QStringLiteral("peekDefinitionCode"));
+        auto* action = peek.findChild<QPushButton*>();
+        if (code && action) std::printf("preview %d popup=%dx%d code=%dx%d action=%dx%d hint=%dx%d scroll=%d/%d cursor=%d,%d\n",i,
+            peek.width(),peek.height(),code->width(),code->height(),action->width(),action->height(),action->sizeHint().width(),action->sizeHint().height(),
+            code->horizontalScrollBar()->maximum(),code->verticalScrollBar()->maximum(),code->cursorRect().x(),code->cursorRect().y());
+        expect("each definition keeps full code and a usable footer", code && action
+               && code->toPlainText().endsWith(report.codeLines.last())
+               && code->extraSelections().size() == 1
+               && code->extraSelections().first().cursor.blockNumber() == report.highlightedLine-report.firstLineNumber
+               && action->height() >= action->sizeHint().height()
+               && host.rect().contains(peek.geometry())
+               && peek.rect().contains(QRect(action->mapTo(&peek,QPoint()),action->size()))
+               && !QRect(action->mapTo(&peek,QPoint()),action->size()).intersects(QRect(code->mapTo(&peek,QPoint()),code->size())));
+        if (previewSizes.contains(report.symbolName))
+            expect("repeated target changes never shrink the same content", peek.size() == previewSizes.value(report.symbolName));
+        previewSizes.insert(report.symbolName,peek.size());
+        if (code && i%3 == 1) {
+            expect("long preview has both scroll ranges and reveals the declaration", code->horizontalScrollBar()->maximum()>0
+                   && code->verticalScrollBar()->maximum()>0 && code->viewport()->rect().contains(code->cursorRect().center()));
+            code->horizontalScrollBar()->setValue(code->horizontalScrollBar()->maximum());
+            code->verticalScrollBar()->setValue(code->verticalScrollBar()->maximum());
+            expect("the complete code tail remains reachable", code->cursorForPosition(QPoint(2,2)).blockNumber()>0
+                   && code->toPlainText().contains(QStringLiteral("// complete tail")));
+        }
+    }
+    DefinitionPreviewReport unavailable;
+    unavailable.symbolName = QStringLiteral("unresolved");
+    unavailable.unavailableReason = QStringLiteral("Definition unavailable.");
+    peek.showPreview(unavailable,host.mapToGlobal(QPoint(20,20)),editorFont);
+    QApplication::processEvents();
+    expect("unavailable target discards previous code and actions", !peek.findChild<QPlainTextEdit*>(QStringLiteral("peekDefinitionCode"))
+           && !peek.findChild<QPushButton*>() && !peek.contentModel().navigationTarget.isValid());
 
     EditorHoverPopup* originalContainer = &peek;
     peek.showNumericLiteral(
@@ -172,13 +229,13 @@ int main(int argc, char* argv[])
     effective.expressionText = QStringLiteral("8");
     effective.instancePath = QStringLiteral("byte2uart");
     effective.valueSource = QStringLiteral("slang elaborated parameter default");
+    effective.defaultEvaluation = true;
     effective.definitionFile = QStringLiteral("rtl/byte2uart.sv");
     effective.definitionLine = 26;
     QString navigatedFile;
-    int navigatedLine = -1;
     peek.setNavigationHandler([&](const QString& file, int line, int) {
         navigatedFile = file;
-        navigatedLine = line;
+        Q_UNUSED(line)
     });
     auto showCard = [&]() {
         peek.showHover(effective, host.mapToGlobal(QPoint(20, 20)), editorFont);
@@ -194,51 +251,91 @@ int main(int argc, char* argv[])
     };
     ApplicationThemeManager::instance().applyToApplication();
     showCard();
-    auto* details = peek.findChild<QWidget*>(QStringLiteral("peekDetails"));
     auto* toggle = peek.findChild<QToolButton*>(QStringLiteral("peekDetailsToggle"));
-    auto* source = peek.findChild<QToolButton*>(QStringLiteral("peekSourceLink"));
-    const int collapsedHeight = peek.height();
-    expect("symbol summary keeps secondary fields collapsed",
-           details && !details->isVisible() && toggle && !toggle->isChecked()
-           && peek.findChildren<QLabel*>(QStringLiteral("peekFieldValue")).size() == 1
-           && peek.findChild<QLabel*>(QStringLiteral("peekTypeSummary"))
-           && collapsedHeight < 280);
-    expect("symbol title keeps code family with a separate UI label font",
-           peek.findChild<QLabel*>(QStringLiteral("peekTitle"))->font().family() == editorFont.family()
-           && peek.findChild<QLabel*>(QStringLiteral("peekFieldLabel"))->font().families() == UiTypography::font().families());
-    const auto* cardTitle = peek.findChild<QLabel*>(QStringLiteral("peekTitle"));
-    const auto* cardFooter = peek.findChild<QWidget*>(QStringLiteral("peekFooter"));
-    expect("initial layout shows complete title and footer",
-           cardTitle && cardFooter && source && cardTitle->height() >= cardTitle->fontMetrics().height()
-           && peek.rect().contains(cardFooter->geometry())
-           && peek.rect().contains(QRect(source->mapTo(&peek, QPoint()), source->size())));
-    snapshot(QStringLiteral("parameter-light"));
-    if (toggle) toggle->click();
-    QApplication::processEvents();
-    expect("details expand without leaving the editor", details && details->isVisible()
-           && peek.height() > collapsedHeight && host.rect().contains(peek.geometry()));
-    snapshot(QStringLiteral("parameter-expanded"));
-    if (toggle) toggle->click();
-    QApplication::processEvents();
-    expect("collapsing restores compact height", peek.height() == collapsedHeight);
-    if (source) source->click();
-    expect("source link routes exact definition", source && source->isEnabled()
-           && navigatedFile == effective.definitionFile && navigatedLine == 26);
+    expect("default parameter is direct information without declaration or navigation buttons",
+           !toggle && !peek.findChild<QToolButton*>(QStringLiteral("peekSourceLink"))
+           && !peek.hasNavigableTarget() && peek.contentModel().title == QStringLiteral("Default 8"));
+    auto* cardTitle = peek.findChild<QPlainTextEdit*>(QStringLiteral("peekTitleText"));
+    bool unifiedTypography = true;
+    for (auto* text : peek.findChildren<QPlainTextEdit*>())
+        unifiedTypography &= text->font().family()==editorFont.family()
+            && text->font().pointSizeF()==editorFont.pointSizeF() && text->font().pixelSize()==editorFont.pixelSize();
+    expect("all card text uses the editor family and size", unifiedTypography
+           && cardTitle && !cardTitle->toPlainText().contains(effective.symbolName));
+    snapshot(QStringLiteral("parameter-default-light"));
+    QTest::mouseDClick(cardTitle->viewport(), Qt::LeftButton, Qt::NoModifier, QPoint(12, cardTitle->height()/2));
+    expect("body double click selects text without navigating", navigatedFile.isEmpty()
+           && peek.isVisible() && !cardTitle->textCursor().selectedText().isEmpty());
+    const auto selectedCardText = cardTitle->textCursor().selectedText();
+    QTest::keyClick(cardTitle, Qt::Key_C, Qt::ControlModifier);
+    expect("copy keeps the card open", peek.isVisible()
+           && QApplication::clipboard()->text() == selectedCardText);
+    QTest::keyClick(cardTitle, Qt::Key_X);
+    expect("typing closes a focused card and returns editor focus", !peek.isVisible() && host.hasFocus());
 
+    effective.defaultEvaluation = false;
+    effective.instanceBound = true;
+    effective.valueText = QStringLiteral("12");
+    effective.instancePath = QStringLiteral("top.u1");
+    effective.valueSource = QStringLiteral("slang elaborated parameter override");
+    showCard();
+    expect("bound parameter identifies the effective value", peek.contentModel().title == QStringLiteral("Effective 12"));
+    snapshot(QStringLiteral("parameter-effective"));
+    effective.effectiveValueStatus = EffectiveValueStatus::Stale;
+    showCard();
+    expect("stale parameter never displays the previous value", peek.contentModel().title == QStringLiteral("Analysis stale")
+           && peek.findChild<QPlainTextEdit*>(QStringLiteral("peekNotice")));
+    snapshot(QStringLiteral("parameter-stale"));
+    effective.effectiveValueStatus = EffectiveValueStatus::Error;
+    effective.evaluationFailureReason = QStringLiteral("Constant evaluation failed.");
+    showCard();
+    expect("evaluation errors remain explicit", peek.contentModel().title == QStringLiteral("Information unavailable")
+           && peek.findChild<QPlainTextEdit*>(QStringLiteral("peekNotice"))->toPlainText() == effective.evaluationFailureReason);
+
+    effective = SymbolHoverReport();
+    effective.available = true;
+    effective.symbolName = QStringLiteral("E_AXI_LITE_STATUS_NOT_RESP");
+    effective.enumMember = true;
+    effective.effectiveValueStatus = EffectiveValueStatus::Current;
+    effective.valueText = QStringLiteral("4'b1111");
+    effective.enumTypeName = QStringLiteral("axi_lite_status_e");
+    effective.enumMembers = {QStringLiteral("E_AXI_LITE_STATUS_OK = 4'b0"), QStringLiteral("E_AXI_LITE_STATUS_NOT_RESP = 4'b1111")};
+    effective.definitionFile = QStringLiteral("rtl/axi_lite.sv");
+    effective.definitionLine = 3;
+    effective.commentText = QStringLiteral("No response from the target.\nFurther explanation.");
+    showCard();
+    toggle = peek.findChild<QToolButton*>(QStringLiteral("peekDetailsToggle"));
+    expect("enum shows its value and type with members on demand", peek.contentModel().title == effective.valueText
+           && peek.findChild<QPlainTextEdit*>(QStringLiteral("peekSummaryRow"))->toPlainText() == effective.enumTypeName
+           && toggle && toggle->text() == QStringLiteral("Enum members")
+           && !peek.findChild<QWidget*>(QStringLiteral("peekDetails"))->isVisible());
+    expect("available comment is a single summary", peek.findChild<QPlainTextEdit*>(QStringLiteral("peekComment"))->toPlainText()
+           == QStringLiteral("No response from the target."));
+    snapshot(QStringLiteral("enum-collapsed"));
+    toggle->click();
+    QApplication::processEvents();
+    expect("enum list uses supplied semantic member values", peek.findChild<QPlainTextEdit*>(QStringLiteral("peekDetailRow"))->toPlainText()
+           == effective.enumMembers.join(QLatin1Char('\n')));
+    snapshot(QStringLiteral("enum-expanded"));
+
+    effective = SymbolHoverReport();
+    effective.available = true;
+    effective.effectiveValueStatus = EffectiveValueStatus::Current;
     effective.symbolName = QStringLiteral("byte_data");
-    effective.displayKind = QStringLiteral("input");
-    effective.parameterLike = false;
     effective.port = true;
-    effective.resolvedTypeText = QStringLiteral("logic[7:0]");
-    effective.signednessText = QStringLiteral("unsigned");
-    effective.declarationText = QStringLiteral("input logic [7:0] byte_data");
+    effective.direction = QStringLiteral("input");
+    effective.resolvedTypeText = QStringLiteral("logic signed[7:0]$[3:0]");
+    effective.unpackedDimensionsText = QStringLiteral("[3:0]");
+    effective.valueText = QStringLiteral("SHOULD_NOT_BE_A_RUNTIME_VALUE");
+    effective.declarationText = QStringLiteral("input logic signed [7:0] byte_data [3:0]");
+    effective.definitionFile = QStringLiteral("rtl/byte2uart.sv");
     effective.definitionLine = 33;
     showCard();
-    expect("signal summary never invents a live value", peek.contentModel().rows.size() > 0
-           && peek.findChildren<QLabel*>(QStringLiteral("peekFieldValue")).isEmpty()
-           && peek.findChild<QLabel*>(QStringLiteral("peekTypeSummary"))->text().contains(QStringLiteral("logic[7:0]"))
-           && peek.findChild<QLabel*>(QStringLiteral("peekTypeSummary"))->text().contains(QStringLiteral("unsigned"))
-           && !peek.findChild<QWidget*>(QStringLiteral("peekDetails"))->isVisible());
+    expect("signal summary contains full type and never a runtime value",
+           peek.contentModel().title == QStringLiteral("input logic signed[7:0] [3:0]")
+           && !peek.contentModel().title.contains(effective.valueText)
+           && !peek.findChild<QWidget*>(QStringLiteral("peekDetails"))
+           && !peek.findChild<QPlainTextEdit*>(QStringLiteral("peekComment")));
     snapshot(QStringLiteral("input-light"));
     ApplicationThemeManager::instance().setMode(ThemeMode::CatppuccinMocha);
     QApplication::processEvents();
@@ -246,21 +343,47 @@ int main(int argc, char* argv[])
     expect("visible popup follows dark theme", peek.styleSheet().contains(QStringLiteral("#cdd6f4")));
     effective.effectiveValueStatus = EffectiveValueStatus::Stale;
     showCard();
-    const auto* notice = peek.findChild<QLabel*>(QStringLiteral("peekNotice"));
-    expect("stale facts are suppressed with a visible status", notice && notice->isVisible()
-           && notice->text().contains(QStringLiteral("stale"))
-           && peek.findChildren<QLabel*>(QStringLiteral("peekFieldValue")).isEmpty());
+    expect("stale type is suppressed with a visible status", peek.contentModel().title == QStringLiteral("Analysis stale")
+           && peek.findChild<QPlainTextEdit*>(QStringLiteral("peekNotice")));
     effective.effectiveValueStatus = EffectiveValueStatus::Current;
-    effective.declarationText = QString(2000, QLatin1Char('x'));
+    effective.resolvedTypeText = QStringLiteral("very_long_package_name::very_long_packet_payload_type [31:0][15:0]");
     host.resize(320, 350);
     showCard();
     toggle = peek.findChild<QToolButton*>(QStringLiteral("peekDetailsToggle"));
     if (toggle) toggle->click();
     QApplication::processEvents();
-    expect("long details scroll in a narrow editor", host.rect().contains(peek.geometry())
-           && peek.findChild<QScrollArea*>(QStringLiteral("peekSymbolScroll"))
-           && peek.findChild<QToolButton*>(QStringLiteral("peekSourceLink"))->isVisible());
-    snapshot(QStringLiteral("narrow-expanded"));
+    bool completeLabels = true;
+    for (auto* text : peek.findChildren<QPlainTextEdit*>()) {
+        if (!text->isVisible()) continue;
+        for (auto block = text->document()->begin(); block.isValid(); block = block.next()) {
+            text->document()->documentLayout()->blockBoundingRect(block);
+            for (int i=0;i<block.layout()->lineCount();++i)
+                completeLabels &= block.layout()->lineAt(i).naturalTextWidth() <= text->viewport()->width();
+        }
+        completeLabels &= text->verticalScrollBar()->maximum() == 0;
+        std::printf("wrapped %s viewport=%dx%d vertical=%d\n",qPrintable(text->objectName()),text->viewport()->width(),text->viewport()->height(),text->verticalScrollBar()->maximum());
+    }
+    expect("long types wrap without clipping in a narrow editor", completeLabels
+           && host.rect().contains(peek.geometry()) && peek.findChild<QScrollArea*>(QStringLiteral("peekSymbolScroll")));
+    snapshot(QStringLiteral("narrow-type"));
+    effective = SymbolHoverReport();
+    effective.available = true;
+    effective.moduleName = QStringLiteral("uart_controller");
+    showCard();
+    expect("unresolved module entry has no empty actions", peek.contentModel().title == effective.moduleName
+           && !peek.findChild<QToolButton*>(QStringLiteral("peekDetailsToggle"))
+           && !peek.findChild<QToolButton*>(QStringLiteral("peekSourceLink")));
+    QTest::mouseClick(&host, Qt::LeftButton, Qt::NoModifier, QPoint(host.width()-2,host.height()-2));
+    expect("external click closes the card", !peek.isVisible());
+    peek.showPreview(longDefinition,host.mapToGlobal(QPoint(315,340)),editorFont);
+    QApplication::processEvents();
+    const auto* narrowCode = peek.findChild<QPlainTextEdit*>(QStringLiteral("peekDefinitionCode"));
+    const auto* narrowAction = peek.findChild<QPushButton*>();
+    expect("definition after a compact card fits narrow bounds with complete code and actions", narrowCode && narrowAction
+           && narrowCode->toPlainText().endsWith(longDefinition.codeLines.last())
+           && narrowCode->horizontalScrollBar()->maximum()>0 && narrowCode->verticalScrollBar()->maximum()>0
+           && narrowAction->height()>=narrowAction->sizeHint().height() && host.rect().contains(peek.geometry()));
+    snapshot(QStringLiteral("narrow-definition-after-card"));
     peek.closePopup();
     ApplicationThemeManager::instance().setMode(ThemeMode::Light);
     host.resize(900, 520);

@@ -174,6 +174,46 @@ void runSlangEffectiveValueRegression()
     index.setSnapshot(snapshot(records, fileName, source));
     EffectiveValueService service(&index);
 
+    SymbolHoverService hover(&index);
+    const auto hoverAt = [&](const QString& name, const QString& lineMatch,
+                             const QString& module, const QString& path = QString()) {
+        EditorSemanticContext context;
+        context.fileName = fileName;
+        context.documentText = source;
+        context.moduleName = module;
+        const auto lines = source.split(QLatin1Char('\n'));
+        for (int i = 0; i < lines.size(); ++i) {
+            if (!lines.at(i).contains(lineMatch)) continue;
+            context.lineText = lines.at(i);
+            context.cursorLine = i + 1;
+            context.column = context.lineText.indexOf(name);
+            break;
+        }
+        if (!path.isEmpty()) context.hierarchyInstance = instance(path);
+        return hover.hoverForContext(context);
+    };
+    const auto defaultHover = hoverAt(QStringLiteral("P"), QStringLiteral("module child"), QStringLiteral("child"));
+    const auto boundHover = hoverAt(QStringLiteral("P"), QStringLiteral("module child"), QStringLiteral("child"), QStringLiteral("top.u1"));
+    std::printf("hover parameter default=%s defaultDomain=%d bound=%d; bound=%s defaultDomain=%d bound=%d\n",
+                qPrintable(defaultHover.valueText), defaultHover.defaultEvaluation, defaultHover.instanceBound,
+                qPrintable(boundHover.valueText), boundHover.defaultEvaluation, boundHover.instanceBound);
+    expect("hover preserves exact default and bound parameter domains", defaultHover.defaultEvaluation
+           && !defaultHover.instanceBound && defaultHover.valueText == QStringLiteral("4'b1")
+           && boundHover.instanceBound && !boundHover.defaultEvaluation && boundHover.valueText == QStringLiteral("4'b11"));
+    const auto enumHover = hoverAt(QStringLiteral("E_ARITH"), QStringLiteral("E_ARITH ="), QStringLiteral("child"), QStringLiteral("top.u1"));
+    std::printf("hover enum type=%s definition=%d members=%s\n", qPrintable(enumHover.enumTypeName),
+                enumHover.definitionLine, qPrintable(enumHover.enumMembers.join(QLatin1Char(';'))));
+    expect("hover uses the owning enum definition and elaborated member list", enumHover.enumMember
+           && enumHover.enumTypeName == QStringLiteral("e_t") && enumHover.enumMembers.size() == 5
+           && enumHover.enumMembers.contains(QStringLiteral("E_SHIFT = 16'b110000"))
+           && enumHover.definitionLine == 26 && enumHover.definitionFile == fileName);
+    const auto portHover = hoverAt(QStringLiteral("data_i"), QStringLiteral("input logic"), QStringLiteral("child"), QStringLiteral("top.u1"));
+    expect("hover preserves port direction and exact bound dimensions", portHover.port
+           && portHover.direction == QStringLiteral("input") && portHover.resolvedTypeText.contains(QStringLiteral("[5:0]")));
+    const auto instanceHover = hoverAt(QStringLiteral("u1"), QStringLiteral("u1(.data_i"), QStringLiteral("top"));
+    expect("instance hover navigates to the module definition", instanceHover.moduleName == QStringLiteral("child")
+           && instanceHover.definitionFile == fileName && instanceHover.definitionLine == 10);
+
     const SemanticSymbolRecord packageParameter = findRecord(
         records,
         QStringLiteral("PKG_P"),

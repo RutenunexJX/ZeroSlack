@@ -30,9 +30,7 @@ struct PeekContentRow {
     PeekContentRowRole role = PeekContentRowRole::Body;
     bool wordWrap = false;
     bool detail = false;
-    QString fieldLabel;
-    QString fieldValue;
-    bool prominent = false;
+    QString detailSection;
 };
 
 struct PeekNavigationTarget {
@@ -61,6 +59,9 @@ struct PeekReadOnlyTextModel {
     QString objectName;
     QSize minimumSize = QSize(320, 160);
     bool wordWrap = false;
+    int highlightedLine = -1;
+    int highlightedColumn = 0;
+    bool contentSized = false;
 };
 
 enum class PeekContentActionRole {
@@ -82,8 +83,6 @@ struct PeekContentModel {
     PeekContentKind kind = PeekContentKind::DeclarationPreview;
     QString title;
     bool symbolCard = false;
-    QString category;
-    bool portAccent = false;
     QVector<PeekContentRow> rows;
     PeekNavigationTarget navigationTarget;
     PeekEditableTextModel editor;

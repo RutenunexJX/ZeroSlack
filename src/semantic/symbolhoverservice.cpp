@@ -7,6 +7,7 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <algorithm>
 
 std::unique_ptr<SymbolHoverService> SymbolHoverService::instance = nullptr;
 
@@ -166,6 +167,24 @@ SymbolHoverReport SymbolHoverService::hoverForContext(
     report.sourceRole = target.sourceRoleDisplayName;
     report.definitionFile = target.fileName;
     report.definitionLine = target.line;
+    if (SymbolTaxonomy::isModuleDeclaration(semanticMetadataForSymbolRecord(target.symbolRecord))) {
+        report.moduleName = target.symbolName;
+        return report;
+    }
+    if (SymbolTaxonomy::isInstanceDeclaration(semanticMetadataForSymbolRecord(target.symbolRecord))) {
+        report.moduleName = typeTextForRecord(target.symbolRecord);
+        auto moduleQuery = query;
+        moduleQuery.symbolName = report.moduleName;
+        const auto module = definitionNavigation->resolveTarget(moduleQuery);
+        if (module.found && SymbolTaxonomy::isModuleDeclaration(semanticMetadataForSymbolRecord(module.symbolRecord))) {
+            report.definitionFile = module.fileName;
+            report.definitionLine = module.line;
+        } else {
+            report.definitionFile.clear();
+            report.definitionLine = -1;
+        }
+        return report;
+    }
     if (target.symbolRecord.declarationKind
         == SymbolTaxonomy::DeclarationKind::Macro) {
         report.macroSignatureText = macroSignatureText(target.symbolRecord);
@@ -201,21 +220,11 @@ SymbolHoverReport SymbolHoverService::hoverForContext(
         report.parameterLike = isParameterLikeRecord(target.symbolRecord);
         report.enumMember = isEnumMemberRecord(target.symbolRecord);
         report.port = isPortRecord(target.symbolRecord);
-        const bool unboundInstanceValue =
-            (report.parameterLike || report.enumMember)
-            && effective.status == EffectiveValueStatus::Current
-            && effective.defaultEvaluation;
-        report.effectiveValueStatus =
-            unboundInstanceValue
-                ? EffectiveValueStatus::Unavailable
-                : effective.status;
+        report.effectiveValueStatus = effective.status;
         report.instanceBound = effective.instanceBound;
         report.defaultEvaluation = effective.defaultEvaluation;
         report.declarationText = effective.declarationText;
-        report.valueText =
-            unboundInstanceValue
-                ? QString()
-                : effective.valueText;
+        report.valueText = effective.valueText;
         report.expressionText = effective.expressionText;
         report.valueSource = effective.provenance;
         report.instancePath = effective.instancePath;
@@ -231,14 +240,49 @@ SymbolHoverReport SymbolHoverService::hoverForContext(
             !effective.bitWidthText.isEmpty()
                 ? effective.bitWidthText
                 : effective.enumUnderlyingBitWidthText;
-        report.evaluationFailureReason =
-            unboundInstanceValue
-                ? QStringLiteral(
-                      "No current instance context is bound; the Slang default is not shown as an effective value.")
-                : effective.failureReason;
+        report.evaluationFailureReason = effective.failureReason;
         report.typeText = report.resolvedTypeText.isEmpty()
             ? typeTextForRecord(target.symbolRecord)
             : report.resolvedTypeText;
+        if (effective.current()) {
+            const auto& presentation = target.symbolRecord.presentation;
+            const auto info = effective.instanceBound
+                ? presentation.instanceInfoByPath.value(context.hierarchyInstance.instancePath)
+                : presentation.defaultInfo;
+            report.direction = info.portDirection;
+            auto enumValues = info.enumValues;
+            if (report.enumMember) {
+                const auto enumType = activeIndex->getSymbolRecordByStableKey(target.symbolRecord.owner.stableKey);
+                if (enumType.isValid() && !isEnumMemberRecord(enumType)
+                    && (enumType.declarationKind == SymbolTaxonomy::DeclarationKind::Typedef
+                        || enumType.declarationKind == SymbolTaxonomy::DeclarationKind::Enum)) {
+                    report.definitionFile = enumType.location.fileName;
+                    report.definitionLine = enumType.location.startLine;
+                    const auto enumInfo = effective.instanceBound
+                        ? enumType.presentation.instanceInfoByPath.value(context.hierarchyInstance.instancePath)
+                        : enumType.presentation.defaultInfo;
+                    if (enumValues.isEmpty()) enumValues = enumInfo.enumValues;
+                }
+                for (const auto& member : enumValues)
+                    report.enumMembers.append(member.available && !member.valueText.isEmpty()
+                        ? member.name + QStringLiteral(" = ") + member.valueText : member.name);
+                if (report.enumMembers.isEmpty() && target.symbolRecord.owner.stableKey.isValid()) {
+                    auto members = activeIndex->getSymbolRecordsByOwner(target.symbolRecord.owner.name);
+                    std::sort(members.begin(), members.end(), [](const auto& left, const auto& right) {
+                        return left.location.position < right.location.position;
+                    });
+                    for (const auto& member : members) {
+                        if (!isEnumMemberRecord(member)
+                            || !(member.owner.stableKey == target.symbolRecord.owner.stableKey)) continue;
+                        auto memberQuery = valueQuery;
+                        memberQuery.symbol = member;
+                        const auto memberValue = effectiveValues->resolve(memberQuery);
+                        report.enumMembers.append(memberValue.current() && !memberValue.valueText.isEmpty()
+                            ? member.name + QStringLiteral(" = ") + memberValue.valueText : member.name);
+                    }
+                }
+            }
+        }
     }
     return report;
 }

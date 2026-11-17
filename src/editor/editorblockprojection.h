@@ -5,6 +5,7 @@
 #include <QRectF>
 #include <QString>
 #include <QTextBlock>
+#include <optional>
 
 class MyCodeEditor;
 class QTextDocument;
@@ -14,13 +15,18 @@ struct EditorBlockGap {
     qreal offset = 0, height = 0;
     bool hiddenAnchor = false;
 };
+struct EditorBlockScrollAnchor {
+    int sourceLine;
+    qreal offsetWithinLine;
+};
 
 // Sparse display segments for the association-enabled projection. Unvisited
 // source rows have an estimated height; only demanded rows are laid out by Qt.
 class EditorBlockProjection {
 public:
     bool active() const { return enabled; }
-    void ensure(MyCodeEditor* editor, const QList<QPair<int,int>>& folds);
+    // Returns the reading position when leaving the pixel projection.
+    std::optional<EditorBlockScrollAnchor> ensure(MyCodeEditor* editor, const QList<QPair<int,int>>& folds);
     void invalidate() { dirty = true; }
     int rowForSource(int source) const;
     int sourceForRow(int row) const;

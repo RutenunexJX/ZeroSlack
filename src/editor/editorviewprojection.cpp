@@ -61,8 +61,24 @@ void EditorViewProjection::ensure(
     if (!editor || !editor->document())
         return;
     const bool hadAssociations = associated.active();
-    associated.ensure(editor, collapsedRanges);
+    const auto releasedAnchor = associated.ensure(editor, collapsedRanges);
     if (associated.active()) { projectionActive = true; return; }
+    const auto restoreReadingPosition = qScopeGuard([&] {
+        if (!releasedAnchor) return;
+        const auto block = editor->document()->findBlockByNumber(releasedAnchor->sourceLine);
+        if (!block.isValid()) return;
+        int row = visibleRowForSourceLine(block.blockNumber());
+        if (!projectionActive) {
+            editor->document()->documentLayout()->blockBoundingRect(block);
+            const auto* layout = block.layout();
+            int visualLine = 0;
+            while (layout && visualLine + 1 < layout->lineCount()
+                   && layout->lineAt(visualLine + 1).y() <= releasedAnchor->offsetWithinLine)
+                ++visualLine;
+            row = block.firstLineNumber() + visualLine;
+        }
+        editor->verticalScrollBar()->setValue(qMax(0, row));
+    });
     if (hadAssociations) {
         projectionActive = false; dirty = true;
         restoreCanonicalVerticalScrollBar(editor);
@@ -303,6 +319,7 @@ void EditorViewProjection::restoreCanonicalVerticalScrollBar(
         return;
     // Let Qt restore its visual-line range, including wrapping and bottom margins.
     auto* layout = editor->document()->documentLayout();
+    editor->verticalScrollBar()->setSingleStep(1);
     emit layout->documentSizeChanged(layout->documentSize());
 }
 int EditorViewProjection::firstVisibleRow(MyCodeEditor* editor) const

@@ -29,6 +29,10 @@ struct SymbolHoverReport {
     QString modportName;
     QString enumTypeName;
     QString enumUnderlyingBitWidthText;
+    QStringList enumMembers;
+    QString moduleName;
+    QString commentText;
+    QString direction;
     QString definitionFile;
     int definitionLine = -1;
     QString unavailableReason;

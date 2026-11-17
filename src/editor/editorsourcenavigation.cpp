@@ -10,6 +10,7 @@
 #include "mycodeeditor.h"
 
 #include <QContextMenuEvent>
+#include <QApplication>
 #include <QCursor>
 #include <QDir>
 #include <QFileInfo>
@@ -224,6 +225,10 @@ void EditorSourceNavigationUi::handleControlKeyPress(
     const EditorSourceContextProvider& contextProvider,
     EditorSelection& selections)
 {
+    if (popup && popup->isVisible() && popup->contentModel().symbolCard
+        && popup->isAncestorOf(QApplication::focusWidget())) {
+        return;
+    }
     if (event->key() != Qt::Key_Control
         || !sourceHover.setCtrlPressed(true)) {
         return;
