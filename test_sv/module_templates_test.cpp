@@ -6,11 +6,16 @@
 #include "slangmanager.h"
 #include "templatemanagerdialog.h"
 #include "automationservice.h"
+#include "tsdocument.h"
+#include <QScopeGuard>
+#include <QSemaphore>
+#include <QThreadPool>
 #include <QtTest>
 #include <QtWidgets>
 
 class ModuleTemplatesTest : public QObject {
     Q_OBJECT
+    enum class AfterB { Nothing, RepeatB, ConfirmC, HighlightC, FilterC, Escape, MoveCursor, Edit, Rename, Catalog, Workspace };
     QTemporaryDir root;
     QString file, text;
     SimulationCommandRequest source;
@@ -41,7 +46,7 @@ class ModuleTemplatesTest : public QObject {
         auto* query = editor.findChild<QLineEdit*>("editorSlashQuery");
         if (!query) return nullptr;
         query->setText(mode); QTest::keyClick(query, Qt::Key_Return);
-        return editor.findChild<QFrame*>("moduleTemplatePopup");
+        return editor.findChild<QFrame*>(mode == "signals" ? "editorSlashPopup" : "moduleTemplatePopup");
     }
     void setupEditor(MyCodeEditor& editor) {
         editor.setDocumentFileName(file); editor.resize(850, 640); editor.setPlainText(text);
@@ -64,10 +69,10 @@ private slots:
         options.prefix = "dut_"; options.values.insert("WIDTH", "16");
         const auto plan = ModuleTemplatePlanner::prepare(model, options);
         QVERIFY2(plan.error.isEmpty(), qPrintable(plan.error));
-        QVERIFY(plan.text.contains("localparam int dut_WIDTH = 16;"));
-        QVERIFY(plan.text.contains("localparam int dut_ADDRESS = $clog2(dut_DEPTH);"));
-        QVERIFY(plan.text.contains("logic signed [dut_WIDTH-1:0] dut_data [dut_DEPTH];"));
-        QVERIFY(plan.text.contains("wire logic dut_ready;"));
+        QVERIFY(plan.text.contains("localparam int WIDTH = 16;"));
+        QVERIFY(plan.text.contains("localparam int ADDRESS = $clog2(DEPTH);"));
+        QVERIFY(plan.text.contains("logic signed [WIDTH-1:0] data [DEPTH];"));
+        QVERIFY(plan.text.contains("wire logic ready;")); QVERIFY(!plan.text.contains("dut_"));
         QCOMPARE(plan.requiredParameters, QStringList({"WIDTH", "DEPTH", "ADDRESS"}));
         const auto error = ModuleTemplatePlanner::validateInsertion(source, model, plan.text);
         QVERIFY2(error.isEmpty(), qPrintable(error));
@@ -94,8 +99,11 @@ private slots:
     }
     void conflictsInvalidValuesAndMissingDependencies() {
         const auto model = ModuleTemplatePlanner::inspect(source, module("child")); ModuleTemplateOptions options;
-        QVERIFY(ModuleTemplatePlanner::prepare(model, options, {"data"}).error.contains("data"));
+        QVERIFY(ModuleTemplatePlanner::prepare(model, options, {"data"}).error.isEmpty());
+        options.mode="parameters"; options.selectedParameters={"WIDTH"};
+        QVERIFY(ModuleTemplatePlanner::prepare(model, options, {"WIDTH"}).error.contains("WIDTH"));
         options.prefix = "a "; QVERIFY(!ModuleTemplatePlanner::prepare(model, options).error.isEmpty());
+        options.mode="signals";
         options.prefix.clear(); options.values.insert("WIDTH", "missing_width");
         auto plan = ModuleTemplatePlanner::prepare(model, options);
         QVERIFY(!ModuleTemplatePlanner::validateInsertion(source, model, plan.text).isEmpty());
@@ -123,7 +131,7 @@ private slots:
         ModuleTemplateOptions options; options.prefix="dut_";
         const auto plan=ModuleTemplatePlanner::prepare(model,options);
         QVERIFY2(plan.error.isEmpty(),qPrintable(plan.error));
-        QVERIFY(plan.text.contains("[dut_WIDTH-1:0] WIDTH;"));
+        QVERIFY(plan.text.contains("[WIDTH-1:0] WIDTH;"));
         const auto error=ModuleTemplatePlanner::validateInsertion(source,model,plan.text);
         QVERIFY2(error.isEmpty(),qPrintable(error));
     }
@@ -162,7 +170,8 @@ private slots:
         request.insert("module","child"); request.insert("moduleFile","design.sv");
         request.insert("declarations",QJsonObject{{"prefix","api_"},{"values",QJsonObject{{"WIDTH","12"}}}});
         const auto preview=api.execute(request); QVERIFY2(preview.value("ok").toBool(),qPrintable(QJsonDocument(preview).toJson()));
-        QVERIFY(preview.value("data").toObject().value("text").toString().contains("api_WIDTH = 12"));
+        QVERIFY(preview.value("data").toObject().value("text").toString().contains("WIDTH = 12"));
+        QVERIFY(!preview.value("data").toObject().value("text").toString().contains("api_"));
         QVERIFY(preview.value("data").toObject().value("instances").toArray().isEmpty());
         QVERIFY(saved.open(QIODevice::ReadOnly)); QCOMPARE(QString::fromUtf8(saved.readAll()),text);
     }
@@ -180,27 +189,171 @@ private slots:
         }
         QVERIFY(found);
     }
-    void popupPreviewCancelInsertUndo() {
+    void signalsChooseOncePreserveNamesAndUndo() {
+        text.insert(source.context.cursorPosition-4,"    logic clk;\n");
+        source.context.documentText=text; source.contents[file]=text;
+        source.context.cursorPosition=text.indexOf("    \n")+4;
         MyCodeEditor editor; setupEditor(editor); QTest::qWait(100);
         auto* popup=open(editor,"signals"); QVERIFY(popup); QVERIFY(popup->isVisible());
-        auto* search=popup->findChild<QLineEdit*>("moduleTemplateSearch");
-        auto* insert=popup->findChild<QPushButton*>("moduleTemplateInsert");
-        auto* preview=popup->findChild<QPlainTextEdit*>("moduleTemplatePreview");
-        auto* feedback=popup->findChild<QLabel*>("moduleTemplateFeedback");
-        search->setText("child"); QVERIFY(!insert->isEnabled()); QCOMPARE(editor.toPlainText(),text);
-        QTest::keyClick(search,Qt::Key_Return);
-        QTRY_VERIFY_WITH_TIMEOUT(insert->isEnabled() || !feedback->text().contains("Preparing"), 15000);
-        QVERIFY2(insert->isEnabled(),qPrintable(feedback->text())); QVERIFY(preview->toPlainText().contains("logic clk;"));
-        QCOMPARE(editor.toPlainText(),text);
+        QVERIFY(!editor.findChild<QFrame*>("moduleTemplatePopup"));
+        auto* search=popup->findChild<QLineEdit*>("editorSlashQuery");
+        auto* list=popup->findChild<QListWidget*>("editorSlashCandidates");
+        search->setText("child"); QCOMPARE(list->count(),1); QTest::qWait(180); QCOMPARE(editor.toPlainText(),text);
+        QTest::keyClick(search,Qt::Key_Down); QTest::qWait(180); QCOMPARE(editor.toPlainText(),text);
         QTest::keyClick(search,Qt::Key_Escape); QTRY_VERIFY(!popup->isVisible()); QCOMPARE(editor.toPlainText(),text);
-        QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);
-        popup=open(editor,"signals"); QVERIFY(popup); search=popup->findChild<QLineEdit*>("moduleTemplateSearch");
+        popup=open(editor,"signals"); QVERIFY(popup);
+        search=popup->findChild<QLineEdit*>("editorSlashQuery");
         search->setText("child"); QTest::keyClick(search,Qt::Key_Return);
-        insert=popup->findChild<QPushButton*>("moduleTemplateInsert"); QTRY_VERIFY_WITH_TIMEOUT(insert->isEnabled(),15000);
-        auto* prefix=popup->findChild<QLineEdit*>("moduleTemplatePrefix"); prefix->setText("dut_");
-        QTRY_VERIFY_WITH_TIMEOUT(insert->isEnabled(),15000); insert->click();
-        const auto changed=editor.toPlainText(); QVERIFY(changed.contains("dut_data"));
+        QTRY_VERIFY_WITH_TIMEOUT(!popup->isVisible(),15000);
+        const auto changed=editor.toPlainText(); QVERIFY(changed.contains("logic signed [WIDTH-1:0] data [DEPTH];"));
+        QCOMPARE(changed.count("logic clk;"),2); QVERIFY(editor.hasFocus());
         editor.undo(); QCOMPARE(editor.toPlainText(),text); editor.redo(); QCOMPARE(editor.toPlainText(),changed);
+    }
+    void signalsMouseSelectionAndStaleResult() {
+        MyCodeEditor editor; setupEditor(editor); QTest::qWait(100);
+        auto* popup=open(editor,"signals"); QVERIFY(popup);
+        auto* search=popup->findChild<QLineEdit*>("editorSlashQuery"); search->setText("child");
+        auto* list=popup->findChild<QListWidget*>("editorSlashCandidates");
+        QTest::mouseClick(list->viewport(),Qt::LeftButton,Qt::NoModifier,list->visualItemRect(list->item(0)).center());
+        QTRY_VERIFY_WITH_TIMEOUT(!popup->isVisible(),15000); QVERIFY(editor.toPlainText().contains("logic clk;"));
+        editor.undo(); QCOMPARE(editor.toPlainText(),text);
+        popup=open(editor,"signals"); search=popup->findChild<QLineEdit*>("editorSlashQuery");
+        search->setText("child"); QTest::keyClick(search,Qt::Key_Return);
+        QTest::keyClick(search,Qt::Key_Escape); QTest::qWait(300); QCOMPARE(editor.toPlainText(),text);
+        popup=open(editor,"signals"); search=popup->findChild<QLineEdit*>("editorSlashQuery");
+        search->setText("child"); QTest::keyClick(search,Qt::Key_Return);
+        editor.setPlainText(text+"// external\n"); QTest::qWait(300); QCOMPARE(editor.toPlainText(),text+"// external\n");
+    }
+    void signalsConfirmationWhilePreparing_data() {
+        QTest::addColumn<bool>("reopen");
+        QTest::addColumn<bool>("click");
+        QTest::addColumn<AfterB>("afterB");
+        QTest::newRow("enter-B") << false << false << AfterB::Nothing;
+        QTest::newRow("click-B") << false << true << AfterB::Nothing;
+        QTest::newRow("reopen-at-new-cursor") << true << false << AfterB::Nothing;
+        QTest::newRow("repeat-B-once") << false << false << AfterB::RepeatB;
+        QTest::newRow("latest-of-three") << false << false << AfterB::ConfirmC;
+        QTest::newRow("highlight-without-confirming") << false << false << AfterB::HighlightC;
+        QTest::newRow("filter-without-confirming") << false << false << AfterB::FilterC;
+        QTest::newRow("escape") << false << false << AfterB::Escape;
+        QTest::newRow("cursor-moved") << false << false << AfterB::MoveCursor;
+        QTest::newRow("document-edited") << false << false << AfterB::Edit;
+        QTest::newRow("file-changed") << false << false << AfterB::Rename;
+        QTest::newRow("catalog-changed") << false << false << AfterB::Catalog;
+        QTest::newRow("workspace-sources-changed") << false << false << AfterB::Workspace;
+    }
+    void signalsConfirmationWhilePreparing() {
+        QFETCH(bool, reopen);
+        QFETCH(bool, click);
+        QFETCH(AfterB, afterB);
+        setupSource("module source_a(input logic from_a); endmodule\n"
+                    "module source_b(input logic from_b); endmodule\n"
+                    "module source_c(input logic from_c); endmodule");
+        MyCodeEditor editor;
+        setupEditor(editor);
+        QTRY_VERIFY(!editor.syntaxDocument()->hasPendingEdits());
+        auto* popup = open(editor, "signals");
+        QVERIFY(popup && popup->isVisible());
+        auto* search = popup->findChild<QLineEdit*>("editorSlashQuery");
+        auto* list = popup->findChild<QListWidget*>("editorSlashCandidates");
+        auto* feedback = popup->findChild<QLabel*>(QString(), Qt::FindDirectChildrenOnly);
+        QVERIFY(search && list && feedback);
+        QCOMPARE(search->placeholderText(), QString("Search modules"));
+        search->setText("source_");
+        QCOMPARE(list->count(), 3);
+        QCOMPARE(list->currentItem()->text(), QString("source_a"));
+
+        int anchor = editor.textCursor().position();
+        QString expected = text;
+        auto* pool = QThreadPool::globalInstance();
+        const int oldLimit = pool->maxThreadCount();
+        QSemaphore workerReady, releaseWorker;
+        const auto restorePool = qScopeGuard([&] {
+            pool->waitForDone();
+            pool->setMaxThreadCount(oldLimit);
+        });
+        pool->setMaxThreadCount(1);
+        pool->start([&] { workerReady.release(); releaseWorker.acquire(); });
+        {
+            const auto unblock = qScopeGuard([&] { releaseWorker.release(); });
+            QVERIFY(workerReady.tryAcquire(1, 5000));
+            QTest::keyClick(search, Qt::Key_Return);
+            QCOMPARE(feedback->text(), QStringLiteral("Preparing signals…"));
+            if (reopen) {
+                QTest::keyClick(search, Qt::Key_Escape);
+                QVERIFY(!popup->isVisible());
+                auto cursor = editor.textCursor();
+                cursor.movePosition(QTextCursor::StartOfBlock);
+                QVERIFY(cursor.position() != anchor);
+                editor.setTextCursor(cursor);
+                anchor = cursor.position();
+                QCOMPARE(open(editor, "signals"), popup);
+                QCOMPARE(search->placeholderText(), QString("Search modules"));
+                search->setText("source_");
+            }
+            QCOMPARE(list->item(1)->text(), QString("source_b"));
+            if (click) {
+                QTest::mouseClick(list->viewport(), Qt::LeftButton, Qt::NoModifier, list->visualItemRect(list->item(1)).center());
+            } else {
+                QTest::keyClick(search, Qt::Key_Down);
+                QCOMPARE(list->currentItem()->text(), QString("source_b"));
+                QTest::keyClick(search, Qt::Key_Return);
+            }
+            QCOMPARE(list->currentItem()->text(), QString("source_b"));
+            QCOMPARE(feedback->text(), QStringLiteral("Preparing signals…"));
+            QCOMPARE(editor.toPlainText(), text);
+
+            switch (afterB) {
+            case AfterB::Nothing: break;
+            case AfterB::RepeatB: QTest::keyClick(search, Qt::Key_Return); break;
+            case AfterB::ConfirmC:
+            case AfterB::HighlightC:
+                QTest::keyClick(search, Qt::Key_Down);
+                QCOMPARE(list->currentItem()->text(), QString("source_c"));
+                if (afterB == AfterB::ConfirmC) QTest::keyClick(search, Qt::Key_Return);
+                break;
+            case AfterB::FilterC: search->setText("source_c"); QCOMPARE(list->count(), 1); break;
+            case AfterB::Escape: QTest::keyClick(search, Qt::Key_Escape); break;
+            case AfterB::MoveCursor: editor.moveCursor(QTextCursor::End); break;
+            case AfterB::Edit: expected += "// external edit\n"; editor.setPlainText(expected); break;
+            case AfterB::Rename: editor.setDocumentFileName(root.filePath("renamed.sv")); break;
+            case AfterB::Catalog:
+                QVERIFY(UserTemplateService::getInstance()->setRecords({resource("parameters")}).valid);
+                break;
+            case AfterB::Workspace: {
+                auto contents = source.contents;
+                contents.insert(root.filePath("late.sv"), "module late; endmodule\n");
+                SemanticIndex::getInstance()->setSnapshot(std::make_shared<const SemanticIndexSnapshot>(
+                    SemanticIndexSnapshot::fromSymbolRecords(records, {}, {}, contents)));
+                break;
+            }
+            }
+            QCOMPARE(editor.toPlainText(), expected);
+        }
+        // Deliver A's completion, then any worker started by that completion.
+        for (int pass = 0; pass < 2; ++pass) {
+            QVERIFY(pool->waitForDone(10000));
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::FutureCallOut);
+        }
+        if (afterB == AfterB::Nothing || afterB == AfterB::RepeatB || afterB == AfterB::ConfirmC) {
+            const QString failure = QString("After the explicit confirmation: feedback='%1', document unchanged=%2")
+                .arg(feedback->text()).arg(editor.toPlainText() == text);
+            QVERIFY2(!popup->isVisible(), qPrintable(failure));
+            const QString line = afterB == AfterB::ConfirmC ? "logic from_c;\n" : "logic from_b;\n";
+            expected.insert(anchor, line);
+            QCOMPARE(editor.toPlainText(), expected);
+            QCOMPARE(editor.textCursor().position(), anchor + line.size());
+            editor.undo();
+            QCOMPARE(editor.toPlainText(), text);
+            QVERIFY(!editor.document()->isUndoAvailable());
+            editor.redo();
+        } else if (afterB == AfterB::HighlightC || afterB == AfterB::FilterC) {
+            QVERIFY(popup->isVisible());
+            QVERIFY(!feedback->text().startsWith("Preparing"));
+        } else {
+            QTRY_VERIFY(!popup->isVisible());
+        }
+        QCOMPARE(editor.toPlainText(), expected);
     }
     void parametersUseSamePopupAndSourceChangesCancel() {
         MyCodeEditor editor; setupEditor(editor); QTest::qWait(100);

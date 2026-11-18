@@ -1,5 +1,6 @@
 #pragma once
 #include "simulationtarget.h"
+#include "wavegroups.h"
 #include <zeroslack/semantic/compilationorderservice.h>
 
 namespace simdock {
@@ -20,6 +21,7 @@ struct SimulationBuildPlan {
     QHash<QString, QString> defines;
     QMap<QString, QString> definitionSources;
     QMap<QString, QString> elaborationDependencies;
+    WaveGroupPlan waveGroups;
     // Includes candidate lookups, so introducing a competing definition invalidates the plan.
     std::shared_ptr<const SemanticAnalysisInput> input;
     QString error() const { return compilation.diagnostics.join('\n'); }

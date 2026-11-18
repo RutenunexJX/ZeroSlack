@@ -83,13 +83,14 @@ foreach {option key} $::simdock::waveOptionMap {
         "} else {\n    puts \"SimDock waveform colors: %2\"\n}\n").arg(body, p.name);
 }
 
-QString waveSignalColorsScript(WaveTheme theme, const QString& signalList)
+QString waveSignalColorsScript(WaveTheme theme, const QString& signalList, bool collectOnly)
 {
     const auto& p = wavePalette(theme);
-    if (p.theme == WaveTheme::QuestaDefault) return {};
+    const QString prefix = collectOnly ? QStringLiteral("set ::simdock::waveLeafColors {}\n") : QString();
+    if (p.theme == WaveTheme::QuestaDefault) return prefix;
     // Names are classified conservatively. Other signals retain Questa's scalar
     // / vector distinction; this never changes radix, values, or simulation data.
-    return QStringLiteral(R"tcl(
+    return prefix + QStringLiteral(R"tcl(
 if {[catch {
     set ::simdock::waveColoredLeaves {}
     foreach signal %5 {
@@ -109,13 +110,15 @@ if {[catch {
         if {$color ne ""} {
             # Questa's property matcher cannot address bracketed generate paths
             # literally. All rows with this leaf name have the same category.
-            property wave -color $color */$name
+            %6
             dict set ::simdock::waveColoredLeaves $name 1
         }
     }
 } ::simdock::waveColorError]} {
     puts "SimDock warning: Signal colors could not be applied: $::simdock::waveColorError"
 }
-)tcl").arg(p.clock, p.reset, p.handshake, p.state, signalList);
+)tcl").arg(p.clock, p.reset, p.handshake, p.state, signalList,
+    collectOnly ? QStringLiteral("dict set ::simdock::waveLeafColors $name $color")
+                : QStringLiteral("property wave -color $color */$name"));
 }
 }

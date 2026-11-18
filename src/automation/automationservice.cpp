@@ -478,7 +478,7 @@ QJsonObject ZeroSlackAutomationService::document(const QJsonObject& request, con
                     for (const auto& value : configuration.value("selectedParameters").toArray()) options.selectedParameters.insert(value.toString());
                 } else for (const auto& parameter : moduleModel.parameters) if (!parameter.local) options.selectedParameters.insert(parameter.name);
                 auto generated = ModuleTemplatePlanner::prepare(moduleModel, options);
-                if (generated.error.isEmpty()) generated.error = ModuleTemplatePlanner::validateInsertion(operation, moduleModel, generated.text);
+                if (generated.error.isEmpty()) generated.error = ModuleTemplatePlanner::validateInsertion(operation, moduleModel, generated.text, options.mode != "signals");
                 if (!generated.error.isEmpty()) return failure("plan_rejected", generated.error, data);
                 if (!SimulationCommandPlanner::sourcesCurrent(moduleModel.captured)) return failure("source_conflict", "Module sources changed during preparation.", data);
                 if (!model->canInsert(start, 0, {}, {})) return failure("protected_range", "The insertion intersects template ownership.", data);

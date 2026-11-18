@@ -29,6 +29,36 @@ struct Workspace {
 class SimulationBuildPlannerTest : public QObject {
     Q_OBJECT
 private slots:
+    void waveGroupsFollowDeclarationIdentityAndInstances() {
+        Workspace w;
+        QVERIFY(w.put("tb.sv","module tb; child a(), b(); for(genvar i=0;i<2;i++) begin : lanes child c(); end endmodule\n"));
+        QVERIFY(w.put("child.sv","module child(/* zs_group = bus */ input logic a,b, output logic other);\n"
+            "/* zs_group = bus */ logic x,y;\n"
+            "for(genvar i=0;i<2;i++) begin : g /* zs_group = bus */ logic ready; end\nendmodule\n"));
+        const auto plan=w.plan(); QVERIFY2(plan->valid(),qPrintable(plan->error()));
+        QVERIFY2(plan->waveGroups.diagnostics.isEmpty(),qPrintable(plan->waveGroups.diagnostics.join('\n')));
+        QCOMPARE(plan->waveGroups.objects.size(),24);
+        QSet<QString> paths;
+        for(const auto& object:plan->waveGroups.objects) { QCOMPARE(object.group,QString("bus")); QVERIFY(object.line>0); QVERIFY(object.file.endsWith("child.sv")); paths.insert(object.path); }
+        QCOMPARE(paths.size(),24); QVERIFY(paths.contains("/tb/a/a")); QVERIFY(paths.contains("/tb/b/y"));
+        QVERIFY(paths.contains("/tb/lanes[1]/c/g[0]/ready")); QVERIFY(!paths.contains("/tb/a/other"));
+    }
+    void waveGroupsRespectPreprocessingAndReportLocations() {
+        Workspace w;
+        QVERIFY(w.put("tb.sv","module tb;\n`ifdef ACTIVE\n/* zs_group = active */ logic a,b;\n`else\n/* zs_group = inactive */ logic c;\n`endif\n"
+            "/* zs_group = 2bad */ logic invalid;\n/* zs_group = wrong */ initial begin end\n"
+            "if(0) begin : off /* zs_group = hidden */ logic x; end\nendmodule\n"));
+        w.request.project.defines.insert("ACTIVE",""); const auto plan=w.plan();
+        QVERIFY2(plan->valid(),qPrintable(plan->error())); QCOMPARE(plan->waveGroups.objects.size(),2);
+        for(const auto& object:plan->waveGroups.objects) QCOMPARE(object.group,QString("active"));
+        QCOMPARE(plan->waveGroups.diagnostics.size(),3);
+        for(const auto& message:plan->waveGroups.diagnostics) QVERIFY(message.contains("tb.sv:"));
+        QVERIFY(!plan->waveGroups.diagnostics.join('\n').contains("inactive"));
+        QVERIFY(w.put("tb.sv","module tb; /* zs_group = replacement */ logic now; endmodule\n"));
+        QVERIFY(!SemanticInputCapture::matchesFingerprint(plan->input->fingerprint(), w.request.project));
+        const auto fresh=w.plan(); QVERIFY(fresh->valid()); QCOMPARE(fresh->waveGroups.objects.size(),1);
+        QCOMPARE(fresh->waveGroups.objects.first().group,QString("replacement"));
+    }
     void selectsOnlyTheTbClosure()
     {
         Workspace w;

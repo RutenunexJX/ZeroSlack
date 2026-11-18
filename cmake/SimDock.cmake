@@ -21,6 +21,7 @@ target_sources(zeroslack_core PRIVATE
     src/simulation/simdock/core/questasession.cpp
     src/simulation/simdock/core/simulationevents.cpp
     src/simulation/simdock/core/wavepalette.cpp
+    src/simulation/simdock/core/wavegroups.cpp
     src/simulation/simdock/ui/workbench.cpp
     src/simulation/simdock/ui/simulationruncoordinator.cpp
     src/simulation/simdock/ui/simulationeventspanel.cpp

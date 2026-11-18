@@ -2139,7 +2139,8 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
     auto edit = beginSynchronousEditTransaction();
     QTextCursor linkedInput;
     if (state->templateSlots.active() && !templateInputEditing()
-        && !event->matches(QKeySequence::Undo) && !event->matches(QKeySequence::Redo)) {
+        && !event->matches(QKeySequence::Undo) && !event->matches(QKeySequence::Redo)
+        && event->key() != Qt::Key_Up && event->key() != Qt::Key_Down) {
         linkedInput = textCursor(); linkedInput.beginEditBlock();
         setProperty("ordinaryTemplateEditBlock", true);
     }

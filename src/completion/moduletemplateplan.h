@@ -34,5 +34,5 @@ public:
                                        const QSet<QString>& occupied = {});
     static QString validateInsertion(const SimulationCommandRequest& source,
                                       const ModuleTemplateModel& model,
-                                      const QString& text);
+                                      const QString& text, bool validateSemantics = true);
 };

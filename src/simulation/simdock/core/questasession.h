@@ -15,7 +15,7 @@ namespace simdock {
 QString tclWord(const QString& text);
 QString runScript(const QString& root, const Project& project, const QString& runDir, const QString& iniPath,
                   WaveTheme waveTheme = WaveTheme::QuestaDefault, bool reuseDesign = false, const QString& workDirectory = {}, bool interactive = true,
-                  const QStringList& bindCompilationUnits = {});
+                  const QStringList& bindCompilationUnits = {}, const WaveGroupPlan& waveGroups = {});
 QString simulatorError(const QString& executable);
 QString scoreboardResultScript(const QString& tbName);
 struct PreparedRun {

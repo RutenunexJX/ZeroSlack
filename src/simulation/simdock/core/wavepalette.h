@@ -16,5 +16,5 @@ const QList<WavePalette>& wavePalettes();
 const WavePalette& wavePalette(WaveTheme theme);
 WaveTheme waveThemeFromId(const QString& id);
 QString waveAppearanceScript(WaveTheme theme);
-QString waveSignalColorsScript(WaveTheme theme, const QString& signalList = QStringLiteral("[find signals -r /*]"));
+QString waveSignalColorsScript(WaveTheme theme, const QString& signalList = QStringLiteral("[find signals -r /*]"), bool collectOnly = false);
 }

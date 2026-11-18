@@ -1,5 +1,7 @@
 #pragma once
 #include "ordinarytemplateplan.h"
+#include "moduletemplateplan.h"
+#include <QFutureWatcher>
 #include <QObject>
 #include <QPointer>
 #include <QTextCursor>
@@ -38,7 +40,15 @@ private:
     bool preedit = false;
     bool compositionCommit = false;
     QList<UserTemplateRecord> snapshot;
-    QList<int> matches;
+    bool selectingModule = false;
+    QList<SemanticSymbolRecord> modules;
+    SimulationCommandRequest moduleSource;
+    quint64 moduleGeneration = 0;
+    quint64 runningGeneration = 0;
+    quint64 queuedModuleGeneration = 0;
+    std::shared_ptr<std::atomic_bool> moduleCancelled;
+    struct ModuleResult { ModuleTemplateModel model; ModuleTemplatePlan plan; };
+    QFutureWatcher<ModuleResult>* moduleWatcher = nullptr;
     struct Eligibility { enum State { Available, Pending, Unavailable }; State state; QString reason; };
     Eligibility eligibility(const UserTemplateRecord& record) const;
     void showEligibility();
@@ -47,4 +57,8 @@ private:
     void ensurePopup();
     void filter();
     void confirm();
+    void chooseModule();
+    void insertModule();
+    void moveSelection(int direction);
+    bool moduleContextCurrent() const;
 };

@@ -247,7 +247,9 @@ private slots:
         MyCodeEditor editor; editor.setDocumentFileName(f.file); editor.resize(740, 420); editor.show(); editor.setFocus();
         QTest::keyClicks(&editor, "/");
         auto* query = editor.findChild<QLineEdit*>("editorSlashQuery"); auto* candidates = editor.findChild<QListWidget*>("editorSlashCandidates");
-        QVERIFY(query && candidates); query->setText("timescale"); QTRY_COMPARE(candidates->count(), 1);
+        QVERIFY(query && candidates); query->setText("timescale"); QTRY_COMPARE(candidates->count(), 2);
+        QCOMPARE(candidates->item(0)->text(), QString("Template"));
+        QVERIFY(!(candidates->item(0)->flags() & Qt::ItemIsSelectable));
         QTest::keyClick(query, Qt::Key_Return); QCOMPARE(editor.toPlainText(), QString("`timescale 1ns / 1ps"));
         editor.undo(); QVERIFY(editor.toPlainText().isEmpty()); editor.redo(); QCOMPARE(editor.toPlainText(), QString("`timescale 1ns / 1ps"));
         QVERIFY(!QFileInfo::exists(f.global));

@@ -2,6 +2,14 @@
   "schemaVersion": 1,
   "templates": [
     {
+      "id": "user:zsgroup",
+      "command": "/zsgroup",
+      "label": "Waveform group",
+      "description": "Group the following signal declaration in Questa",
+      "body": "/* zs_group = ${group} */\n",
+      "editor": {"kind": "snippet", "context": "codeLine", "extensions": ["sv", "svh", "v", "vh"], "inputs": {"group": {"kind": "WaveGroup", "default": "user_interface_xxx"}}}
+    },
+    {
       "id": "user:timescale",
       "command": "/timescale",
       "label": "Timescale 1ns / 1ps",

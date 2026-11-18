@@ -477,7 +477,7 @@ void TemplateManagerDialog::addInput(const QString &inputName, const QVariantMap
     put(inputTable, row, 0, inputName);
     inputTable->item(row, 0)->setData(Qt::UserRole, input);
     auto *combo =
-        choices({"Module", "Instance", "Port", "Internal", "Signal", "Parameter", "Choice", "Value", "Text", "Code"}, inputTable);
+        choices({"Module", "Instance", "Port", "Internal", "Signal", "Parameter", "Choice", "Value", "Text", "Code", "WaveGroup"}, inputTable);
     combo->setCurrentText(input.value("kind", "Value").toString());
     inputTable->setCellWidget(row, 1, combo);
     put(inputTable, row, 2, input.value("default").toString());

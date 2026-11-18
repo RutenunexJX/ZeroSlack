@@ -725,6 +725,96 @@ private slots:
         session.stop();
         QTRY_VERIFY_WITH_TIMEOUT(!session.alive(), 5000);
     }
+    void liveWaveGroups()
+    {
+        const auto executable = qEnvironmentVariable("SIMDOCK_TEST_QUESTA");
+        if (executable.isEmpty()) QSKIP("Set SIMDOCK_TEST_QUESTA to verify grouped waveform objects.");
+        QTemporaryDir workspace(QDir::currentPath() + "/simdock-wave-groups-XXXXXX");
+        QVERIFY(workspace.isValid());
+        const QByteArray source =
+            "`timescale 1ns/1ps\nmodule child(/* zs_group = bus */ input logic clk, rst_n, output logic other);\n"
+            "/* zs_group = bus */ logic x=0,y=0;\n"
+            "for(genvar i=0;i<2;i++) begin : g /* zs_group = bus */ logic ready=0; end\n"
+            "assign other = clk; endmodule\nmodule tb_groups; logic clk=0;\n"
+            "child a(clk,1'b1,), b(clk,1'b1,);\n"
+            "for(genvar i=0;i<2;i++) begin : lanes child c(clk,1'b1,); end\n"
+            "always #5 clk=~clk; initial #30 $finish; endmodule\n";
+        const auto file = workspace.filePath("tb_groups.sv");
+        QVERIFY(put(file, source));
+        auto project = newProject("Wave groups");
+        project.sources = {"tb_groups.sv"}; project.tbFile = "tb_groups.sv"; project.tbName = "tb_groups";
+        const auto prepared = prepareRun(executable, workspace.path(), project);
+        QVERIFY2(prepared.error.isEmpty(), qPrintable(prepared.error));
+        QVERIFY(prepared.plan); QCOMPARE(prepared.plan->waveGroups.objects.size(), 24);
+        QVERIFY(prepared.plan->waveGroups.diagnostics.isEmpty());
+        QByteArray changed = source; changed.replace("zs_group = bus", "zs_group = next_bus");
+        QVERIFY(put(file, changed));
+        QuestaSession stale; QString error;
+        QVERIFY(!stale.start(prepared, &error)); QVERIFY(!error.isEmpty()); QVERIFY(!stale.alive());
+        const auto fresh = prepareRun(executable, workspace.path(), project);
+        QVERIFY2(fresh.error.isEmpty(), qPrintable(fresh.error));
+        QCOMPARE(fresh.plan->waveGroups.objects.size(), 24);
+        for (const auto& object : fresh.plan->waveGroups.objects) QCOMPARE(object.group, QString("next_bus"));
+
+        const auto runDir = workspace.filePath("run"); QVERIFY(QDir().mkpath(runDir));
+        const auto ini = QDir(runDir).filePath("modelsim.ini");
+        const auto installed = QDir(QFileInfo(executable).absolutePath()).absoluteFilePath("../modelsim.ini");
+        QVERIFY(put(ini, QString("[Library]\nwork = %1/work\nothers = %2\n").arg(runDir, installed).toUtf8()));
+        const auto format = workspace.filePath("wave.do");
+        auto groups = fresh.plan->waveGroups;
+        groups.objects << WaveGroupObject{"unavailable", "/tb_groups/absent", file, 1};
+        QString script = "if {[catch {\nnamespace eval ::simdock { variable runId wave-groups }\nproc ::simdock::state {value} {}\n";
+        script += runScript(workspace.path(), fresh.project, runDir, ini, WaveTheme::Nord, false, {}, true,
+                            fresh.plan->bindCompilationUnits, groups);
+        script += "write format wave " + tclWord(format) + "\nputs {WAVE_GROUPS_OK}\n"
+                  "} message details]} {puts \"WAVE_GROUPS_FAILURE $message\"; puts [dict get $details -errorinfo]; quit -force -code 1}\nquit -force -code 0\n";
+        const auto scriptPath = workspace.filePath("verify.do"); QVERIFY(put(scriptPath, script.toUtf8()));
+        QProcess process; process.setProcessChannelMode(QProcess::MergedChannels);
+        auto environment = QProcessEnvironment::systemEnvironment();
+        environment.insert("MODELSIM_PREFERENCES", workspace.filePath("preferences"));
+        process.setProcessEnvironment(environment); process.setWorkingDirectory(workspace.path());
+#ifdef Q_OS_WIN
+        process.setCreateProcessArgumentsModifier([](QProcess::CreateProcessArguments* args) {
+            args->flags |= CREATE_NO_WINDOW; args->startupInfo->dwFlags |= STARTF_USESHOWWINDOW;
+            args->startupInfo->wShowWindow = SW_HIDE;
+        });
+#endif
+        process.start(executable, {"-gui", "-do", "source -encoding utf-8 " + tclWord(scriptPath)});
+        QVERIFY(process.waitForStarted());
+        QTRY_VERIFY_WITH_TIMEOUT(process.state() == QProcess::NotRunning, 90000);
+        const auto log = read(workspace.filePath("transcript")) + read(QDir(runDir).filePath("transcript.log")) + process.readAllStandardOutput();
+        const auto wave = read(format);
+        const auto artifacts = qEnvironmentVariable("SIMDOCK_TEST_WAVE_DIR");
+        if (!artifacts.isEmpty()) {
+            QVERIFY(put(QDir(artifacts).filePath("wave-groups.log"), log));
+            QVERIFY(put(QDir(artifacts).filePath("wave-groups.do"), wave));
+            QVERIFY(put(QDir(artifacts).filePath("wave-groups-script.do"), script.toUtf8()));
+        }
+        QCOMPARE(process.exitStatus(), QProcess::NormalExit); QVERIFY2(process.exitCode() == 0, log.constData());
+        QVERIFY2(log.contains("WAVE_GROUPS_OK"), log.constData());
+        QVERIFY2(log.contains((file + ":1: zs_group unavailable: Signal is not visible in Questa: /tb_groups/absent").toUtf8()), log.constData());
+        const auto lines = QString::fromUtf8(wave).split('\n');
+        for (const auto& object : fresh.plan->waveGroups.objects) {
+            QStringList matches;
+            for (const auto& raw : lines) {
+                const auto line = raw.trimmed();
+                if (line.startsWith("add wave") && (line.endsWith(object.path) || line.endsWith(object.path + '}'))) matches << line;
+            }
+            QCOMPARE(matches.size(), 1);
+            QVERIFY2(matches.first().contains("-group next_bus"), qPrintable(matches.first()));
+            const auto& palette = wavePalette(WaveTheme::Nord);
+            const auto color = object.path.endsWith("/clk") ? palette.clock : object.path.endsWith("/rst_n")
+                ? palette.reset : object.path.endsWith("/ready") ? palette.handshake : QString();
+            if (!color.isEmpty()) QVERIFY2(matches.first().contains("-color " + color), qPrintable(matches.first()));
+        }
+        QVERIFY(wave.contains("/tb_groups/clk"));
+        QVERIFY(wave.contains("/tb_groups/a/other"));
+        QVERIFY(!wave.contains("/tb_groups/absent"));
+        QVERIFY(!wave.contains("/#vsim_capacity#/"));
+        QVERIFY(!wave.contains("-group bus"));
+        QVERIFY2(!log.contains("SimDock warning:"), log.constData());
+        QVERIFY(wave.contains(wavePalette(WaveTheme::Nord).clock.toUtf8()));
+    }
     void liveWaveThemes()
     {
         const QString executable = qEnvironmentVariable("SIMDOCK_TEST_QUESTA");

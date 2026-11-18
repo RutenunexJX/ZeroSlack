@@ -246,6 +246,7 @@ std::shared_ptr<const SimulationBuildPlan> SimulationBuildPlanner::plan(
             if (selected.size() != count && errors.isEmpty()) continue;
             errors += pendingErrors;
             if (errors.isEmpty()) {
+                result->waveGroups = collectWaveGroups(compilation, manager);
                 result->compilation = std::move(ordered);
                 result->elaborationDependencies = std::move(dependencies);
                 for (const auto& file : selected) {

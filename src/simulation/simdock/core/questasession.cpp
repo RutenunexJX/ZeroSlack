@@ -124,7 +124,7 @@ proc ::simdock::compile {directories commands} {
     return script + QStringLiteral("] ") + tclWord(commands) + QLatin1Char('\n');
 }
 QString runScript(const QString& root, const Project& p, const QString& runDir, const QString& iniPath, WaveTheme waveTheme, bool reuseDesign, const QString& workDirectory, bool interactive,
-    const QStringList& bindCompilationUnits)
+    const QStringList& bindCompilationUnits, const WaveGroupPlan& waveGroups)
 {
     const QString directory = simulatorPath(runDir);
     const QString ini = simulatorPath(iniPath);
@@ -196,10 +196,13 @@ QString runScript(const QString& root, const Project& p, const QString& runDir, 
     s += QStringLiteral("onbreak {resume}\n"
         "set signals [find signals -r %1]\nif {[llength $signals]} {log -r /*}\n")
         .arg(tclWord(QStringLiteral("/%1/*").arg(p.tbName)));
-    if (interactive) s += QStringLiteral("view wave\ncatch {delete wave *}\nif {[llength $signals]} {add wave -r /*}\n");
+    if (interactive) s += QStringLiteral("view wave\ncatch {delete wave *}\n") + waveGroupsScript(waveGroups, waveTheme);
     if (legacyChecks(p))
         s += QStringLiteral("log -r %1\n").arg(tclWord(QStringLiteral("/%1/__simdock_scoreboard/*").arg(p.tbName)));
-    if (interactive) s += waveAppearanceScript(waveTheme) + waveSignalColorsScript(waveTheme, QStringLiteral("$signals"));
+    if (interactive) {
+        s += waveAppearanceScript(waveTheme);
+        if (waveGroups.objects.isEmpty()) s += waveSignalColorsScript(waveTheme, QStringLiteral("$signals"));
+    }
     s += QStringLiteral(R"tcl(::simdock::state running
 run -all
 set status [runStatus -full]
@@ -590,7 +593,7 @@ bool QuestaSession::start(const PreparedRun& prepared, QString* error, WaveTheme
     if (QFileInfo(installedIni).isFile()) iniText += QStringLiteral("others = %1\n").arg(QDir::cleanPath(installedIni));
     if (!writeFile(ini, iniText, error)) return false;
     const QString script = runScript(root, p, runDir, ini, waveTheme, reuse, mappedWork, m_interactive,
-        prepared.plan ? prepared.plan->bindCompilationUnits : QStringList());
+        prepared.plan ? prepared.plan->bindCompilationUnits : QStringList(), prepared.plan ? prepared.plan->waveGroups : WaveGroupPlan());
     if (!writeFile(QDir(runDir).filePath(QStringLiteral("run.do")), script, error)) return false;
     m_runId = runId; m_runDir = runDir;
     m_events.reset(runId);

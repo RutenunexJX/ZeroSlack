@@ -95,7 +95,7 @@ foreach(name IN ITEMS scan_cache storage core workbench_host ui ui_200 legacy_co
 endforeach()
 set_tests_properties(simdock_ui_200 PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=windows;QT_SCALE_FACTOR=2;SIMDOCK_TEST_QUESTA=")
 if(ZEROSLACK_TEST_QUESTA_EXECUTABLE)
-    add_test(NAME simdock_core_live COMMAND simdock_core_tests liveNamedTypeCompilation liveDependencyCompilation liveStateReaderReleasesHandle liveStatePublicationContention liveLoadFailureAndRecovery liveWaveThemes liveCompilationReuse liveReadableProjectPaths liveQuesta liveTbControlledTermination liveTbDependencyPlan liveNoRuntimeDeadline -o "${CMAKE_BINARY_DIR}/simdock-core-live.xml,junitxml" -o -,txt)
+    add_test(NAME simdock_core_live COMMAND simdock_core_tests liveNamedTypeCompilation liveDependencyCompilation liveStateReaderReleasesHandle liveStatePublicationContention liveLoadFailureAndRecovery liveWaveGroups liveWaveThemes liveCompilationReuse liveReadableProjectPaths liveQuesta liveTbControlledTermination liveTbDependencyPlan liveNoRuntimeDeadline -o "${CMAKE_BINARY_DIR}/simdock-core-live.xml,junitxml" -o -,txt)
     add_test(NAME simdock_workbench_host_live COMMAND simdock_workbench_host_tests simulationLifecycle -o "${CMAKE_BINARY_DIR}/simdock-host-live.xml,junitxml" -o -,txt)
     foreach(name IN ITEMS core workbench_host)
         set_tests_properties(simdock_${name}_live PROPERTIES TIMEOUT 1200 LABELS "simdock-questa-required"

@@ -10,6 +10,12 @@ public:
         return {420, qMax(30, QFontMetrics(option.font).height() + 12)};
     }
     void paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const override {
+        if (index.data(Qt::UserRole + 22).toBool()) {
+            painter->save(); auto font = option.font; font.setBold(true); painter->setFont(font);
+            painter->setPen(option.palette.color(QPalette::PlaceholderText));
+            painter->drawText(option.rect.adjusted(10, 5, -10, -3), Qt::AlignLeft | Qt::AlignVCenter, index.data().toString());
+            painter->restore(); return;
+        }
         QStyleOptionViewItem row(option); initStyleOption(&row, index); row.text.clear();
         const auto* style = row.widget ? row.widget->style() : QApplication::style();
         style->drawControl(QStyle::CE_ItemViewItem, &row, painter, row.widget);
@@ -21,8 +27,8 @@ public:
         const QFontMetrics metrics(option.font);
         const auto availability = index.data(Qt::UserRole + 20).toString();
         if (!availability.isEmpty()) {
-            const QString status = badge + QStringLiteral(" · ") + availability;
-            const int width = qMin(rect.width() / 2, metrics.horizontalAdvance(status));
+            const QString status = badge.isEmpty() ? availability : badge + QStringLiteral(" · ") + availability;
+            const int width = qMin(rect.width() / 2, metrics.horizontalAdvance(status) + 4);
             const QRect statusRect(rect.right()-width+1, rect.top(), width, rect.height());
             painter->setPen(option.palette.color(QPalette::PlaceholderText));
             painter->drawText(statusRect, Qt::AlignRight | Qt::AlignVCenter, metrics.elidedText(status,Qt::ElideRight,width));

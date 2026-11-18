@@ -1,6 +1,7 @@
 #include "templateinputservice.h"
 #include "editorfileidentity.h"
 #include "effectivevalueservice.h"
+#include "../simulation/simdock/core/wavegroups.h"
 #include <QFileInfo>
 #include <QSet>
 #include <algorithm>
@@ -66,9 +67,9 @@ QString TemplateInputService::specificationError(const QVariantMap &input)
 {
     if (input.isEmpty())
         return {};
-    const QStringList kinds{"Module", "Instance", "Port", "Internal", "Signal", "Parameter", "Choice", "Value", "Text", "Code"};
+    const QStringList kinds{"Module", "Instance", "Port", "Internal", "Signal", "Parameter", "Choice", "Value", "Text", "Code", "WaveGroup"};
     if (!kinds.contains(input.value("kind").toString()))
-        return QStringLiteral("Choose Module, Instance, Port, Internal, Signal, Parameter, Choice, Value, Text or Code.");
+        return QStringLiteral("Choose Module, Instance, Port, Internal, Signal, Parameter, Choice, Value, Text, Code or WaveGroup.");
     if (input.value("kind").toString() == "Code" && !QStringList{"statements", "declarations"}.contains(input.value("content", "statements").toString()))
         return QStringLiteral("Unknown Code container content.");
     const auto role = input.value("role").toString();
@@ -161,6 +162,11 @@ TemplateInputCandidates TemplateInputService::candidates(const QVariantMap &inpu
     if (context.current && !context.current())
     {
         result.reason = QStringLiteral("Source or project context changed; reopen the inputs.");
+        return result;
+    }
+    if (kind == "WaveGroup") {
+        if (context.snapshot) result.values = simdock::waveGroupNames(context.snapshot->fileContents());
+        if (result.values.isEmpty()) result.reason = "No group names in the current workspace. Enter a new name.";
         return result;
     }
     if (kind == "Choice" && input.value("enumOf").toString().isEmpty())
@@ -359,6 +365,8 @@ QString TemplateInputService::validate(const QVariantMap &input, const QString &
         return input.value("allowEmpty").toBool() ? QString()
                                                   : QStringLiteral("Required input is empty.");
     if (input.value("kind").toString() == "Text") return {};
+    if (input.value("kind").toString() == "WaveGroup")
+        return simdock::validWaveGroupName(text) ? QString() : QStringLiteral("Use letters, digits and underscores, starting with a letter or underscore.");
     if (input.value("kind").toString() != "Value")
     {
         const auto result = candidates(input, context, bindings);

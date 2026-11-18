@@ -238,8 +238,10 @@ ModuleTemplateModel ModuleTemplatePlanner::inspect(const SimulationCommandReques
 }
 
 ModuleTemplatePlan ModuleTemplatePlanner::prepare(const ModuleTemplateModel& model,
-                                                  const ModuleTemplateOptions& options,
+                                                  const ModuleTemplateOptions& requested,
                                                   const QSet<QString>& occupied) {
+    auto options = requested;
+    if (options.mode == "signals") { options.prefix.clear(); options.suffix.clear(); }
     ModuleTemplatePlan result;
     if (!model.error.isEmpty()) { result.error = model.error; return result; }
     if (options.mode == "signals" && !model.portsError.isEmpty()) { result.error = model.portsError; return result; }
@@ -301,7 +303,7 @@ ModuleTemplatePlan ModuleTemplatePlanner::prepare(const ModuleTemplateModel& mod
         if (rendered.isEmpty() || ((!options.prefix.isEmpty() || !options.suffix.isEmpty()) && !identifier(raw))) {
             result.error = "Invalid generated identifier: " + raw; return QString();
         }
-        if (occupied.contains(raw) || generated.contains(raw)) conflicts << raw;
+        if (options.mode != "signals" && (occupied.contains(raw) || generated.contains(raw))) conflicts << raw;
         generated.insert(raw);
         return rendered;
     };
@@ -335,7 +337,7 @@ ModuleTemplatePlan ModuleTemplatePlanner::prepare(const ModuleTemplateModel& mod
 }
 
 QString ModuleTemplatePlanner::validateInsertion(const SimulationCommandRequest& source,
-                                                 const ModuleTemplateModel& model, const QString& text) {
+                                                 const ModuleTemplateModel& model, const QString& text, bool validateSemantics) {
     if (!model.captured) return "Module sources are unavailable.";
     if (source.context.readOnly || source.context.cursorPosition < 0
         || source.context.cursorPosition > source.context.documentText.size()) return "The insertion position is no longer editable.";
@@ -348,6 +350,7 @@ QString ModuleTemplatePlanner::validateInsertion(const SimulationCommandRequest&
         || !syntax.moduleScopeTarget(position).ok() || syntax.alwaysScopeTarget(position).ok()
         || syntax.isCommentAt(position) || syntax.isStringAt(position))
         return "Choose an empty line in a module body.";
+    if (!validateSemantics) return {};
     const auto cancelled = [flag = source.cancelled] { return flag && flag->load(); };
     QHash<QString, QString> contents;
     for (auto it = model.captured->sources.cbegin(); it != model.captured->sources.cend(); ++it)

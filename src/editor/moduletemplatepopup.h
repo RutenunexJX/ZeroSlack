@@ -16,6 +16,8 @@ class QComboBox;
 class QPushButton;
 class QTimer;
 
+SimulationCommandRequest captureModuleTemplateSource(MyCodeEditor* editor, const QTextCursor& cursor);
+
 class ModuleTemplatePopup final : public QFrame {
 public:
     ModuleTemplatePopup(MyCodeEditor* editor, const QVariantMap& configuration);

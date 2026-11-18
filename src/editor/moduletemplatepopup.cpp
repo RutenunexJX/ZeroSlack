@@ -121,6 +121,9 @@ ModuleTemplatePopup::ModuleTemplatePopup(MyCodeEditor* target, const QVariantMap
 }
 ModuleTemplatePopup::~ModuleTemplatePopup() { if (cancelled) cancelled->store(true); }
 SimulationCommandRequest ModuleTemplatePopup::capture() const {
+    return captureModuleTemplateSource(editor, cursor);
+}
+SimulationCommandRequest captureModuleTemplateSource(MyCodeEditor* editor, const QTextCursor& cursor) {
     SimulationCommandRequest request;
     if (!editor) return request;
     if (auto* service = editor->window()->findChild<SimulationCommandService*>()) request = service->currentRequest();

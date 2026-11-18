@@ -513,6 +513,8 @@ set(PHASE_L_REVIEWED_SOURCE_NORMALIZATION "utf8-crlf-to-lf-v1")
 # Provenance: build/coordination/20261114-block-scroll-sync/implementation/bundled-templates01/policy-review01/REGEX-REVIEW.json.
 # 2026-11-17 module templates: two source identities reviewed against 28777fa98e32daf55e2170e4caa611e59ead1d6b.
 # Provenance: build/coordination/20261117-module-templates/regex-review/REGEX-REVIEW.json; regex API identities unchanged.
+# 2026-11-18 wave groups: template-manager source identity reviewed against 7b5834e; WaveGroup input choice only.
+# Provenance: build/coordination/20261118-wave-groups/regex-review/REGEX-REVIEW.json; regex API identities unchanged.
 set(PHASE_L_REVIEWED_REGEX_USAGE
     "src/completion/simulationcommandprefix.cpp|e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855|987c024b13a27e010517a6fc8b2905fa427aff71bc5086a59cf6ddcd509e64fe"
     "src/completion/templatecapabilities.cpp|2c44206dc8be8af7887134525d2aa91cf7a6621ed7c761c0ccaaa1bfcf2cdb4f|73417fc560e907e70e006231ea6bd869b1f5680052e1893c192c1ca3ef888664"
@@ -537,7 +539,7 @@ set(PHASE_L_REVIEWED_REGEX_USAGE
     # Provenance: build/coordination/20261106-web-retire/implementation/REGEX-REVIEW.json.
     # 2026-11-09 C/E shared-host placement; regex unchanged. Provenance: implementation/REGEX-REVIEW.json.
     "src/ui/linkedcontextcontroller.cpp|9c739a5da4dff7ce01f05291fd853ce472ca7a06c4c681be57674a099fa8e599|ebe39ff11eb0b0ed964d4431b0e52c865a6d03a591f6b04d477c028e7e21f861"
-    "src/ui/templatemanagerdialog.cpp|9b6e26960cb1535017135d00fd49807feb213d838e3a24063380eeea7b09923c|f9f1f7eea9354d8cfae24d7bbb3beb42c0f6ae931adc1a66a5e865c2cfa4eb80"
+    "src/ui/templatemanagerdialog.cpp|9b6e26960cb1535017135d00fd49807feb213d838e3a24063380eeea7b09923c|cc899e6bd8262bf8dca07b3af0cf06303b8788834b3918b09d6ce7479e1bd748"
 )
 zeroslack_verify_reviewed_regex_contract("${ZEROSLACK_SOURCE_DIR}"
     "${PHASE_L_REVIEWED_REGEX_SOURCE_REVISION}"

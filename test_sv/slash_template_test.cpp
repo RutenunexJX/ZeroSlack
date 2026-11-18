@@ -92,8 +92,9 @@ private slots:
         QVERIFY(service->records().isEmpty()); QVERIFY(OrdinaryTemplatePlanner::builtins().isEmpty());
         QVERIFY(UserTemplateService::simulationBuiltins().isEmpty()); QVERIFY(CodeTemplateService::getInstance()->catalog().isEmpty());
         QVERIFY(OrdinaryTemplatePlanner::catalog(service,editor->documentFileName()).isEmpty());
-        open(); auto* list=editor->findChild<QListWidget*>("editorSlashCandidates"); QCOMPARE(list->count(),6);
-        for(int i=0;i<list->count();++i) QCOMPARE(list->item(i)->data(Qt::UserRole+1).toString(),QString("Block"));
+        open(); auto* list=editor->findChild<QListWidget*>("editorSlashCandidates"); QCOMPARE(list->count(),7);
+        QCOMPARE(list->item(0)->text(),QString("Block")); QVERIFY(!(list->item(0)->flags() & Qt::ItemIsSelectable));
+        for(int i=1;i<list->count();++i) QVERIFY(list->item(i)->flags() & Qt::ItemIsSelectable);
         QTest::keyClick(search(),Qt::Key_Escape);
         UserTemplateService reopened(service->globalTemplateLocation(),{}); reopened.setBundledTemplateFilePath({}); QVERIFY(reopened.records().isEmpty());
     }
@@ -144,9 +145,9 @@ private slots:
         const auto undo = editor->document()->availableUndoSteps();
         open("qualified");
         auto* list = editor->findChild<QListWidget*>("editorSlashCandidates");
-        QCOMPARE(list->count(), 1);
-        QCOMPARE(list->item(0)->data(Qt::UserRole + 20).toString(), QString("Unavailable"));
-        QVERIFY(list->item(0)->data(Qt::UserRole + 21).toString().contains("empty code line"));
+        QCOMPARE(list->count(), 2);
+        QCOMPARE(list->currentItem()->data(Qt::UserRole + 20).toString(), QString("Unavailable"));
+        QVERIFY(list->currentItem()->data(Qt::UserRole + 21).toString().contains("empty code line"));
         QTest::keyClick(search(), Qt::Key_Return);
         QVERIFY(popup()->isVisible()); QCOMPARE(editor->toPlainText(), before);
         QCOMPARE(editor->document()->availableUndoSteps(), undo);
@@ -157,17 +158,17 @@ private slots:
         const auto pendingUndo = editor->document()->availableUndoSteps();
         QKeyEvent slash(QEvent::KeyPress, Qt::Key_Slash, Qt::NoModifier, "/");
         QApplication::sendEvent(editor.get(), &slash); search()->setText("qualified");
-        QCOMPARE(list->count(), 1);
+        QCOMPARE(list->count(), 2);
         // Deferred syntax completion must refresh qualification without inserting.
-        const auto initial = list->item(0)->data(Qt::UserRole + 20).toString();
+        const auto initial = list->currentItem()->data(Qt::UserRole + 20).toString();
         QVERIFY(initial == "Waiting" || initial == "Available");
-        QTRY_COMPARE(list->item(0)->data(Qt::UserRole + 20).toString(), QString("Available"));
+        QTRY_COMPARE(list->currentItem()->data(Qt::UserRole + 20).toString(), QString("Available"));
         QVERIFY(popup()->isVisible()); QCOMPARE(editor->toPlainText(), pendingText);
         QCOMPARE(editor->document()->availableUndoSteps(), pendingUndo);
         editor->setReadOnly(true);
         QTest::keyClick(search(), Qt::Key_Return);
         QCOMPARE(editor->toPlainText(), pendingText);
-        QCOMPARE(list->item(0)->data(Qt::UserRole + 20).toString(), QString("Unavailable"));
+        QCOMPARE(list->currentItem()->data(Qt::UserRole + 20).toString(), QString("Unavailable"));
         editor->setReadOnly(false); QTest::keyClick(search(), Qt::Key_Escape);
     }
     void compositionAndAtomicUndo() {
@@ -186,6 +187,106 @@ private slots:
         editor->undo(); QCOMPARE(editor->toPlainText().mid(start, 7), QString("(1 + 1)"));
         editor->undo(); QVERIFY(editor->toPlainText().contains("(3 + 3)"));
         editor->undo(); QCOMPARE(editor->toPlainText(), before);
+    }
+    void groupsNavigationAndFilteredIdentity() {
+        auto a=resource("shared-code","logic selected_code;"); a.label="Shared code";
+        auto b=resource("shared-block",{}); b.label="Shared custom block"; b.command={{"kind","block"},{"blockType","text"},{"text","custom"}};
+        QVERIFY(UserTemplateService::getInstance()->setRecords({b,a}).valid);
+        const auto before=editor->toPlainText(); QSignalSpy inserted(editor.get(),&MyCodeEditor::editorBlockInsertRequested);
+        open("shared"); auto* list=editor->findChild<QListWidget*>("editorSlashCandidates");
+        QCOMPARE(list->count(),4); QCOMPARE(list->item(0)->text(),QString("Template")); QCOMPARE(list->item(2)->text(),QString("Block"));
+        QVERIFY(!(list->item(0)->flags() & Qt::ItemIsSelectable)); QVERIFY(!(list->item(2)->flags() & Qt::ItemIsSelectable));
+        QCOMPARE(list->currentRow(),1); QTest::keyClick(search(),Qt::Key_Down); QCOMPARE(list->currentRow(),3);
+        QTest::keyClick(search(),Qt::Key_Down); QCOMPARE(list->currentRow(),1);
+        QTest::keyClick(search(),Qt::Key_Up); QCOMPARE(list->currentRow(),3); QCOMPARE(editor->toPlainText(),before);
+        search()->setText("custom"); QCOMPARE(list->count(),2); QCOMPARE(list->item(0)->text(),QString("Block"));
+        QTest::keyClick(search(),Qt::Key_Return); QCOMPARE(inserted.size(),1);
+        QCOMPARE(inserted.first().first().toMap().value("text").toString(),QString("custom")); QCOMPARE(editor->toPlainText(),before);
+        open("shared"); QTest::keyClick(search(),Qt::Key_Down); search()->setText("code");
+        QTest::keyClick(search(),Qt::Key_Return); QVERIFY(editor->toPlainText().contains("logic selected_code;"));
+        editor->undo(); QCOMPARE(editor->toPlainText(),before);
+    }
+    void abbreviationsFindTemplatesAndBlocks() {
+        auto record = resource("signals", "logic from_template;");
+        record.label = "Module signals";
+        record.description = "Declare internal connections";
+        record.command.insert("aliases", QVariantList{QStringLiteral("QuickBundle")});
+        QVERIFY(UserTemplateService::getInstance()->setRecords({record}).valid);
+        const QString before = editor->toPlainText();
+        open();
+        auto* list = editor->findChild<QListWidget*>("editorSlashCandidates");
+        QVERIFY(list);
+
+        for (const QString& query : QStringList{"/sgnl", "MdSg", "QkBd", "connections MdSg", "dule sig"}) {
+            search()->setText(query);
+            QCOMPARE(list->count(), 2);
+            QCOMPARE(list->item(0)->text(), QString("Template"));
+            QCOMPARE(list->currentItem()->text(), record.label);
+        }
+        search()->setText("lq"); // The l in signals and the Q in the alias are in separate fields.
+        QCOMPARE(list->count(), 0);
+        QTest::keyClick(search(), Qt::Key_Return);
+        QCOMPARE(editor->toPlainText(), before);
+        QVERIFY(popup()->isVisible());
+
+        search()->clear();
+        QTest::keyClicks(search(), "sgnl");
+        QTest::keyClick(search(), Qt::Key_Return);
+        QVERIFY(editor->toPlainText().contains(record.insertText));
+        editor->undo();
+        QCOMPARE(editor->toPlainText(), before);
+
+        QSignalSpy inserted(editor.get(), &MyCodeEditor::editorBlockInsertRequested);
+        open("gmi");
+        QCOMPARE(list->count(), 0);
+        search()->clear();
+        QTest::keyClicks(search(), "ImG");
+        QCOMPARE(list->count(), 2);
+        QCOMPARE(list->item(0)->text(), QString("Block"));
+        QCOMPARE(list->currentItem()->text(), QString("Image"));
+        QCOMPARE(inserted.size(), 0);
+
+        const bool dialogsWereNonNative = QCoreApplication::testAttribute(Qt::AA_DontUseNativeDialogs);
+        QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
+        const auto restoreDialogs = qScopeGuard([dialogsWereNonNative] {
+            QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs, dialogsWereNonNative);
+        });
+        QString pickerTitle;
+        QTimer closePicker;
+        connect(&closePicker, &QTimer::timeout, &closePicker, [&] {
+            if (auto* picker = qobject_cast<QFileDialog*>(QApplication::activeModalWidget())) {
+                pickerTitle = picker->windowTitle();
+                closePicker.stop();
+                picker->reject();
+            }
+        });
+        closePicker.start(10);
+        QTest::keyClick(search(), Qt::Key_Return);
+        QCOMPARE(pickerTitle, QString("Import image"));
+        QCOMPARE(inserted.size(), 1);
+        QCOMPARE(inserted.first().first().toMap().value("blockType").toString(), QString("image"));
+        QCOMPARE(editor->toPlainText(), before);
+    }
+    void waveGroupSlotAcceptsNewAndExistingNames() {
+        auto record=resource("zsgroup","/* zs_group = ${group} */\n");
+        record.command.insert("inputs",QVariantMap{{"group",QVariantMap{{"kind","WaveGroup"},{"default","user_interface_xxx"}}}});
+        QVERIFY(UserTemplateService::getInstance()->setRecords({record}).valid);
+        const auto contents=QString("module m;\n/* zs_group = existing_bus */\nlogic ready;\n\nendmodule\n");
+        editor->setPlainText(contents); QTextCursor cursor(editor->document()); cursor.setPosition(contents.indexOf("\n\n")+1); editor->setTextCursor(cursor);
+        SlangManager slang;
+        SemanticIndex::getInstance()->setSnapshot(std::make_shared<const SemanticIndexSnapshot>(SemanticIndexSnapshot::fromSymbolRecords(
+            slang.extractSymbolRecords(editor->documentFileName(),contents),{},{},{{editor->documentFileName(),contents}})));
+        open("zsgroup"); QTest::keyClick(search(),Qt::Key_Return);
+        QCOMPARE(editor->textCursor().selectedText(),QString("user_interface_xxx"));
+        QTest::keyClick(editor.get(),Qt::Key_Down); QCOMPARE(editor->textCursor().selectedText(),QString("existing_bus"));
+        QVERIFY(editor->templateSlotModeActive());
+        QTest::keyClicks(editor.get(),"new_bus"); QVERIFY(editor->templateSlotModeActive());
+        QTest::keyClick(editor.get(),Qt::Key_Tab);
+        QVERIFY2(editor->toPlainText().contains("/* zs_group = new_bus */"), qPrintable(editor->toPlainText())); QVERIFY(!editor->templateSlotModeActive());
+        const auto inserted=editor->toPlainText(); editor->undo(); QVERIFY(editor->toPlainText()!=inserted);
+        TemplateInputContext context; context.snapshot=SemanticIndex::getInstance()->snapshot();
+        QVERIFY(TemplateInputService::validate({{"kind","WaveGroup"}},"new_bus",context,{}).isEmpty());
+        QVERIFY(!TemplateInputService::validate({{"kind","WaveGroup"}},"bad */ name",context,{}).isEmpty());
     }
     void wrapSelectionAndRejectCycles() {
         auto wrap = resource("wrap", "begin\n${body}\nend${cursor}"); wrap.command.insert("acceptsBody", true);
