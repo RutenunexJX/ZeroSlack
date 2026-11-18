@@ -6,8 +6,11 @@
       "command": "/zsgroup",
       "label": "Waveform group",
       "description": "Group the following signal declaration in Questa",
-      "body": "/* zs_group = ${group} */\n",
-      "editor": {"kind": "snippet", "context": "codeLine", "extensions": ["sv", "svh", "v", "vh"], "inputs": {"group": {"kind": "WaveGroup", "default": "user_interface_xxx"}}}
+      "body": "/* zs_group = user_interface_xxx */\n",
+      "slots": [
+        {"name": "group", "start": 14, "length": 18, "tabStop": 1, "visibleWhenEmpty": true, "input": {"kind": "WaveGroup"}}
+      ],
+      "editor": {"kind": "snippet", "context": "codeLine", "extensions": ["sv", "svh", "v", "vh"]}
     },
     {
       "id": "user:timescale",

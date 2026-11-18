@@ -12,6 +12,8 @@
 #include "mainwindow.h"
 #include "tabmanager.h"
 #include "templatemanagerdialog.h"
+#include "../src/simulation/simdock/core/simulationbuildplanner.h"
+#include <QProcess>
 #include <QScopeGuard>
 #include <QtTest>
 #include <QtWidgets>
@@ -267,26 +269,109 @@ private slots:
         QCOMPARE(inserted.first().first().toMap().value("blockType").toString(), QString("image"));
         QCOMPARE(editor->toPlainText(), before);
     }
+    void waveGroupSlotAcceptsNewAndExistingNames_data() {
+        QTest::addColumn<QString>("groupName");
+        QTest::newRow("keep-default") << QString("user_interface_xxx");
+        QTest::newRow("accept-existing") << QString("existing_bus");
+        QTest::newRow("type-new-after-candidate") << QString("new_bus");
+    }
     void waveGroupSlotAcceptsNewAndExistingNames() {
-        auto record=resource("zsgroup","/* zs_group = ${group} */\n");
-        record.command.insert("inputs",QVariantMap{{"group",QVariantMap{{"kind","WaveGroup"},{"default","user_interface_xxx"}}}});
-        QVERIFY(UserTemplateService::getInstance()->setRecords({record}).valid);
-        const auto contents=QString("module m;\n/* zs_group = existing_bus */\nlogic ready;\n\nendmodule\n");
-        editor->setPlainText(contents); QTextCursor cursor(editor->document()); cursor.setPosition(contents.indexOf("\n\n")+1); editor->setTextCursor(cursor);
+        QFETCH(QString, groupName);
+        auto* service = UserTemplateService::getInstance();
+        service->setBundledTemplateFilePath(UserTemplateService().bundledTemplateLocation());
+        QVERIFY(service->setRecords({}).valid);
+        const auto loaded = service->reload();
+        QVERIFY2(loaded.valid, qPrintable(loaded.failureReason));
+        const QString contents = "module m;\n/* zs_group = existing_bus */\nlogic ready;\n\nlogic data;\nendmodule\n";
+        const int start = contents.indexOf("\n\n") + 1;
+        editor->setPlainText(contents);
+        QTextCursor cursor(editor->document());
+        cursor.setPosition(start);
+        editor->setTextCursor(cursor);
         SlangManager slang;
         SemanticIndex::getInstance()->setSnapshot(std::make_shared<const SemanticIndexSnapshot>(SemanticIndexSnapshot::fromSymbolRecords(
             slang.extractSymbolRecords(editor->documentFileName(),contents),{},{},{{editor->documentFileName(),contents}})));
+        QTRY_VERIFY(!editor->syntaxDocument()->hasPendingEdits());
         open("zsgroup"); QTest::keyClick(search(),Qt::Key_Return);
         QCOMPARE(editor->textCursor().selectedText(),QString("user_interface_xxx"));
-        QTest::keyClick(editor.get(),Qt::Key_Down); QCOMPARE(editor->textCursor().selectedText(),QString("existing_bus"));
+        if (groupName != "user_interface_xxx") {
+            QTest::keyClick(editor.get(), Qt::Key_Down);
+            QCOMPARE(editor->textCursor().selectedText(), QString("existing_bus"));
+        }
+        if (groupName == "new_bus") QTest::keyClicks(editor.get(), groupName);
         QVERIFY(editor->templateSlotModeActive());
-        QTest::keyClicks(editor.get(),"new_bus"); QVERIFY(editor->templateSlotModeActive());
-        QTest::keyClick(editor.get(),Qt::Key_Tab);
-        QVERIFY2(editor->toPlainText().contains("/* zs_group = new_bus */"), qPrintable(editor->toPlainText())); QVERIFY(!editor->templateSlotModeActive());
+        QTest::keyClick(editor.get(), Qt::Key_Tab);
+        QString expected = contents;
+        expected.insert(start, "/* zs_group = " + groupName + " */\n");
+        QCOMPARE(editor->toPlainText(), expected);
+        QVERIFY(!editor->templateSlotModeActive());
         const auto inserted=editor->toPlainText(); editor->undo(); QVERIFY(editor->toPlainText()!=inserted);
         TemplateInputContext context; context.snapshot=SemanticIndex::getInstance()->snapshot();
         QVERIFY(TemplateInputService::validate({{"kind","WaveGroup"}},"new_bus",context,{}).isEmpty());
         QVERIFY(!TemplateInputService::validate({{"kind","WaveGroup"}},"bad */ name",context,{}).isEmpty());
+    }
+    void bundledWaveGroupCliInput() {
+        QTemporaryDir workspace;
+        QVERIFY(workspace.isValid());
+        const QString fileName = "annotated.sv";
+        const QString source = "module annotated;\nlogic data;\nendmodule\n";
+        QFile file(workspace.filePath(fileName));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        QCOMPARE(file.write(source.toUtf8()), source.size());
+        file.close();
+        const QString cli = QStandardPaths::findExecutable("zeroslack-cli", {QCoreApplication::applicationDirPath()});
+        QVERIFY2(!cli.isEmpty(), "Missing sibling zeroslack-cli executable");
+        const auto api = [&](QJsonObject request) {
+            request.insert("workspace", workspace.path());
+            request.insert("file", fileName);
+            QProcess process;
+            process.setWorkingDirectory(workspace.path());
+            process.start(cli, {"api", "-", "--profile", workspace.filePath("profile")});
+            process.write(QJsonDocument(request).toJson(QJsonDocument::Compact));
+            process.closeWriteChannel();
+            if (!process.waitForFinished() || process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
+                QTest::qFail(qPrintable(process.errorString() + ' ' + QString::fromUtf8(process.readAllStandardOutput())
+                    + ' ' + QString::fromUtf8(process.readAllStandardError())), __FILE__, __LINE__);
+                return QJsonObject{};
+            }
+            return QJsonDocument::fromJson(process.readAllStandardOutput()).object().value("data").toObject();
+        };
+        const auto original = api({{"command", "document.inspect"}});
+        QVERIFY(original.value("revision").isString());
+        const int start = source.indexOf("logic data;");
+        const auto inserted = api({{"command", "document.insert"}, {"templateId", "user:zsgroup"},
+            {"start", start}, {"expectedRevision", original.value("revision")}});
+        const QString defaultName = "user_interface_xxx";
+        const QString annotation = "/* zs_group = " + defaultName + " */\n";
+        QString expected = source;
+        expected.insert(start, annotation);
+        QCOMPARE(inserted.value("text").toString(), expected);
+        const auto instances = inserted.value("instances").toArray();
+        QCOMPARE(instances.size(), 1);
+        const auto instance = instances.first().toObject();
+        const auto inputs = instance.value("inputs").toArray();
+        QCOMPARE(inputs.size(), 1);
+        const auto group = inputs.first().toObject();
+        QCOMPARE(group.value("name").toString(), QString("group"));
+        QCOMPARE(group.value("constraints").toObject().value("kind").toString(), QString("WaveGroup"));
+        QCOMPARE(group.value("value").toString(), defaultName);
+        QCOMPARE(group.value("start").toInt(), start + annotation.indexOf(defaultName));
+        QCOMPARE(group.value("length").toInt(), defaultName.size());
+        QString error;
+        const auto build = simdock::SimulationBuildPlanner::workspaceRequest(workspace.path(), {fileName, "annotated"}, &error);
+        QVERIFY2(error.isEmpty(), qPrintable(error));
+        const auto plan = simdock::SimulationBuildPlanner::plan(build);
+        QVERIFY2(plan->valid(), qPrintable(plan->error()));
+        QVERIFY2(plan->waveGroups.diagnostics.isEmpty(), qPrintable(plan->waveGroups.diagnostics.join('\n')));
+        QCOMPARE(plan->waveGroups.objects.size(), 1);
+        QCOMPARE(plan->waveGroups.objects.first().group, defaultName);
+        QCOMPARE(plan->waveGroups.objects.first().path, QString("/annotated/data"));
+        const auto edited = api({{"command", "document.input"}, {"instanceId", instance.value("id")},
+            {"slot", "group"}, {"value", "new_bus"}, {"expectedRevision", inserted.value("revision")}});
+        expected.replace(defaultName, "new_bus");
+        QCOMPARE(edited.value("text").toString(), expected);
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        QCOMPARE(QString::fromUtf8(file.readAll()).replace("\r\n", "\n"), expected);
     }
     void wrapSelectionAndRejectCycles() {
         auto wrap = resource("wrap", "begin\n${body}\nend${cursor}"); wrap.command.insert("acceptsBody", true);
