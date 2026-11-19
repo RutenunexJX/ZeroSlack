@@ -30,6 +30,7 @@
 #include <atomic>
 #include <memory>
 class DesignHierarchyModel;
+class NavigationBranchMotion;
 struct DesignTreeProjection;
 
 class EditorSplitController;
@@ -141,10 +142,12 @@ private:
 
     QWidget* fileTab = nullptr;
     QTreeWidget* fileTreeWidget = nullptr;
+    NavigationBranchMotion* fileBranchMotion = nullptr;
     QVBoxLayout* fileTabLayout = nullptr;
 
     QWidget* designTab = nullptr;
     QTreeView* designTreeWidget = nullptr;
+    NavigationBranchMotion* designBranchMotion = nullptr;
     QVBoxLayout* designTabLayout = nullptr;
     std::shared_ptr<const DesignTreeProjection> currentDesignProjection;
     DesignHierarchyModel* designModel = nullptr;

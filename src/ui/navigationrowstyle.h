@@ -1,5 +1,7 @@
 #pragma once
 #include "roundedicons.h"
+#include "navigationbranchmotion.h"
+#include <QKeyEvent>
 #include "insightvisualstyle.h"
 #include <QAccessible>
 #include <QHelpEvent>
@@ -28,14 +30,15 @@ public:
     std::function<void(const QString&)> activateProject;
     std::function<void(const QModelIndex&)> activateDesign;
 
-    explicit NavigationRowStyle(QTreeView* view, bool design)
-        : QStyledItemDelegate(view), tree(view), design(design) {
+    NavigationRowStyle(QTreeView* view, bool design, NavigationBranchMotion* motion)
+        : QStyledItemDelegate(view), tree(view), design(design), motion(motion) {
         tree->setIndentation(0);
         tree->setRootIsDecorated(false);
         tree->setExpandsOnDoubleClick(false);
         tree->setUniformRowHeights(true);
         tree->setIconSize({18, 18});
         tree->setItemDelegate(this);
+        tree->installEventFilter(this);
         tree->viewport()->installEventFilter(this);
         connect(tree, &QTreeView::collapsed, this, [this] {
             if (!QAccessible::isActive()) return;
@@ -54,17 +57,34 @@ public:
     }
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override {
+        if (watched == tree && event->type() == QEvent::KeyPress) {
+            auto* key = static_cast<QKeyEvent*>(event);
+            const auto index = tree->currentIndex();
+            const int openKey = tree->isRightToLeft() ? Qt::Key_Left : Qt::Key_Right;
+            const int closeKey = tree->isRightToLeft() ? Qt::Key_Right : Qt::Key_Left;
+            if (key->modifiers() == Qt::NoModifier && tree->itemsExpandable() && index.isValid()
+                && tree->model()->hasChildren(index)
+                && key->key() == (tree->isExpanded(index) ? closeKey : openKey)) {
+                motion->toggle(index);
+                return true;
+            }
+        }
         if (watched != tree->viewport()) return false;
         if (design) {
             if (event->type() == QEvent::MouseButtonDblClick) {
                 auto* mouse = static_cast<QMouseEvent*>(event);
                 const auto index = tree->indexAt(mouse->position().toPoint());
                 if (mouse->button() != Qt::LeftButton) return false;
+                if (index.isValid() && tree->model()->hasChildren(index)
+                    && disclosureRect(tree->visualRect(index), index).contains(mouse->position().toPoint())) {
+                    pressed = index; pressedAction = true; suppressRelease = false;
+                    return true;
+                }
                 pressed = QPersistentModelIndex(); pressedAction = false; suppressRelease = true;
                 if (index.isValid()
                     && !disclosureRect(tree->visualRect(index), index).contains(mouse->position().toPoint())) {
                     if (index.data(CategoryRole).toBool()) {
-                        if (tree->model()->hasChildren(index)) tree->setExpanded(index, !tree->isExpanded(index));
+                        if (tree->model()->hasChildren(index)) motion->toggle(index);
                     } else if (activateDesign) activateDesign(index);
                 }
                 return true;
@@ -86,7 +106,7 @@ protected:
                 const bool toggle = pressedAction && pressed == index && disclosure;
                 const bool consumed = pressedAction;
                 pressed = QPersistentModelIndex(); pressedAction = false;
-                if (toggle) tree->setExpanded(index, !tree->isExpanded(index));
+                if (toggle) motion->toggle(index);
                 return consumed;
             }
             return false;
@@ -103,9 +123,10 @@ protected:
         if (event->type() == QEvent::MouseButtonDblClick) {
             auto* mouse = static_cast<QMouseEvent*>(event);
             const auto index = tree->indexAt(mouse->position().toPoint());
-            if (mouse->button() == Qt::LeftButton && (tree->model()->hasChildren(index) || index.data(FolderRole).toBool()
-                || !index.data(ProjectRole).toString().isEmpty())) {
-                suppressRelease = true;
+            if (mouse->button() == Qt::LeftButton && index.isValid()
+                && (tree->model()->hasChildren(index) || index.data(FolderRole).toBool()
+                    || !index.data(ProjectRole).toString().isEmpty())) {
+                suppressRelease = !disclosureRect(tree->visualRect(index), index).contains(mouse->position().toPoint());
                 return true;
             }
         }
@@ -121,7 +142,7 @@ protected:
                 return true;
             }
             if (tree->model()->hasChildren(index) || index.data(FolderRole).toBool()) {
-                tree->setExpanded(index, !tree->isExpanded(index));
+                motion->toggle(index);
                 return true;
             }
         }
@@ -171,8 +192,14 @@ private:
         const QFontMetrics metrics(primaryFont);
         const int reserved = (unresolved ? 22 : 0) + (simulation ? 28 : 0) + (source ? 28 : 0) + (project ? 28 : 0);
         const QRect disclosure=disclosureRect(row.rect,index);
-        if(expandable)RoundedIcons::icon(tree->isExpanded(index)?RoundedIcons::TreeExpanded:RoundedIcons::TreeCollapsed)
-            .paint(painter,QRect(disclosure.center().x()-7,disclosure.center().y()-7,14,14));
+        if (expandable) {
+            painter->save();
+            painter->translate(disclosure.center());
+            const qreal fraction = motion->runningFor(index) ? motion->progress() : (tree->isExpanded(index) ? 1.0 : 0.0);
+            painter->rotate(90.0 * fraction);
+            RoundedIcons::icon(RoundedIcons::TreeCollapsed).paint(painter, QRect(-7, -7, 14, 14));
+            painter->restore();
+        }
         const QRect icon(disclosure.right()+3,row.rect.center().y()-9,18,18);
         if(index.data(FolderRole).toBool() || index.data(CategoryRole).toBool())
             row.icon=RoundedIcons::icon(tree->isExpanded(index)?RoundedIcons::FolderOpen:RoundedIcons::Folder);
@@ -216,6 +243,7 @@ private:
     static QRect actionRect(const QRect& row) { return {row.right() - 27, row.top(), 28, row.height()}; }
     QTreeView* tree;
     bool design;
+    NavigationBranchMotion* motion;
     bool suppressRelease = false;
     QPersistentModelIndex pressed;
     bool pressedAction = false;

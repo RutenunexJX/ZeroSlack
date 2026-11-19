@@ -4,6 +4,7 @@
 #include "analysisscheduler.h"
 #include "navigationservice.h"
 #include "navigationrowstyle.h"
+#include "workspacemotion.h"
 #include "designhierarchymodel.h"
 #include "workspacemanager.h"
 #include "tabmanager.h"
@@ -651,6 +652,106 @@ private slots:
         QVERIFY(selected.isValid()); QCOMPARE(model.node(selected).id, "child-10"); QCOMPARE(resets.size(), 0);
         const auto last = model.indexForId("child-9999"); QVERIFY(last.isValid()); QCOMPARE(model.node(last).instancePath, "top.u_9999");
     }
+    void userBranchMotion_data() {
+        QTest::addColumn<bool>("design");
+        QTest::newRow("files") << false;
+        QTest::newRow("design") << true;
+    }
+
+    void userBranchMotion() {
+        QFETCH(bool, design);
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString file = dir.filePath("rtl/counter.sv");
+        QVERIFY(put(file, "module counter; endmodule"));
+        NavigationWidget widget;
+        widget.resize(400, 480);
+        widget.setWorkspaceRoot(dir.path());
+        widget.updateFileHierarchy({file});
+        widget.updateDesignHierarchy(wideReport(3));
+        widget.setActiveTab(design ? NavigationWidget::DesignTab : NavigationWidget::FileTab);
+        widget.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&widget));
+        auto* view = design ? tree(widget) : widget.findChild<QTreeView*>("navigationFileTree");
+        QVERIFY(view);
+        QTRY_VERIFY(view->isVisible() && view->model()->hasChildren(view->model()->index(0, 0)));
+        const QPersistentModelIndex parent = view->model()->index(0, 0);
+        auto* overlay = view->findChild<QWidget*>("navigationBranchMotion");
+        QVERIFY(overlay);
+        auto* animation = overlay->findChild<QVariantAnimation*>();
+        QVERIFY(animation);
+        view->expand(parent);
+        view->collapse(parent);
+        QVERIFY(!overlay->isVisible());
+        view->setCurrentIndex(parent);
+        const auto parentRect = view->visualRect(parent);
+        const QPoint arrow(parentRect.left() + 10, parentRect.center().y());
+        auto& theme = ApplicationThemeManager::instance();
+        const bool previous = theme.animationsEnabled();
+        const auto restore = qScopeGuard([&] { theme.setAnimationsEnabled(previous); });
+        theme.setAnimationsEnabled(false);
+        QTest::keyClick(view, Qt::Key_Right);
+        QVERIFY(view->isExpanded(parent));
+        QVERIFY(!overlay->isVisible());
+        QTest::keyClick(view, Qt::Key_Left);
+        QVERIFY(!view->isExpanded(parent));
+        theme.setAnimationsEnabled(true);
+        if (!WorkspaceMotion::enabled()) QSKIP("System animation is disabled");
+        QTest::mouseClick(view->viewport(), Qt::LeftButton, {}, arrow);
+        QVERIFY(view->isExpanded(parent));
+        QVERIFY(overlay->isVisible());
+        QCOMPARE(animation->duration(), 120);
+        animation->setCurrentTime(55);
+        const auto output = qEnvironmentVariable("ZEROSLACK_UI_REVIEW_DIR");
+        if (!output.isEmpty()) {
+            QVERIFY(QDir().mkpath(output));
+            const QString name = design ? "design-expanding.png" : "files-expanding.png";
+            QVERIFY(view->grab().save(QDir(output).filePath(name)));
+        }
+        const auto forward = animation->currentValue().toReal();
+        QVERIFY(forward > 0 && forward < 1);
+        QTest::mouseDClick(view->viewport(), Qt::LeftButton, {}, arrow);
+        QTest::mouseRelease(view->viewport(), Qt::LeftButton, {}, arrow);
+        QVERIFY(!view->isExpanded(parent));
+        QCOMPARE(animation->direction(), QAbstractAnimation::Backward);
+        QCOMPARE(animation->currentValue().toReal(), forward);
+        QCOMPARE(view->visualRect(parent).top(), parentRect.top());
+        QTest::mouseClick(view->viewport(), Qt::LeftButton, {}, arrow);
+        QVERIFY(view->isExpanded(parent));
+        QCOMPARE(animation->direction(), QAbstractAnimation::Forward);
+        QCOMPARE(animation->currentValue().toReal(), forward);
+        QCOMPARE(view->visualRect(parent).top(), parentRect.top());
+        QTRY_VERIFY(!overlay->isVisible());
+        view->collapse(parent);
+        QTest::keyClick(view, Qt::Key_Right);
+        QVERIFY(overlay->isVisible());
+        view->collapse(parent);
+        QVERIFY(!overlay->isVisible());
+        if (design) {
+            QTest::keyClick(view, Qt::Key_Right);
+            QVERIFY(overlay->isVisible());
+            widget.restoreDesignViewState(widget.designViewState());
+            QVERIFY(!overlay->isVisible());
+            QVERIFY(view->isExpanded(parent));
+            QTest::keyClick(view, Qt::Key_Left);
+        } else {
+            activateName(view, parent);
+            QVERIFY(view->isExpanded(parent));
+        }
+        QVERIFY(overlay->isVisible());
+        const auto tab = design ? NavigationWidget::DesignTab : NavigationWidget::FileTab;
+        widget.setSearchFilter(tab, design ? "u_0" : "counter");
+        QVERIFY(!overlay->isVisible());
+        // The design tree still shows its current model during the search debounce.
+        const auto filteredParent = view->model()->index(0, 0);
+        QVERIFY(view->model()->hasChildren(filteredParent));
+        view->setCurrentIndex(filteredParent);
+        const bool wasExpanded = view->isExpanded(filteredParent);
+        QTest::keyClick(view, wasExpanded ? Qt::Key_Left : Qt::Key_Right);
+        QCOMPARE(view->isExpanded(filteredParent), !wasExpanded);
+        QVERIFY(!overlay->isVisible());
+    }
+
     void disclosureNavigationSearchAndRecovery_data() {
         QTest::addColumn<bool>("dark"); QTest::addColumn<int>("width");
         QTest::newRow("light-wide") << false << 420; QTest::newRow("light-narrow") << false << 200;

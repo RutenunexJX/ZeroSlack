@@ -98,6 +98,8 @@ void NavigationWidget::setWorkspaceRoot(
         EditorFileIdentity::normalized(workspaceRoot);
     if (workspaceFileTreeRootPath == normalized)
         return;
+    fileBranchMotion->finish();
+    designBranchMotion->finish();
     saveDesignViewState();
     workspaceFileTreeRootPath = normalized;
     if (designSearchCancellation) designSearchCancellation->store(true);
@@ -326,6 +328,8 @@ void NavigationWidget::onSearchTextChanged(int index, const QString& text)
     if (index != FileTab && index != DesignTab) return;
     const auto normalized = text.trimmed();
     if (searchFilterForIndex(index) == normalized) return;
+    auto* motion = index == DesignTab ? designBranchMotion : fileBranchMotion;
+    motion->setSearchActive(!normalized.isEmpty());
     if (index == DesignTab) {
         if (designSearchFilter.isEmpty()) savedDesignState = designViewState();
         designSearchFilter = normalized;
@@ -478,7 +482,6 @@ void NavigationWidget::setupFileTab()
     fileTabLayout->setSpacing(4);
 
     fileTreeWidget = UiControls::treeWidget(fileTab);
-    UiControls::enableTreeTransitions(fileTreeWidget);
     fileTreeWidget->setObjectName(
         QStringLiteral("navigationFileTree"));
     fileTreeWidget->setHeaderLabel("Files");
@@ -486,7 +489,8 @@ void NavigationWidget::setupFileTab()
     fileTreeWidget->setAlternatingRowColors(false);
     fileTreeWidget->setProperty("workspaceNavigationList", true);
     fileTreeWidget->setMouseTracking(true);
-    new NavigationRowStyle(fileTreeWidget, false);
+    fileBranchMotion = new NavigationBranchMotion(fileTreeWidget);
+    new NavigationRowStyle(fileTreeWidget, false, fileBranchMotion);
     fileTreeWidget->setSortingEnabled(false);
     fileTreeWidget->header()->hide();
 
@@ -522,7 +526,8 @@ void NavigationWidget::setupDesignTab()
     designSearchModel = new DesignHierarchyModel(this);
     setDesignTreeModel(designModel);
     designTreeWidget->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
-    auto* designStyle = new NavigationRowStyle(designTreeWidget, true);
+    designBranchMotion = new NavigationBranchMotion(designTreeWidget);
+    auto* designStyle = new NavigationRowStyle(designTreeWidget, true, designBranchMotion);
     designStyle->activateDesign = [this](const QModelIndex& index) { onDesignTreeDoubleClicked(index); };
     designTreeWidget->header()->setStretchLastSection(true);
     designTabLayout->addWidget(designTreeWidget);

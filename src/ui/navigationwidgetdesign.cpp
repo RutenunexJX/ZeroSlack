@@ -1,4 +1,5 @@
 #include "navigationwidget.h"
+#include "navigationbranchmotion.h"
 #include "designhierarchymodel.h"
 #include "editorfileidentity.h"
 #include <QtConcurrent/QtConcurrent>
@@ -152,6 +153,7 @@ void NavigationWidget::restoreDesignViewState(const QJsonObject& state)
     if (state.value("version").toInt() != 1) return;
     savedDesignState = state;
     if (designModel->applying() || designTreeWidget->model() != designModel) return;
+    designBranchMotion->finish();
     restoringDesignState = true;
     designExpandedIds.clear();
     for (const auto& item : state.value("expanded").toArray()) {

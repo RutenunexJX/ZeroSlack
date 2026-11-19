@@ -190,7 +190,10 @@ private:
     QPointer<QTabWidget> initialEditorTabs;
     QWidget* welcomePage = nullptr;
     QVBoxLayout* recentProjectsLayout = nullptr;
+    QLabel* welcomeOpenError = nullptr;
+    bool openingWelcomeWorkspace = false;
     bool navigationHiddenForWelcome = false;
+    bool openWorkspaceFromUi(const QString& path, bool promptForAlias);
     void setupWelcomePage();
     void refreshWelcomePage();
     QString pendingActiveEditorPassiveRefreshFile;

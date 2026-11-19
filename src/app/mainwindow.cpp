@@ -2,6 +2,7 @@
 #include <QScrollArea>
 #include "uidialogs.h"
 #include "workspacechrome.h"
+#include "workspacemotion.h"
 #include "mainwindow.h"
 #include "compactlayout.h"
 #include "filecreation.h"
@@ -320,7 +321,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(workspaceManager.get(), &WorkspaceManager::workspaceOpened,
             this, [this](const QString&) {
                 refreshWelcomePage();
-                navigationPane->setExpanded(true, false);
+                if (!openingWelcomeWorkspace) navigationPane->setExpanded(true, false);
             });
     connect(workspaceManager.get(),
             &WorkspaceManager::workspaceListChanged,
@@ -560,12 +561,22 @@ void MainWindow::setupEditorCentralArea()
             });
     connect(workspaceManager.get(), &WorkspaceManager::workspaceActivationFailed,
             this, [this](const QString& path, const QString& reason) {
-                postActivityMessage(tr("Cannot activate %1: %2").arg(path, reason), 10000);
+                const QString message = tr("Cannot open %1: %2").arg(QDir::toNativeSeparators(path), reason);
+                postActivityMessage(message, 10000);
+                if (welcomePage && welcomePage->isVisible()) {
+                    welcomeOpenError->setText(message);
+                    welcomeOpenError->show();
+                }
             });
     connect(workspaceManager.get(),
             &WorkspaceManager::workspaceActivated,
             this,
             [this](int, const QString&, const QString& path) {
+                // Apply the first-open default before the saved dock layout is restored.
+                if (openingWelcomeWorkspace && navigationPane) {
+                    navigationHiddenForWelcome = false;
+                    navigationPane->setExpanded(true, false);
+                }
                 UserTemplateService::getInstance()->setWorkspaceRoot(path);
                 UserTemplateService::getInstance()->reload();
                 refreshSettingsCenterWorkspace(path);
@@ -610,6 +621,12 @@ void MainWindow::setupWelcomePage()
     contentLayout->addWidget(recentTitle);
     recentProjectsLayout = new QVBoxLayout;
     recentProjectsLayout->setSpacing(8); contentLayout->addLayout(recentProjectsLayout);
+    welcomeOpenError = UiControls::label({}, content);
+    welcomeOpenError->setObjectName(QStringLiteral("welcomeOpenError"));
+    welcomeOpenError->setTextFormat(Qt::PlainText);
+    welcomeOpenError->setWordWrap(true);
+    welcomeOpenError->hide();
+    contentLayout->addWidget(welcomeOpenError);
     auto* centered = new QHBoxLayout;
     centered->addStretch(1);
     centered->addWidget(content, 4);
@@ -618,6 +635,38 @@ void MainWindow::setupWelcomePage()
     pageLayout->addStretch(2);
     scroll->setWidget(page);
     centralContentStack->addWidget(welcomePage);
+}
+
+bool MainWindow::openWorkspaceFromUi(const QString& path, bool promptForAlias)
+{
+    if (!workspaceSessionCoordinator || path.isEmpty()) return false;
+    const bool fromWelcome = centralContentStack->currentWidget() == welcomePage && welcomePage->isVisible();
+    QScopedValueRollback<bool> opening(openingWelcomeWorkspace, fromWelcome);
+    QPointer<WorkspaceMotion::WelcomeFade> fade;
+    if (fromWelcome) {
+        welcomeOpenError->hide();
+        if (!QFileInfo(path).isDir()) {
+            welcomeOpenError->setText(tr("Workspace folder unavailable: %1").arg(QDir::toNativeSeparators(path)));
+            welcomeOpenError->show();
+            return false;
+        }
+        if (WorkspaceMotion::enabled())
+            fade = new WorkspaceMotion::WelcomeFade(welcomePage, recentProjectsLayout->parentWidget(), this);
+    }
+    const bool opened = promptForAlias ? workspaceSessionCoordinator->openWorkspaceFromUserSelection(path)
+                                       : workspaceSessionCoordinator->openWorkspace(path);
+    if (opened && fromWelcome) {
+        if (auto* editor = tabManager->getCurrentEditor(); editor && editor->isVisible())
+            editor->setFocus(Qt::OtherFocusReason);
+        if (fade && centralContentStack->currentWidget() != welcomePage) {
+            connect(workspaceManager.get(), &WorkspaceManager::workspaceClosed, fade, &WorkspaceMotion::WelcomeFade::dismiss);
+            connect(workspaceManager.get(), &WorkspaceManager::workspaceActivated, fade, &WorkspaceMotion::WelcomeFade::dismiss);
+            fade->start();
+            return true;
+        }
+    }
+    delete fade.data();
+    return opened;
 }
 
 void MainWindow::refreshWelcomePage()
@@ -674,11 +723,11 @@ void MainWindow::refreshWelcomePage()
             row->setStyleSheet(QStringLiteral(
                 "QToolButton { background: transparent; "
                 "border: 0; border-radius: 8px; }"
-                "QToolButton:hover { background: palette(midlight); }"));
+                "QToolButton:hover { background: palette(midlight); }"
+                "QToolButton:pressed { background: palette(alternate-base); }"));
             connect(row, &QToolButton::clicked, this,
                     [this, path = entry.path]() {
-                        if (workspaceSessionCoordinator)
-                            workspaceSessionCoordinator->openWorkspace(path);
+                        openWorkspaceFromUi(path, false);
                     });
             recentProjectsLayout->addWidget(row);
         }
@@ -693,6 +742,7 @@ void MainWindow::refreshWelcomePage()
     const bool showWelcome = workspaceManager
         && !workspaceManager->isWorkspaceOpen()
         && tabManager && !hasTabs;
+    if (!showWelcome) welcomeOpenError->hide();
     centralContentStack->setCurrentWidget(
         showWelcome ? welcomePage : editorCentralPage);
     if (!navigationPane || !navigationPane->dock())
@@ -3949,14 +3999,11 @@ void MainWindow::setupWorkspaceSessionCoordinator()
     }
 
     if (fileCommandCoordinator) {
-        QPointer<WorkspaceSessionCoordinator> sessionCoordinator(
-            workspaceSessionCoordinator.get());
-        QPointer<NavigationPaneCoordinator> navigationPaneRef(navigationPane.get());
         fileCommandCoordinator->setWorkspaceOpenHandler(
-            [sessionCoordinator, navigationPaneRef](const QString& folderPath) {
-                const bool opened = sessionCoordinator
-                    && sessionCoordinator->openWorkspaceFromUserSelection(folderPath);
-                if (opened && navigationPaneRef) navigationPaneRef->setExpanded(true, false);
+            [this](const QString& folderPath) {
+                const bool fromWelcome = centralContentStack->currentWidget() == welcomePage;
+                const bool opened = openWorkspaceFromUi(folderPath, true);
+                if (opened && !fromWelcome && navigationPane) navigationPane->setExpanded(true, false);
                 return opened;
             });
     }
@@ -4248,8 +4295,7 @@ void MainWindow::showRecentWorkspacesDialog()
             item ? item->data(0, Qt::UserRole).toString() : QString();
         if (path.isEmpty() || !workspaceManager)
             return;
-        if (workspaceSessionCoordinator
-            && workspaceSessionCoordinator->openWorkspace(path)) {
+        if (openWorkspaceFromUi(path, false)) {
             dialog->close();
         }
     };

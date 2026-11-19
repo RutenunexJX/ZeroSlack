@@ -466,6 +466,8 @@ set(ZEROSLACK_CORE_SOURCES
     src/ui/designtreeprojection.cpp
     src/ui/designhierarchymodel.cpp
     src/ui/navigationwidget.cpp
+    src/ui/navigationbranchmotion.cpp
+    src/ui/workspacemotion.cpp
     src/ui/notificationcenter.cpp
     src/ui/problemspanelcoordinator.cpp
     src/workspace/projectmodel.cpp
